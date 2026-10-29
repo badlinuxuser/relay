@@ -1,0 +1,130 @@
+# Relay: конфигурация. Файл создаётся автоматически при первом запуске relayd.
+# Ключи API здесь НЕ хранятся: указываются имена переменных окружения.
+
+listen = "127.0.0.1:8787"     # адрес бэкенда (он же OpenAI-совместимый шлюз /v1)
+default_mode = "small"        # small | medium | hard | maximum
+# workspace = "/path/to/project"  # по умолчанию агент работает в папке, где запущен relay
+
+# ---------------------------------------------------------------- провайдеры
+# kind = "openai"    любой OpenAI-совместимый сервер: Ollama, llama.cpp, LM Studio,
+#                    vLLM, OpenAI, OpenRouter, Gemini (через /v1beta/openai)
+# kind = "anthropic" Anthropic Messages API
+# api_key_env        список переменных окружения: при лимите ключа Relay переходит
+#                    на следующий, а когда ключи кончились, на следующую модель режима.
+
+[[providers]]
+name = "ollama"
+kind = "openai"
+base_url = "http://127.0.0.1:11434/v1"
+
+[[providers]]
+name = "llamacpp"
+kind = "openai"
+base_url = "http://127.0.0.1:8080/v1"
+
+[[providers]]
+name = "anthropic"
+kind = "anthropic"
+base_url = "https://api.anthropic.com"
+api_key_env = ["ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY_2"]
+
+[[providers]]
+name = "openrouter"
+kind = "openai"
+base_url = "https://openrouter.ai/api/v1"
+api_key_env = ["OPENROUTER_API_KEY"]
+
+[[providers]]
+name = "gemini"
+kind = "openai"
+base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
+api_key_env = ["GEMINI_API_KEY"]
+
+# -------------------------------------------------------------------- модели
+# price_in / price_out: USD за 1 млн токенов (для подсчёта стоимости, заполни сам)
+# tools = true: модель умеет вызывать инструменты (нужно для режима агента)
+
+[[models]]
+id = "local-small"
+provider = "ollama"
+model = "qwen2.5-coder:7b"
+tier = "small"
+tools = true
+context = 32768
+
+[[models]]
+id = "haiku"
+provider = "anthropic"
+model = "claude-haiku-5-5"
+tier = "small"
+tools = true
+context = 200000
+
+[[models]]
+id = "sonnet"
+provider = "anthropic"
+model = "claude-sonnet-5-5"
+tier = "medium"
+tools = true
+context = 200000
+
+[[models]]
+id = "opus"
+provider = "anthropic"
+model = "claude-opus-5-5"
+tier = "hard"
+tools = true
+context = 200000
+
+# ----------------------------------------------------------------- режимы
+# Режим определяет цвет интерфейса и маскота и цепочку моделей: если первая
+# недоступна (лимит, ошибка сервера), берётся следующая.
+
+[modes.small]
+models = ["local-small", "haiku"]
+max_steps = 10
+
+[modes.medium]
+models = ["sonnet", "haiku"]
+max_steps = 16
+
+[modes.hard]
+models = ["opus", "sonnet"]
+max_steps = 24
+
+[modes.maximum]
+models = ["opus", "sonnet"]
+max_steps = 40
+
+# ---------------------------------------------------------- локальные процессы
+# Лаунчер: запускает и останавливает локальные серверы из интерфейса (/start, /stop).
+
+[[processes]]
+name = "ollama"
+command = "ollama"
+args = ["serve"]
+ready_url = "http://127.0.0.1:11434/api/tags"
+autostart = false
+
+# [[processes]]
+# name = "llamacpp"
+# command = "llama-server"
+# args = ["-m", "/models/model.gguf", "--port", "8080"]
+# ready_url = "http://127.0.0.1:8080/health"
+
+# ------------------------------------------------------------ MCP-серверы
+# Инструменты MCP становятся доступны агенту (каждый вызов требует подтверждения).
+
+# [[mcp]]
+# name = "fs"
+# command = "npx"
+# args = ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/dir"]
+
+# ----------------------------------------------------- системные промпты
+[[presets]]
+name = "coder"
+prompt = "You are a careful senior software engineer. Prefer small, correct changes. Explain briefly."
+
+[[presets]]
+name = "concise"
+prompt = "Answer as concisely as possible."
