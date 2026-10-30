@@ -1,5 +1,6 @@
-# Relay: конфигурация. Файл создаётся автоматически при первом запуске relayd.
-# Ключи API здесь НЕ хранятся: указываются имена переменных окружения.
+# Relay: конфигурация. Файл создаётся автоматически при первом запуске.
+# Ключи API здесь НЕ хранятся: добавляй их командой `relay keys` (или /keys в интерфейсе),
+# откроется страница в браузере. Ключи сохраняются в keys.json и работают между сессиями.
 
 listen = "127.0.0.1:8787"     # адрес бэкенда (он же OpenAI-совместимый шлюз /v1)
 default_mode = "small"        # small | medium | hard | maximum
@@ -9,8 +10,11 @@ default_mode = "small"        # small | medium | hard | maximum
 # kind = "openai"    любой OpenAI-совместимый сервер: Ollama, llama.cpp, LM Studio,
 #                    vLLM, OpenAI, OpenRouter, Gemini (через /v1beta/openai)
 # kind = "anthropic" Anthropic Messages API
-# api_key_env        список переменных окружения: при лимите ключа Relay переходит
-#                    на следующий, а когда ключи кончились, на следующую модель режима.
+# Ключей на провайдера можно добавить несколько: при лимите Relay переходит на следующий,
+# а когда ключи кончились, на следующую модель режима.
+# api_key_env (необязательно): дополнительно брать ключи из переменных окружения,
+#                    например api_key_env = ["ANTHROPIC_API_KEY"].
+# Локальным серверам (localhost) ключ не нужен.
 
 [[providers]]
 name = "ollama"
@@ -26,19 +30,16 @@ base_url = "http://127.0.0.1:8080/v1"
 name = "anthropic"
 kind = "anthropic"
 base_url = "https://api.anthropic.com"
-api_key_env = ["ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY_2"]
 
 [[providers]]
 name = "openrouter"
 kind = "openai"
 base_url = "https://openrouter.ai/api/v1"
-api_key_env = ["OPENROUTER_API_KEY"]
 
 [[providers]]
 name = "gemini"
 kind = "openai"
 base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
-api_key_env = ["GEMINI_API_KEY"]
 
 # -------------------------------------------------------------------- модели
 # price_in / price_out: USD за 1 млн токенов (для подсчёта стоимости, заполни сам)

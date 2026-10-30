@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 
 	"relay/internal/agent"
 	"relay/internal/config"
+	"relay/internal/keystore"
 	"relay/internal/mcp"
 	"relay/internal/provider"
 	"relay/internal/proto"
@@ -31,6 +33,7 @@ import (
 type Server struct {
 	cfg    *config.Config
 	token  string
+	keys   *keystore.Store
 	router *router.Router
 	usage  *usage.Tracker
 	store  *session.Store
@@ -43,16 +46,21 @@ type Server struct {
 	mu        sync.Mutex
 	approvals map[string]chan string
 
+	loopback bool // слушаем только loopback: включена защита от DNS rebinding
+
 	Done chan struct{}
 	once sync.Once
 }
 
 func New(cfg *config.Config, home, token string) *Server {
 	tr := usage.Load(filepath.Join(home, "usage.json"))
-	rt := router.New(cfg, tr)
+	ks := keystore.Open(filepath.Join(home, "keys.json"))
+	rt := router.New(cfg, tr, ks)
 	s := &Server{
 		cfg:       cfg,
 		token:     token,
+		keys:      ks,
+		loopback:  isLoopback(cfg.Listen),
 		router:    rt,
 		usage:     tr,
 		store:     session.NewStore(filepath.Join(home, "sessions")),
@@ -121,14 +129,51 @@ func (s *Server) Handler() http.Handler {
 		writeJSON(w, 200, map[string]any{"ok": true})
 		s.once.Do(func() { close(s.Done) })
 	})
+	mux.HandleFunc("GET /api/keys", s.handleKeys)
+	mux.HandleFunc("POST /api/keys", s.handleAddKey)
+	mux.HandleFunc("DELETE /api/keys/{provider}/{id}", s.handleDeleteKey)
+	mux.HandleFunc("GET /ui/keys", s.handleKeysPage)
+	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/ui/keys", http.StatusFound)
+	})
 	mux.HandleFunc("GET /v1/models", s.handleGatewayModels)
 	mux.HandleFunc("POST /v1/chat/completions", s.handleGatewayChat)
 	return s.auth(mux)
 }
 
+func isLoopback(listen string) bool {
+	host, _, err := net.SplitHostPort(listen)
+	if err != nil {
+		return false
+	}
+	switch host {
+	case "127.0.0.1", "localhost", "::1", "[::1]":
+		return true
+	}
+	return false
+}
+
+func hostAllowed(hostport string) bool {
+	host, _, err := net.SplitHostPort(hostport)
+	if err != nil {
+		host = hostport
+	}
+	switch strings.Trim(host, "[]") {
+	case "127.0.0.1", "localhost", "::1":
+		return true
+	}
+	return false
+}
+
 func (s *Server) auth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/health" {
+		// защита от DNS rebinding: страница и API отвечают только на loopback-имена
+		if s.loopback && !hostAllowed(r.Host) {
+			httpErr(w, 403, "forbidden host")
+			return
+		}
+		p := r.URL.Path
+		if p == "/api/health" || p == "/" || strings.HasPrefix(p, "/ui/") {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -227,8 +272,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	for _, p := range s.cfg.Providers {
-		total, avail := s.router.KeyStats(p.Name)
-		st.Providers = append(st.Providers, proto.ProviderInfo{Name: p.Name, Kind: p.Kind, Keys: total, KeysAvailable: avail})
+		total, avail, needs := s.router.KeyStats(p.Name)
+		st.Providers = append(st.Providers, proto.ProviderInfo{Name: p.Name, Kind: p.Kind, NeedsKey: needs, Keys: total, KeysAvailable: avail})
 	}
 	for k, v := range s.usage.Snapshot() {
 		st.Usage[k] = proto.UsageEntry{In: v.In, Out: v.Out, Requests: v.Requests, Cost: v.Cost}
@@ -455,8 +500,13 @@ func (s *Server) handleCompare(w http.ResponseWriter, r *http.Request) {
 }
 
 func errKind(err error) string {
-	if pe, ok := err.(*provider.Error); ok && pe.RateLimited {
-		return "rate_limit"
+	if pe, ok := err.(*provider.Error); ok {
+		switch {
+		case pe.RateLimited:
+			return "rate_limit"
+		case pe.NoKey:
+			return "no_key"
+		}
 	}
 	return "provider"
 }

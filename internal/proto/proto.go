@@ -1,4 +1,4 @@
-// Package proto описывает протокол между бэкендом (relayd) и интерфейсами.
+// Package proto описывает протокол между бэкендом (процесс `relay daemon`) и интерфейсами.
 // Транспорт: HTTP + JSON, потоковые ответы через Server-Sent Events.
 package proto
 
@@ -8,7 +8,7 @@ import (
 	"relay/internal/provider"
 )
 
-const Version = "0.1.0"
+const Version = "0.2.0"
 
 // Event это одно событие потока выполнения (SSE: "data: <json>").
 //
@@ -100,8 +100,41 @@ type ModelInfo struct {
 type ProviderInfo struct {
 	Name          string `json:"name"`
 	Kind          string `json:"kind"`
+	NeedsKey      bool   `json:"needs_key"`
 	Keys          int    `json:"keys"`
 	KeysAvailable int    `json:"keys_available"`
+}
+
+// KeyEntry это сохранённый ключ в безопасном виде (последние 4 символа).
+type KeyEntry struct {
+	ID    string `json:"id"`
+	Label string `json:"label,omitempty"`
+	Hint  string `json:"hint"`
+}
+
+type EnvKey struct {
+	Name string `json:"name"`
+	Set  bool   `json:"set"`
+}
+
+type ProviderKeys struct {
+	Name      string     `json:"name"`
+	Kind      string     `json:"kind"`
+	NeedsKey  bool       `json:"needs_key"`
+	Stored    []KeyEntry `json:"stored"`
+	Env       []EnvKey   `json:"env,omitempty"`
+	Total     int        `json:"total"`
+	Available int        `json:"available"`
+}
+
+type KeysResp struct {
+	Providers []ProviderKeys `json:"providers"`
+}
+
+type AddKeyReq struct {
+	Provider string `json:"provider"`
+	Key      string `json:"key"`
+	Label    string `json:"label"`
 }
 
 type ModeInfo struct {

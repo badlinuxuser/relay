@@ -4,6 +4,7 @@ package config
 import (
 	_ "embed"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 
@@ -22,6 +23,22 @@ type Provider struct {
 	BaseURL   string            `toml:"base_url"`
 	APIKeyEnv []string          `toml:"api_key_env"`
 	Headers   map[string]string `toml:"headers"`
+}
+
+// NeedsKey: нужен ли провайдеру API-ключ. Локальным серверам (loopback) он не нужен.
+func (p Provider) NeedsKey() bool {
+	if p.Kind == "anthropic" || len(p.APIKeyEnv) > 0 {
+		return true
+	}
+	u, err := url.Parse(p.BaseURL)
+	if err != nil {
+		return true
+	}
+	switch u.Hostname() {
+	case "localhost", "127.0.0.1", "::1", "0.0.0.0":
+		return false
+	}
+	return true
 }
 
 type Model struct {

@@ -1,5 +1,5 @@
 // Package tui это терминальный интерфейс Relay (Bubble Tea). Он ничего не знает
-// о провайдерах: всё делает relayd, интерфейс общается с ним по HTTP.
+// о провайдерах: всё делает бэкенд, интерфейс общается с ним по HTTP.
 package tui
 
 import (
@@ -63,13 +63,16 @@ type model struct {
 	sprites    map[string]*spriteSet
 	statusBusy bool
 
-	curModel        string
-	totIn, totOut   int
-	totCost         float64
+	curModel      string
+	totIn, totOut int
+	totCost       float64
+
+	transFrom  string // предыдущий режим во время анимации смены ("" = нет)
+	transStart int    // кадр, на котором началась анимация
 }
 
-// New создаёт интерфейс. spawn: запускать relayd, если он не запущен.
-// keep: не останавливать relayd при выходе.
+// New создаёт интерфейс. spawn: запускать бэкенд, если он не запущен.
+// keep: не останавливать бэкенд при выходе.
 func New(spawn, keep bool) tea.Model {
 	ti := textinput.New()
 	ti.Placeholder = "Сообщение или /help"
@@ -86,7 +89,7 @@ func New(spawn, keep bool) tea.Model {
 		slots:    map[int]int{},
 		mc:       newMascot(),
 		sprites:  loadSprites(),
-		entries:  []entry{{kind: eNotice, text: "Подключаюсь к relayd…"}},
+		entries:  []entry{{kind: eNotice, text: "Подключаюсь к бэкенду…"}},
 	}
 }
 
@@ -165,6 +168,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cl, m.status, m.sess = msg.cl, msg.status, msg.sess
 		m.mode = msg.sess.Mode
 		m.entries = []entry{{kind: eNotice, text: fmt.Sprintf("Relay %s · папка: %s", msg.status.Version, shortPath(msg.sess.Workspace))}}
+		if miss := missingKeys(msg.status); len(miss) > 0 {
+			m.addNotice("Нет ключей API: " + strings.Join(miss, ", ") + ". Команда /keys откроет страницу, где их можно вставить (ключи сохраняются).")
+		}
 		m.mc.react("joy", 2500*time.Millisecond, "Relay — рядом.")
 		return m, nil
 
@@ -340,7 +346,7 @@ func (m *model) beginStream(run func(ctx context.Context, emit func(proto.Event)
 
 func (m model) send(text string) (tea.Model, tea.Cmd) {
 	if m.cl == nil || m.sess == nil {
-		m.addNotice("Ещё не подключился к relayd")
+		m.addNotice("Ещё не подключился к бэкенду")
 		return m, nil
 	}
 	if m.streaming {
@@ -386,6 +392,8 @@ func (m *model) handleEvent(ev proto.Event) {
 			m.mc.react("noticed", 4*time.Second, "Меняю ключ")
 		case "fallback":
 			m.mc.react("surprise", 3*time.Second, "Резервная модель")
+		case "no_key":
+			m.mc.react("surprise", 5*time.Second, "Нет ключа: /keys")
 		}
 
 	case "tool_call":
@@ -425,6 +433,9 @@ func (m *model) handleEvent(ev proto.Event) {
 		if ev.Kind == "rate_limit" {
 			m.mc.base = "tired"
 			m.mc.react("tired", 10*time.Second, "Закончились запросы на ключе")
+		} else if ev.Kind == "no_key" {
+			m.addNotice("Добавь ключ командой /keys (откроется страница в браузере).")
+			m.mc.react("surprise", 6*time.Second, "Нет ключа: /keys")
 		} else {
 			m.mc.react("surprise", 4*time.Second, "Что-то пошло не так")
 		}
@@ -453,6 +464,9 @@ func (m model) modeNames() []string {
 }
 
 func (m *model) setMode(mode string) tea.Cmd {
+	if mode != m.mode {
+		m.transFrom, m.transStart = m.mode, m.frame
+	}
 	m.mode = mode
 	m.mc.react("joy", 1500*time.Millisecond, "Режим: "+mode)
 	if m.cl == nil || m.sess == nil {
@@ -535,6 +549,22 @@ func entriesFromSession(s *proto.SessionInfo) []entry {
 					break
 				}
 			}
+		}
+	}
+	return out
+}
+
+// missingKeys возвращает провайдеров, которым нужен ключ (и которые используются
+// моделями), но ключей нет.
+func missingKeys(st *proto.StatusResp) []string {
+	used := map[string]bool{}
+	for _, md := range st.Models {
+		used[md.Provider] = true
+	}
+	var out []string
+	for _, p := range st.Providers {
+		if used[p.Name] && p.NeedsKey && p.Keys == 0 {
+			out = append(out, p.Name)
 		}
 	}
 	return out

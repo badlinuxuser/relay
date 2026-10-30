@@ -8,12 +8,14 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"relay/internal/browser"
 	"relay/internal/client"
 	"relay/internal/proto"
 )
 
 const helpText = `Команды:
-  /mode small|medium|hard|maximum   режим (цвет интерфейса и цепочка моделей)
+  /mode small|medium|hard|maximum   режим (цвет интерфейса и цепочка моделей); короче: /small /medium /hard /max
+  /keys                             страница для ввода и хранения ключей API (откроется в браузере)
   /model <id>|auto                  выбрать модель или вернуть выбор по режиму
   /agent on|off                     режим агента (инструменты: файлы, shell, веб, MCP)
   /preset <имя>|none                системный промпт
@@ -123,7 +125,7 @@ func (m model) command(line string) (tea.Model, tea.Cmd) {
 	cmd, args := fields[0], fields[1:]
 	needConn := func() bool {
 		if m.cl == nil || m.sess == nil {
-			m.addNotice("Ещё не подключился к relayd")
+			m.addNotice("Ещё не подключился к бэкенду")
 			return false
 		}
 		return true
@@ -142,6 +144,33 @@ func (m model) command(line string) (tea.Model, tea.Cmd) {
 	case "/clear":
 		m.entries = nil
 		m.scroll = 0
+		return m, nil
+
+	case "/small", "/medium", "/hard", "/maximum", "/max":
+		mode := strings.TrimPrefix(cmd, "/")
+		if mode == "max" {
+			mode = "maximum"
+		}
+		for _, n := range m.modeNames() {
+			if n == mode {
+				cm := m.setMode(n)
+				return m, cm
+			}
+		}
+		m.addError("Режим " + mode + " не настроен в конфигурации")
+		return m, nil
+
+	case "/keys":
+		if !needConn() {
+			return m, nil
+		}
+		url := m.cl.Base + "/ui/keys#token=" + m.cl.Token
+		m.mc.react("noticed", 2*time.Second, "Ключи в браузере")
+		if err := browser.Open(url); err != nil {
+			m.addNotice("Не удалось открыть браузер. Открой вручную: " + url)
+		} else {
+			m.addNotice("Открыл страницу ключей в браузере. Добавь ключи и возвращайся: они применяются сразу.")
+		}
 		return m, nil
 
 	case "/mode":

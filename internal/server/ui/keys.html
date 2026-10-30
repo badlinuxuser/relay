@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Relay · ключи API</title>
+<style>
+:root{--bg:#0C1510;--card:#14201A;--line:#25402F;--accent:#67DD5D;--text:#E6E8EA;--dim:#8A948D;--red:#F26D6D;--soft:#2E8B3E}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+main{max-width:780px;margin:0 auto;padding:28px 18px 60px}
+header{display:flex;align-items:center;gap:18px;margin-bottom:22px}
+header img{width:132px;height:108px;image-rendering:pixelated;background:var(--card);border-radius:10px;padding:6px}
+h1{margin:0;font-size:24px;color:var(--accent)}
+h1 small{color:var(--dim);font-weight:400;font-size:14px}
+p.lead{margin:6px 0 0;color:var(--dim)}
+.banner{display:none;margin:0 0 16px;padding:12px 14px;border:1px solid var(--red);border-radius:8px;color:var(--red)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:14px}
+.card h2{margin:0;font-size:17px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.kind{font-size:12px;color:var(--dim);font-weight:400}
+.badge{font-size:12px;padding:2px 9px;border-radius:99px;border:1px solid var(--line);color:var(--dim)}
+.badge.ok{color:var(--accent);border-color:var(--soft)}
+.badge.bad{color:var(--red);border-color:var(--red)}
+.keys{margin:12px 0 0;padding:0;list-style:none}
+.keys li{display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--line)}
+.keys .hint{color:var(--text)}
+.keys .label{color:var(--dim);flex:1}
+.keys .env{color:var(--dim)}
+button{font:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--soft);background:transparent;color:var(--accent);padding:6px 12px}
+button:hover{background:#1c3326}
+button.del{border-color:var(--line);color:var(--dim);padding:3px 9px}
+button.del:hover{color:var(--red);border-color:var(--red);background:transparent}
+form{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+input{font:inherit;background:#0e1812;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:7px 10px;min-width:0}
+input:focus{outline:none;border-color:var(--accent)}
+input.key{flex:1 1 280px}
+input.lbl{flex:0 1 150px}
+a{color:var(--accent)}
+.hintline{margin:10px 0 0;font-size:13px;color:var(--dim)}
+#toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--card);border:1px solid var(--soft);color:var(--accent);padding:9px 16px;border-radius:99px;opacity:0;transition:opacity .2s;pointer-events:none}
+#toast.show{opacity:1}
+#toast.err{border-color:var(--red);color:var(--red)}
+footer{margin-top:26px;color:var(--dim);font-size:13px}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <img alt="Relay" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALAAAACQCAYAAACoG+FoAAAMGUlEQVR42u2de1CU1xnGF1gWF1dYLyABVIgXEEOgqVU02lRjtNXY2tj8YZoab+2Yi61JY6bpNHF0cusl1STWmGmiJtPGSVOrJrXRNLVNsZHYXNB4VxQQBUFx2awLLMvSf/s8zJxvPhFk4fn99/id77Lfvp559uU973E4hBBCCCGEEEIIIYQQQvRkYnrbB3a6nG3/ryPhiHF8rDO2U58nHArHKAyvnli9AqEAFkIBLEQv9MDxia42O+MT+7rxfLcLdFJSX/wfnhgH2hObaLx+IBIEHQm2gvb7r4Cur7oEOq6P03j9lmBInlkzsFAAC6EAFqJjOKPuf1xsbJvJ0yYnJYFu8PtBDxzcH/Sg9AGgXU0J6ImTPaAvJJFnrcPnG+BIBh2KbTF66oAvgOMDzbY8f2/3xJqBhQJYCAWwEFfBdfdP7Olam8LG8f0G9gOdkj0I9C0Fuegxa0Kg/Q0B4/Urz1WBLlgwwjj+8t+bjJ6Zsbr/+fpq4/HyI5XG45FIpFd5Ys3AQgEshAJYiKugy/PAVp6XPS7XKowrKATtSXMZ78fH/Q14vHEI5l1dTTh+We4P0OOmpoDOWnwT6ERPX3tfgBPv98XJYtBtPhz/6BPPgD5Wfgp0fdWltt7kiTUDCwWwEApgIa6CLvdHXMvAZGZngB6akWm8XnrOAOPx8grMqw6ejLUK+35/CPSnu/4KurquFnTeV8Zf0/dxueoM6P6Z2UaPXFd+HPSmbW+CXv3ES8b79TRPrBlYKICFUAAL0R09MHtezvNy/S57XqvaAivixmGeuXU/pr6Xz58HetKsu0CHw1hLEQzgmja7ed+OemKr8SvWrAb959few++D+lxEe18KzcBCFkIIBbAQ0eiBs4cPBZ2eknZNPa+7Evs4LJk+F3TRjDtBW+VdrTxpR7F7/1CkEfSV8zWgv790OeiP9n6M74v6UETbGjvNwEIWQggFsBDdwQNb1Tpk5aHnzc0eaev6vKaM15D1L8DaCO7bMPO2ycbrL/zuPaATvKmg7eZ92aO6Yt22PLDfdxl0s6/W6Ik5T11+Ems97nlwGejKE7gGMNrywpqBhSyEEApgIa6CDq+J4zVucU7qp+vFWoYkT78O3S8QQg/MvcbSc7Het3BGDujt6/egxwx8abzf0oXLjR7ViqCPaie89s5P8mIvt4PkadkDs0fPGolr9sZOGIMe2aLPhGZgIRTAQiiAhTywNQkJ5j0nGM7rcv0vHx+Vj3nk+5+dDnrf8QOgJ+SMBu0ejvW9e587C3rN2s2gOS/sIE/KcP0w522tzre6HsP1wH3T04yeOC8Le70NyBwIuuFiQ1T1H9YMLGQhhFAAC9EdPDDDeV9XUjzokAN7k11sRl1zrs7okV9+/H3Q3AfCsdJBnrgAdGnaBdC8Rs+uJ+VahOOHD4O2W0/M19tZsRP05NpxoG/m2g3KO7On319yBPSeD/eCbtEMLIQCWAgFsJAHbke7PS2ubZsER7ClyXicPe8v37zPON7SMxNcD9zuBVJtRLPvjK3x7Km5fpjzyHFnaR+7SSnG8Zx35jzxik24JvDEzNP4fkorIC/c3eqFNQMLWQghFMBCdIUH7pPkxj0uwq1wnPdt47yvFfU+3MTikS2z0ePO2Qqa+0qwx+VaiZzJQ0Dv2b0fNPcHZtijXi5Hz8v9hO0SDkZAcx6Z87jcH/ibk6aBtso731hbBHreQ0dB/43ez4G3D3YrT6wZWMhCCKEAFqIrPDB73rYwerZIEI87vObrhfz41/bRs9HT/mgMFjOUzsHahXfewjVuZ8pwjVfj0CDowmE5xufhvC/3VbghJdXoefm4FVZ535wxuIYtw2uec/y1dcbj3DuN4XppJob6CztCmoGFUAALBbAQvcADU+2Dy5Ngz/OR562v84H+Ve7DxvNfXLUO9CP3okflPggTp08Bvc+P46fOGGfr+Wta0KOOHWnVzzjVliflvO+Sn+FvAKcb+2DMn/cdWx77dGoJaM4DM9xbjn/zaAYWQgEsFMBC9EQPzL3P2AOlpmDtA/cqY8/LvcgGpHhBJ4/C+lbupxt2XDE+L/cSO7S/FDTvOcF53A2b1oJ+atXvQBcVfQ307h1/An2x+rzx+azu/+3FD4LOzcM+DtwXg5/v8VeX4Ps4gO/TgWnldp5469P4vj7/ADXvqaE8sBAKYKEAFqInemDGm4Yes2DBCOP4w29hvSz3p/3pQ0tB548072HBa8649sCqbwPDtQPsKSPk+XmftbvnLwL9zivP2Lp/NeVZuZ/ynNlTQXO/4rws9OwT3QXGz1dcgfW+U2di77jPt5g9b3frlaYZWMhCCKEAFqIzPLDV377PH8M1bLxHxWv/Mtc2pNWaawXY065Ysxo010bw3/4Zq1qDu+6bAbosaO4bsXzOvA59ATFe1MNozV7rEOwV50zEOWfdK7gmbuLzBcb7ffp2ma3nU39gIRTAQiiARW/0wLwGive8YM/LnvjRn7wO+jcvYO8yq74FJbuxT8OS6XONntBqL2JmaEYm6MIFg9EDr682ft5bp92BF2yssXX/tHj8DTD3gULQvMcH1w9707CfMdeStPnM9399FfYb5rxvJBjq1gGsGVjIQgihABaiMzwwU3miCnR4M/VGK0oxet585xzQvAeEMxHzuB+dwH3fuPeXXbjPwjRaE3e7B68/4QVzXjXBpudluM/DY977QX9yGK9f7ai15an7FpjX7FWdOYeeNxKJiaYA1gwsZCGEUAAL0RkemP8WzmvkuB54wlRzXveL8Hb8BxcNoC03uBZgj3Mb6LzY8fiBnC7j/bmvg5WHzAilXdcviPtOfHKyxtbnGx2L38e4ojzQu3b+QzOwEApgIRTAQh7Ypife9ex/wBPvXPmh8fzvLf4WaN7DguF+tVvXl4K+/bGPjR42JQv7AY/ORs/8nuMD0LznxC8W3tulX8g5X8T4PGvWbgb99R/fAjqYcZquON48g1GtSyQUiaoA1gwsZCGEUAAL0RUe2MoTO11O8MTcVyEvy9xHYt9xrH1oLDPndZ9ft8HoqRN86Im5d9rGjX8Bzb3a9pccAc151ImjsFaCazf4fE8afp5ADXr8Q0eOoaelvaJHTB9u6/05cjQDC6EAFkIBLMS19sAMr6Fz9Ym359mI0grsp1tRfBZ0XC6O/+3L20Evy+0HumjGnUbPW0VrznjfOX9DADT3ZeC+DqdKsA9DczN63oQE9MTxbrPn5zV5VrUnDHtyzcBCKICFUAALeeCO066XFtUP/2EH9nlY9I3bQHPe9+i76EEn/PAm4/3//eJnoL+6/GbQU2/NB839d9/YsgM9p0Xe2sqjOhyYtz387lGj581Mx/pfj8tj6/7t8uaUB+b632hbA6cZWMhCCKEAFqI7emArIkHsI8H1vZznDfgw77poDXrmjQ9j/fHAwVjrwHlaK8KN+HxJyehBOQ/McG847nV2cNshW5638hz24ZgybBZ5Xrz/cXp/3PtMM7AQCmAhFMBCOK57DtBqL+bV/5xvPJ899Kn3zXtAcN7VV3MZNO+Dx/13PbGJ6NEjQbqeH3S7PS/KWoye93w99iMuP4J58Fmr8DcAr0Fst8aN3me05301AwtZCCEUwEJcA5zX+wGs1tTt24N7I1vVv3K9Le893NKIx9OH3ACa16Cxpw3F4/lOd5zRM3NtxIGSU6DrHT7j53F5Eoyet92PmnZ9HsIxPTmANQMLBbAQCmAhotEDcx64tQkbBHM9MMO1E2NmjzaObziJtQqhSyGjh+XjtXUXQfOatpTsQUbPfmAzemDeo+LGsTg+3Y371vEeJVa/KTQDC6EAFkIBLET388DsecdOKwQ9eHKy0RNb7d18oRg9L9cy+N1Y/8v1ytw3gvPEVnAe+9XnVoHmXmq8Jq/dF0Z9NkKBZs3AQiiAhVAAC2GPLs8ZWuV9nypeYDz/ySlvgC64G/s+xNXh+JC/xXg97oXGnnrDyidBP/Drp0Enj0TPbbWmr76m2vg8ufn5tjx3fdUl9PA9rN5XM7BQAAuhABaiE7jueWBew8W9vXifOM6D8hqzVrq+P/Cl8f68Jo49MMN9KZif//Ez8KDJKcng+Q/+txh/hHjx/Mqys8bzeU1ftO/zphlYyEIIoQAWQgghhBBCCNHp/A/VaBHQ0SWgdwAAAABJRU5ErkJggg==">
+    <div>
+      <h1>Relay <small>· ключи API</small></h1>
+      <p class="lead">Ключи хранятся только на этом компьютере (файл keys.json, доступ только вам) и применяются сразу, без перезапуска.</p>
+    </div>
+  </header>
+  <div class="banner" id="banner"></div>
+  <div id="list"></div>
+  <footer>Ключи из переменных окружения (если заданы в конфиге) показаны отдельно и здесь не редактируются. Эту вкладку можно закрыть, когда закончишь.</footer>
+</main>
+<div id="toast"></div>
+<script>
+(function(){
+  var LINKS = {
+    anthropic:['https://console.anthropic.com/settings/keys','Anthropic Console'],
+    openai:['https://platform.openai.com/api-keys','OpenAI Platform'],
+    openrouter:['https://openrouter.ai/keys','OpenRouter'],
+    gemini:['https://aistudio.google.com/apikey','Google AI Studio']
+  };
+  var q = new URLSearchParams(location.hash.slice(1));
+  var token = q.get('token') || sessionStorage.getItem('relay_token') || '';
+  if (q.get('token')) { sessionStorage.setItem('relay_token', token); history.replaceState(null, '', location.pathname); }
+
+  function el(tag, cls, text){ var e=document.createElement(tag); if(cls) e.className=cls; if(text!==undefined) e.textContent=text; return e; }
+  function toast(msg, err){ var t=document.getElementById('toast'); t.textContent=msg; t.className='show'+(err?' err':''); clearTimeout(toast.t); toast.t=setTimeout(function(){t.className='';},2600); }
+  function banner(msg){ var b=document.getElementById('banner'); b.textContent=msg; b.style.display=msg?'block':'none'; }
+
+  function api(method, path, body){
+    return fetch(path, {method:method, headers:Object.assign({'Authorization':'Bearer '+token}, body?{'Content-Type':'application/json'}:{}), body: body?JSON.stringify(body):undefined})
+      .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){
+        if(!r.ok){ var e=new Error((j.error&&j.error.message)||('HTTP '+r.status)); e.status=r.status; throw e; }
+        return j; }); });
+  }
+
+  function badge(p){
+    if(!p.needs_key && p.total===0) return el('span','badge','локальный, ключ не нужен');
+    if(p.total===0) return el('span','badge bad','нет ключей');
+    return el('span','badge ok','ключей: '+p.total+(p.available<p.total?' (доступно '+p.available+')':''));
+  }
+
+  function card(p){
+    var c = el('section','card');
+    var h = el('h2'); h.appendChild(document.createTextNode(p.name)); h.appendChild(el('span','kind',p.kind)); h.appendChild(badge(p)); c.appendChild(h);
+    var ul = el('ul','keys');
+    p.stored.forEach(function(k){
+      var li = el('li'); li.appendChild(el('span','hint',k.hint)); li.appendChild(el('span','label',k.label||''));
+      var d = el('button','del','удалить'); d.type='button';
+      d.onclick=function(){ if(!confirm('Удалить ключ '+k.hint+' ('+p.name+')?')) return;
+        api('DELETE','/api/keys/'+encodeURIComponent(p.name)+'/'+encodeURIComponent(k.id)).then(function(){toast('Ключ удалён');load();}).catch(fail); };
+      li.appendChild(d); ul.appendChild(li);
+    });
+    (p.env||[]).forEach(function(e){
+      var li = el('li'); li.appendChild(el('span','env','переменная '+e.name+': '+(e.set?'задана':'не задана'))); ul.appendChild(li);
+    });
+    if(ul.children.length) c.appendChild(ul);
+
+    var f = el('form'); 
+    var key = el('input','key'); key.type='password'; key.placeholder='вставь ключ'; key.autocomplete='off'; key.spellcheck=false;
+    var lbl = el('input','lbl'); lbl.type='text'; lbl.placeholder='метка (необязательно)';
+    var b = el('button',null,'Добавить'); b.type='submit';
+    f.appendChild(key); f.appendChild(lbl); f.appendChild(b);
+    f.onsubmit=function(ev){ ev.preventDefault(); if(!key.value.trim()) return;
+      api('POST','/api/keys',{provider:p.name,key:key.value,label:lbl.value}).then(function(){ key.value=''; lbl.value=''; toast('Ключ сохранён'); load(); }).catch(fail); };
+    c.appendChild(f);
+    if(LINKS[p.name]){ var hl = el('p','hintline'); hl.appendChild(document.createTextNode('Где взять ключ: ')); var a=el('a',null,LINKS[p.name][1]); a.href=LINKS[p.name][0]; a.target='_blank'; a.rel='noopener noreferrer'; hl.appendChild(a); c.appendChild(hl); }
+    return c;
+  }
+
+  function fail(e){ if(e.status===401){ banner('Нет доступа. Открой эту страницу командой «relay keys» или командой /keys в интерфейсе.'); } else { toast(e.message,true); } }
+
+  function load(){
+    if(!token){ banner('Нет токена доступа. Открой эту страницу командой «relay keys» или командой /keys в интерфейсе.'); return; }
+    api('GET','/api/keys').then(function(r){
+      banner('');
+      var list = document.getElementById('list'); list.textContent='';
+      r.providers.forEach(function(p){ list.appendChild(card(p)); });
+    }).catch(fail);
+  }
+  load();
+})();
+</script>
+</body>
+</html>

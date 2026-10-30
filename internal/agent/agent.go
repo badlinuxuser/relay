@@ -49,8 +49,11 @@ func buildSystem(cfg *config.Config, sess *session.Session, agentMode bool) stri
 func providerErrKind(err error) string {
 	var pe *provider.Error
 	if errors.As(err, &pe) {
-		if pe.RateLimited {
+		switch {
+		case pe.RateLimited:
 			return "rate_limit"
+		case pe.NoKey:
+			return "no_key"
 		}
 		return "provider"
 	}

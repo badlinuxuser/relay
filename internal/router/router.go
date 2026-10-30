@@ -20,7 +20,7 @@ type Router struct {
 	usage   *usage.Tracker
 }
 
-func New(cfg *config.Config, tr *usage.Tracker) *Router {
+func New(cfg *config.Config, tr *usage.Tracker, src provider.Source) *Router {
 	r := &Router{
 		cfg:     cfg,
 		clients: map[string]provider.Client{},
@@ -28,7 +28,7 @@ func New(cfg *config.Config, tr *usage.Tracker) *Router {
 		usage:   tr,
 	}
 	for _, p := range cfg.Providers {
-		k := provider.NewKeys(p.APIKeyEnv)
+		k := provider.NewKeys(p.Name, p.APIKeyEnv, src, p.NeedsKey())
 		r.keys[p.Name] = k
 		if p.Kind == "anthropic" {
 			r.clients[p.Name] = provider.NewAnthropic(p.Name, p.BaseURL, k, p.Headers)
@@ -39,13 +39,14 @@ func New(cfg *config.Config, tr *usage.Tracker) *Router {
 	return r
 }
 
-// KeyStats возвращает число ключей провайдера и сколько из них сейчас доступно.
-func (r *Router) KeyStats(name string) (total, available int) {
+// KeyStats возвращает число ключей провайдера, сколько из них сейчас доступно
+// и нужен ли провайдеру ключ вообще.
+func (r *Router) KeyStats(name string) (total, available int, needs bool) {
 	k := r.keys[name]
 	if k == nil {
-		return 0, 0
+		return 0, 0, false
 	}
-	return k.Count(), k.Available()
+	return k.Count(), k.Available(), k.NeedsKey()
 }
 
 // Hint помогает автовыбору режима ("auto").
@@ -168,8 +169,11 @@ func (r *Router) Stream(ctx context.Context, chain []string, req provider.Reques
 			return id, err
 		}
 		tag := "fallback"
-		if pe.RateLimited {
+		switch {
+		case pe.RateLimited:
 			tag = "rate_limit"
+		case pe.NoKey:
+			tag = "no_key"
 		}
 		_ = emit(provider.Event{Kind: provider.EvNotice, Tag: tag,
 			Text: fmt.Sprintf("%s unavailable (%s), falling back to %s", id, shorten(pe.Msg, 80), chain[i+1])})

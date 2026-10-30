@@ -70,6 +70,7 @@ type Error struct {
 	Msg         string
 	RateLimited bool // 429, исчерпана квота или баланс
 	Retryable   bool // имеет смысл попробовать другой ключ или модель
+	NoKey       bool // для провайдера не задан ни один ключ
 }
 
 func (e *Error) Error() string {

@@ -13,79 +13,111 @@ import (
 
 const keyCooldown = 2 * time.Minute
 
-// Keys управляет несколькими ключами одного провайдера (имена env-переменных).
-// Ключ, упёршийся в лимит, отдыхает keyCooldown, пока используется следующий.
+// Source поставляет сохранённые ключи провайдера (хранилище ключей).
+type Source interface {
+	Values(provider string) []string
+}
+
+// Keys управляет ключами одного провайдера: сохранённые в хранилище плюс
+// (необязательно) переменные окружения из конфигурации. Ключ, упёршийся в лимит,
+// отдыхает keyCooldown, пока используется следующий.
 type Keys struct {
+	name     string
+	envs     []string
+	src      Source
+	needsKey bool
+
 	mu    sync.Mutex
-	envs  []string
-	until map[int]time.Time
-	cur   int
+	until map[string]time.Time
+	last  string
 }
 
-func NewKeys(envs []string) *Keys {
-	return &Keys{envs: envs, until: map[int]time.Time{}}
+func NewKeys(name string, envs []string, src Source, needsKey bool) *Keys {
+	return &Keys{name: name, envs: envs, src: src, needsKey: needsKey, until: map[string]time.Time{}}
 }
 
-func (k *Keys) Count() int { return len(k.envs) }
+func (k *Keys) list() []string {
+	var out []string
+	seen := map[string]bool{}
+	add := func(v string) {
+		v = strings.TrimSpace(v)
+		if v != "" && !seen[v] {
+			seen[v] = true
+			out = append(out, v)
+		}
+	}
+	if k.src != nil {
+		for _, v := range k.src.Values(k.name) {
+			add(v)
+		}
+	}
+	for _, e := range k.envs {
+		add(os.Getenv(e))
+	}
+	return out
+}
 
-// Available возвращает число ключей, которые заданы и не на паузе.
+func (k *Keys) NeedsKey() bool { return k.needsKey }
+
+func (k *Keys) Count() int { return len(k.list()) }
+
+// Available возвращает число ключей, которые сейчас не на паузе.
 func (k *Keys) Available() int {
+	list := k.list()
 	k.mu.Lock()
 	defer k.mu.Unlock()
 	n := 0
 	now := time.Now()
-	for i, e := range k.envs {
-		if os.Getenv(e) != "" && !now.Before(k.until[i]) {
+	for _, v := range list {
+		if !now.Before(k.until[v]) {
 			n++
 		}
 	}
 	return n
 }
 
-// Get возвращает ключ и его индекс. Для провайдера без ключей (локальный
-// сервер) возвращает пустую строку и ok = true.
-func (k *Keys) Get() (key string, idx int, ok bool) {
+// Get возвращает ключ. Для локального провайдера без ключей возвращает пустую
+// строку и ok = true. Пока ключ не упёрся в лимит, используется один и тот же.
+func (k *Keys) Get() (string, bool) {
+	list := k.list()
+	if len(list) == 0 {
+		return "", !k.needsKey
+	}
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	if len(k.envs) == 0 {
-		return "", 0, true
+	start := 0
+	for i, v := range list {
+		if v == k.last {
+			start = i
+			break
+		}
 	}
 	now := time.Now()
-	for off := 0; off < len(k.envs); off++ {
-		i := (k.cur + off) % len(k.envs)
-		v := os.Getenv(k.envs[i])
-		if v != "" && !now.Before(k.until[i]) {
-			k.cur = i
-			return v, i, true
+	for off := 0; off < len(list); off++ {
+		v := list[(start+off)%len(list)]
+		if !now.Before(k.until[v]) {
+			k.last = v
+			return v, true
 		}
 	}
-	return "", 0, false
+	return "", false
 }
 
-func (k *Keys) Cooldown(i int) {
+func (k *Keys) Cooldown(key string) {
 	k.mu.Lock()
-	k.until[i] = time.Now().Add(keyCooldown)
+	k.until[key] = time.Now().Add(keyCooldown)
 	k.mu.Unlock()
-}
-
-func (k *Keys) anySet() bool {
-	for _, e := range k.envs {
-		if os.Getenv(e) != "" {
-			return true
-		}
-	}
-	return false
 }
 
 // DoWithKeys выполняет attempt с ключом; при лимите переключается на следующий.
 func DoWithKeys(k *Keys, name string, emit func(Event) error, attempt func(key string) error) error {
 	tried := 0
 	for {
-		key, idx, ok := k.Get()
+		key, ok := k.Get()
 		if !ok {
-			if !k.anySet() {
-				return &Error{Provider: name, Retryable: true,
-					Msg: "API key not set (env: " + strings.Join(k.envs, ", ") + ")"}
+			if k.Count() == 0 {
+				return &Error{Provider: name, NoKey: true, Retryable: true,
+					Msg: "no API key for " + name + ". Add one: run `relay keys`"}
 			}
 			return &Error{Provider: name, RateLimited: true, Retryable: true,
 				Msg: "all API keys are rate limited"}
@@ -93,11 +125,11 @@ func DoWithKeys(k *Keys, name string, emit func(Event) error, attempt func(key s
 		err := attempt(key)
 		var pe *Error
 		if err != nil && errors.As(err, &pe) && pe.RateLimited {
-			k.Cooldown(idx)
+			k.Cooldown(key)
 			tried++
-			if k.Count() > 1 && tried < k.Count() {
+			if tried < k.Count() {
 				_ = emit(Event{Kind: EvNotice, Tag: "key_switch",
-					Text: fmt.Sprintf("%s: key %d hit its limit, switching to the next one", name, idx+1)})
+					Text: fmt.Sprintf("%s: a key hit its limit, switching to the next one", name)})
 				continue
 			}
 		}

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -9,11 +10,36 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-const sidebarW = 38
+const (
+	sidebarW   = 48
+	transTicks = 14 // длительность анимации смены режима, тиков по 120 мс
+)
 
 var spin = []string{"·", "✢", "✳", "✶", "✻", "✽", "✻", "✶", "✳", "✢"}
 
-func (m model) showSidebar() bool { return m.width >= 100 }
+func (m model) showSidebar() bool { return m.width >= 104 }
+
+// transition возвращает прогресс анимации смены режима (0..1) и признак «идёт».
+func (m model) transition() (float64, bool) {
+	if m.transFrom == "" {
+		return 1, false
+	}
+	d := m.frame - m.transStart
+	if d >= transTicks {
+		return 1, false
+	}
+	x := float64(d) / transTicks
+	return 1 - math.Pow(1-x, 3), true
+}
+
+// currentTheme это тема режима; во время смены режима цвета плавно перетекают.
+func (m model) currentTheme() theme {
+	to := themeFor(m.mode, m.frame)
+	if p, on := m.transition(); on {
+		return blendTheme(themeFor(m.transFrom, m.frame), to, p)
+	}
+	return to
+}
 
 func (m model) mainWidth() int {
 	if m.showSidebar() {
@@ -206,10 +232,22 @@ func (m model) sidebar(w, h int, th theme, st styles) []string {
 		set = m.sprites["small"]
 	}
 	mood := m.mc.frame(now)
-	if sh := set.height(mood); sh > 0 && h >= sh+16 {
-		for _, l := range strings.Split(set.render(mood, m.frame, th.bg), "\n") {
-			lines = append(lines, " "+l)
+	if cols, rows := set.size(mood); rows > 0 && h >= rows+13 {
+		var art string
+		if p, on := m.transition(); on {
+			scan := mixHex(th.accent, "#FFFFFF", 0.6)
+			art = renderSprite(set, m.sprites[m.transFrom], mood, m.frame, th.card, int(p*float64(cols)), scan)
+		} else {
+			art = renderSprite(set, nil, mood, m.frame, th.card, -1, "")
 		}
+		cardBg := lipgloss.NewStyle().Background(lipgloss.Color(th.card))
+		side := cardBg.Render(" ")
+		blank := cardBg.Render(strings.Repeat(" ", cols+2))
+		lines = append(lines, " "+blank)
+		for _, l := range strings.Split(art, "\n") {
+			lines = append(lines, " "+side+l+side)
+		}
+		lines = append(lines, " "+blank)
 	}
 
 	label, say := m.mc.caption(now)
@@ -259,17 +297,20 @@ func (m model) sidebar(w, h int, th theme, st styles) []string {
 	if m.status != nil {
 		var keyLines []string
 		for _, p := range m.status.Providers {
-			if p.Keys == 0 {
+			if p.Keys == 0 && !p.NeedsKey {
 				continue
 			}
-			style := st.text
-			if p.KeysAvailable == 0 {
-				style = st.red
+			switch {
+			case p.Keys == 0:
+				keyLines = append(keyLines, " "+st.red.Render(fmt.Sprintf("%s  нет ключа", p.Name)))
+			case p.KeysAvailable == 0:
+				keyLines = append(keyLines, " "+st.red.Render(fmt.Sprintf("%s  %d/%d", p.Name, p.KeysAvailable, p.Keys)))
+			default:
+				keyLines = append(keyLines, " "+st.text.Render(fmt.Sprintf("%s  %d/%d", p.Name, p.KeysAvailable, p.Keys)))
 			}
-			keyLines = append(keyLines, " "+style.Render(fmt.Sprintf("%s  %d/%d", p.Name, p.KeysAvailable, p.Keys)))
 		}
 		if len(keyLines) > 0 {
-			lines = append(lines, sep, " "+st.gray.Render("ключи"))
+			lines = append(lines, sep, " "+st.gray.Render("ключи")+"  "+st.dim.Render("/keys: добавить"))
 			lines = append(lines, keyLines...)
 		}
 	}
@@ -287,8 +328,12 @@ func (m model) header(st styles) string {
 	if m.sess != nil && m.sess.Agent {
 		agent = "вкл"
 	}
+	modeLabel := st.accent.Render(m.mode)
+	if _, on := m.transition(); on {
+		modeLabel = st.dim.Render(m.transFrom) + st.dim.Render(" → ") + st.accentBold.Render(m.mode)
+	}
 	s := " " + st.accentBold.Render("◆ Relay") + "  " +
-		st.dim.Render("режим ") + st.accent.Render(m.mode) + "  " +
+		st.dim.Render("режим ") + modeLabel + "  " +
 		st.dim.Render("агент ") + st.text.Render(agent)
 	if m.cl == nil {
 		s += st.dim.Render("  подключение…")
@@ -336,7 +381,7 @@ func (m model) View() string {
 	if m.width == 0 || m.height == 0 {
 		return ""
 	}
-	th := themeFor(m.mode, m.frame)
+	th := m.currentTheme()
 	st := newStyles(th)
 	bgSeq := bgSequence(th.bg)
 

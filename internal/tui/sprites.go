@@ -12,9 +12,11 @@ import (
 )
 
 // Спрайты собираются tools/sprites/build.py из листов в assets/sheets.
-// Каждая ячейка терминала это символ Брайля (блок 2x4 пикселя) с цветом точек (fg)
-// и цветом фона (bg). Тема maximum: «акцентные» цвета палитры перекрашиваются
-// в радугу, оттенок зависит от позиции ячейки и времени.
+// Кадр это сетка пикселей; два пикселя по вертикали рисуются одной ячейкой
+// терминала символом "▀" (верх = цвет текста, низ = цвет фона), поэтому пиксели
+// квадратные и чёткие. Прозрачные пиксели показывают цвет карточки.
+// Тема maximum: «акцентные» цвета палитры перекрашиваются в радугу, оттенок
+// зависит от позиции пикселя и времени.
 
 //go:embed sprites/*.json
 var spriteFS embed.FS
@@ -27,9 +29,7 @@ func (c rgb) hex() string { return fmt.Sprintf("#%02x%02x%02x", c.r, c.g, c.b) }
 
 type frame struct {
 	w, h int
-	ch   [][]rune
-	fg   []string
-	bg   []string
+	px   []string
 }
 
 type spriteSet struct {
@@ -46,9 +46,7 @@ type spriteFile struct {
 	Frames  map[string]struct {
 		W  int      `json:"w"`
 		H  int      `json:"h"`
-		Ch []string `json:"ch"`
-		Fg []string `json:"fg"`
-		Bg []string `json:"bg"`
+		Px []string `json:"px"`
 	} `json:"frames"`
 }
 
@@ -83,11 +81,7 @@ func loadSprites() map[string]*spriteSet {
 			s.accent[a] = true
 		}
 		for fname, fr := range f.Frames {
-			nf := &frame{w: fr.W, h: fr.H, fg: fr.Fg, bg: fr.Bg}
-			for _, row := range fr.Ch {
-				nf.ch = append(nf.ch, []rune(row))
-			}
-			s.frames[fname] = nf
+			s.frames[fname] = &frame{w: fr.W, h: fr.H, px: fr.Px}
 		}
 		out[name] = s
 	}
@@ -149,7 +143,12 @@ func hsvToHex(h, s, v float64) string {
 	return fmt.Sprintf("#%02x%02x%02x", uint8(r*255), uint8(g*255), uint8(b*255))
 }
 
-func (s *spriteSet) color(ci byte, x, y, t int) string {
+// pixel возвращает цвет пикселя (x, y) кадра или "" для прозрачного.
+func (s *spriteSet) pixel(f *frame, x, y, t int) string {
+	if y >= len(f.px) || x >= len(f.px[y]) {
+		return ""
+	}
+	ci := f.px[y][x]
 	if ci == '.' {
 		return ""
 	}
@@ -166,20 +165,39 @@ func (s *spriteSet) color(ci byte, x, y, t int) string {
 	return c.hex()
 }
 
-// render возвращает кадр как многострочную строку с ANSI-цветами.
-// panelBg это цвет фона интерфейса для прозрачных ячеек.
-func (s *spriteSet) render(name string, t int, panelBg string) string {
-	f := s.frames[name]
-	if f == nil {
-		f = s.frames["calm"]
+func (s *spriteSet) frame(name string) *frame {
+	if f := s.frames[name]; f != nil {
+		return f
 	}
+	return s.frames["calm"]
+}
+
+// size возвращает ширину в ячейках и высоту в строках терминала.
+func (s *spriteSet) size(name string) (cols, rows int) {
+	f := s.frame(name)
+	if f == nil {
+		return 0, 0
+	}
+	return f.w, f.h / 2
+}
+
+// renderSprite рисует кадр name набором cur. Если old != nil, идёт переход между
+// режимами: колонки левее boundary берутся из cur, правее из old, а на границе
+// рисуется яркая линия цвета scan. card это цвет фона карточки.
+func renderSprite(cur, old *spriteSet, name string, t int, card string, boundary int, scan string) string {
+	f := cur.frame(name)
 	if f == nil {
 		return ""
 	}
+	var of *frame
+	if old != nil {
+		of = old.frame(name)
+	}
 	var sb strings.Builder
-	for y := 0; y < f.h && y < len(f.ch); y++ {
+	for y := 0; y+1 < f.h; y += 2 {
 		var run strings.Builder
-		curFg, curBg := "\x00", "\x00"
+		curKey := ""
+		var curFg, curBg string
 		flush := func() {
 			if run.Len() == 0 {
 				return
@@ -191,33 +209,37 @@ func (s *spriteSet) render(name string, t int, panelBg string) string {
 			sb.WriteString(st.Render(run.String()))
 			run.Reset()
 		}
-		for x := 0; x < f.w && x < len(f.ch[y]); x++ {
-			ch := f.ch[y][x]
-			fg := s.color(f.fg[y][x], x, y, t)
-			bg := s.color(f.bg[y][x], x, y, t)
-			if bg == "" {
-				bg = panelBg
+		for x := 0; x < f.w; x++ {
+			var top, bot string
+			switch {
+			case old != nil && of != nil && x == boundary:
+				top, bot = scan, scan
+			case old != nil && of != nil && x > boundary:
+				top, bot = old.pixel(of, x, y, t), old.pixel(of, x, y+1, t)
+			default:
+				top, bot = cur.pixel(f, x, y, t), cur.pixel(f, x, y+1, t)
 			}
-			if ch == ' ' {
-				fg = ""
+			ch, fg, bg := " ", "", card
+			switch {
+			case top == "" && bot == "":
+			case bot == "":
+				ch, fg = "▀", top
+			case top == "":
+				ch, fg = "▄", bot
+			default:
+				ch, fg, bg = "▀", top, bot
 			}
-			if fg != curFg || bg != curBg {
+			key := ch + fg + bg
+			if key != curKey {
 				flush()
-				curFg, curBg = fg, bg
+				curKey, curFg, curBg = key, fg, bg
 			}
-			run.WriteRune(ch)
+			run.WriteString(ch)
 		}
 		flush()
-		if y < f.h-1 {
+		if y+2 < f.h {
 			sb.WriteByte('\n')
 		}
 	}
 	return sb.String()
-}
-
-func (s *spriteSet) height(name string) int {
-	if f := s.frames[name]; f != nil {
-		return f.h
-	}
-	return 0
 }

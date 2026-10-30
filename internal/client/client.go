@@ -1,4 +1,4 @@
-// Package client это HTTP-клиент к relayd для интерфейсов. Умеет найти уже
+// Package client это HTTP-клиент к бэкенду Relay для интерфейсов. Умеет найти уже
 // запущенный бэкенд (daemon.json) или запустить его сам.
 package client
 
@@ -50,32 +50,31 @@ func readInfo(home string) (proto.DaemonInfo, error) {
 	return info, err
 }
 
-func (c *Client) healthy() bool {
+// health возвращает признак «бэкенд отвечает» и его версию.
+func (c *Client) health() (bool, string) {
 	hc := &http.Client{Timeout: 1500 * time.Millisecond}
 	resp, err := hc.Get(c.Base + "/api/health")
 	if err != nil {
-		return false
+		return false, ""
 	}
-	resp.Body.Close()
-	return resp.StatusCode == 200
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return false, ""
+	}
+	var v struct {
+		Version string `json:"version"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&v)
+	return true, v.Version
 }
 
-// findDaemon ищет relayd рядом с исполняемым файлом, затем в PATH.
-func findDaemon() (string, error) {
-	name := "relayd"
-	if exe, err := os.Executable(); err == nil {
-		cand := filepath.Join(filepath.Dir(exe), name)
-		if _, err := os.Stat(cand); err == nil {
-			return cand, nil
-		}
-		if _, err := os.Stat(cand + ".exe"); err == nil {
-			return cand + ".exe", nil
-		}
-	}
-	return exec.LookPath(name)
+func (c *Client) healthy() bool {
+	ok, ver := c.health()
+	return ok && ver == proto.Version
 }
 
-// Connect подключается к работающему relayd или запускает его.
+// Connect подключается к работающему бэкенду или запускает его в фоне
+// (тот же исполняемый файл с подкомандой daemon).
 func Connect(spawn bool) (*Client, error) {
 	home, err := config.Home()
 	if err != nil {
@@ -83,26 +82,32 @@ func Connect(spawn bool) (*Client, error) {
 	}
 	if info, err := readInfo(home); err == nil {
 		c := newClient(info)
-		if c.healthy() {
-			return c, nil
+		if ok, ver := c.health(); ok {
+			if ver == proto.Version {
+				return c, nil
+			}
+			// запущен бэкенд другой версии (например, после обновления): останавливаем
+			c.Shutdown()
+			time.Sleep(800 * time.Millisecond)
 		}
 	}
 	if !spawn {
-		return nil, errors.New("relayd is not running (start it or drop --no-spawn)")
+		return nil, errors.New("backend is not running (run `relay`, or drop --no-spawn)")
 	}
-	bin, err := findDaemon()
+	exe, err := os.Executable()
 	if err != nil {
-		return nil, errors.New("relayd binary not found next to relay or in PATH")
+		return nil, err
 	}
 	_ = os.Remove(filepath.Join(home, "daemon.json"))
-	cmd := exec.Command(bin)
+	cmd := exec.Command(exe, "daemon")
+	detach(cmd)
 	logf, lerr := os.OpenFile(filepath.Join(home, "relayd.out"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if lerr == nil {
 		cmd.Stdout, cmd.Stderr = logf, logf
 		defer logf.Close()
 	}
 	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("cannot start relayd: %w", err)
+		return nil, fmt.Errorf("cannot start backend: %w", err)
 	}
 	go func() { _ = cmd.Wait() }()
 
@@ -117,7 +122,7 @@ func Connect(spawn bool) (*Client, error) {
 			}
 		}
 	}
-	msg := "relayd did not start in time"
+	msg := "backend did not start in time"
 	if b, err := os.ReadFile(filepath.Join(home, "relayd.out")); err == nil && len(bytes.TrimSpace(b)) > 0 {
 		msg += ": " + strings.TrimSpace(string(b))
 	}

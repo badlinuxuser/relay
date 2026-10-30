@@ -20,20 +20,21 @@ type theme struct {
 	accent string
 	soft   string
 	bg     string
+	card   string // фон карточки маскота: чуть светлее bg, чтобы чёрный капюшон читался
 }
 
 // themeFor вычисляет тему; для maximum цвета плывут по радуге вместе с кадром t.
 func themeFor(mode string, t int) theme {
 	switch mode {
 	case "medium":
-		return theme{"medium", "#A07CFF", "#5B3FB0", "#110E1F"}
+		return withCard(theme{name: "medium", accent: "#A07CFF", soft: "#5B3FB0", bg: "#110E1F"})
 	case "hard":
-		return theme{"hard", "#FF4D6A", "#A02A40", "#180C11"}
+		return withCard(theme{name: "hard", accent: "#FF4D6A", soft: "#A02A40", bg: "#180C11"})
 	case "maximum":
 		h := math.Mod(float64(t)*0.012, 1)
-		return theme{"maximum", hsvToHex(h, 0.62, 1), hsvToHex(h+0.5, 0.45, 0.62), "#0F1014"}
+		return withCard(theme{name: "maximum", accent: hsvToHex(h, 0.62, 1), soft: hsvToHex(h+0.5, 0.45, 0.62), bg: "#0F1014"})
 	default:
-		return theme{"small", "#67DD5D", "#2E8B3E", "#0C1510"}
+		return withCard(theme{name: "small", accent: "#67DD5D", soft: "#2E8B3E", bg: "#0C1510"})
 	}
 }
 
@@ -64,4 +65,26 @@ func bgSequence(bg string) string {
 		}
 	}
 	return ""
+}
+
+func withCard(t theme) theme {
+	t.card = mixHex(t.bg, "#FFFFFF", 0.09)
+	return t
+}
+
+// mixHex смешивает два цвета: p = 0 даёт a, p = 1 даёт b.
+func mixHex(a, b string, p float64) string {
+	ca, cb := parseHex(a), parseHex(b)
+	m := func(x, y uint8) uint8 { return uint8(float64(x) + (float64(y)-float64(x))*p) }
+	return rgb{m(ca.r, cb.r), m(ca.g, cb.g), m(ca.b, cb.b)}.hex()
+}
+
+// blendTheme плавно переводит тему from в тему to (p от 0 до 1).
+func blendTheme(from, to theme, p float64) theme {
+	return withCard(theme{
+		name:   to.name,
+		accent: mixHex(from.accent, to.accent, p),
+		soft:   mixHex(from.soft, to.soft, p),
+		bg:     mixHex(from.bg, to.bg, p),
+	})
 }

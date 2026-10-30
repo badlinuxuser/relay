@@ -1,4 +1,4 @@
-.PHONY: all build run daemon sprites vet tidy clean dist
+.PHONY: all build run install uninstall sprites vet tidy clean dist
 
 all: build
 
@@ -7,15 +7,18 @@ tidy:
 
 build: tidy
 	mkdir -p bin
-	go build -o bin/relayd ./cmd/relayd
 	go build -o bin/relay ./cmd/relay
 
-# запуск интерфейса (relayd стартует сам, если он ещё не запущен)
+# запуск без установки
 run: build
-	PATH="$$PWD/bin:$$PATH" ./bin/relay
+	./bin/relay
 
-daemon: build
-	./bin/relayd
+# собрать и добавить в PATH (Linux: ~/.local/bin, Windows: %LOCALAPPDATA%\\Programs\\relay)
+install: build
+	./bin/relay install
+
+uninstall:
+	./bin/relay uninstall
 
 # пересобрать спрайты маскота из assets/sheets (нужны Pillow и numpy)
 sprites:
@@ -27,10 +30,8 @@ vet:
 # кросс-сборка под Linux и Windows
 dist: tidy
 	mkdir -p dist
-	GOOS=linux   GOARCH=amd64 go build -o dist/relay-linux-amd64/relay   ./cmd/relay
-	GOOS=linux   GOARCH=amd64 go build -o dist/relay-linux-amd64/relayd  ./cmd/relayd
-	GOOS=windows GOARCH=amd64 go build -o dist/relay-windows-amd64/relay.exe  ./cmd/relay
-	GOOS=windows GOARCH=amd64 go build -o dist/relay-windows-amd64/relayd.exe ./cmd/relayd
+	GOOS=linux   GOARCH=amd64 go build -o dist/relay-linux-amd64/relay ./cmd/relay
+	GOOS=windows GOARCH=amd64 go build -o dist/relay-windows-amd64/relay.exe ./cmd/relay
 
 clean:
 	rm -rf bin dist
