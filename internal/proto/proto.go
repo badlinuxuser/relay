@@ -145,6 +145,9 @@ type ModeInfo struct {
 type ProcInfo struct {
 	Name  string   `json:"name"`
 	State string   `json:"state"` // stopped | starting | ready | failed
+	// External: the process is running but was not started by Relay (for example a
+	// system-wide Ollama service). Relay uses it as is and never stops it.
+	External bool `json:"external,omitempty"`
 	Error string   `json:"error,omitempty"`
 	PID   int      `json:"pid,omitempty"`
 	Log   []string `json:"log,omitempty"`

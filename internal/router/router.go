@@ -18,6 +18,7 @@ type Router struct {
 	clients map[string]provider.Client
 	keys    map[string]*provider.Keys
 	usage   *usage.Tracker
+	cat     *catalog
 }
 
 func New(cfg *config.Config, tr *usage.Tracker, src provider.Source) *Router {
@@ -26,6 +27,7 @@ func New(cfg *config.Config, tr *usage.Tracker, src provider.Source) *Router {
 		clients: map[string]provider.Client{},
 		keys:    map[string]*provider.Keys{},
 		usage:   tr,
+		cat:     newCatalog(),
 	}
 	for _, p := range cfg.Providers {
 		k := provider.NewKeys(p.Name, p.APIKeyEnv, src, p.NeedsKey())
@@ -67,8 +69,18 @@ func (r *Router) autoMode(h Hint) string {
 	}
 }
 
+// keyless reports whether the model's provider needs an API key but has none yet.
+// Such models are skipped silently, so a user with only one provider configured
+// does not get a "falling back" notice for every provider they never set up.
+func (r *Router) keyless(m config.Model) bool {
+	k := r.keys[m.Provider]
+	return k != nil && k.NeedsKey() && k.Count() == 0
+}
+
 // Resolve строит цепочку моделей: явно выбранная первой, затем модели режима.
 // Если нужны инструменты, модели без поддержки инструментов пропускаются.
+// Модели провайдеров, для которых не добавлен ключ, пропускаются тоже (если
+// не осталось ничего другого, цепочка строится как есть, чтобы показать ошибку «нет ключа»).
 func (r *Router) Resolve(mode, model string, needTools bool, h Hint) (chain []string, usedMode string, err error) {
 	if mode == "" || mode == "auto" {
 		mode = r.autoMode(h)
@@ -86,17 +98,29 @@ func (r *Router) Resolve(mode, model string, needTools bool, h Hint) (chain []st
 		return false
 	}
 	if model != "" && model != "auto" {
-		if _, ok := r.cfg.ModelByID(model); !ok {
+		if _, ok := r.ModelByID(model); !ok {
 			return nil, mode, fmt.Errorf("unknown model %q", model)
 		}
 		chain = append(chain, model)
 	}
+	explicit := len(chain)
+	var skipped []string
 	for _, id := range md.Models {
 		m, ok := r.cfg.ModelByID(id)
 		if !ok || has(id) || (needTools && !m.Tools) {
 			continue
 		}
+		if r.keyless(m) || !r.available(m) {
+			skipped = append(skipped, id)
+			continue
+		}
 		chain = append(chain, id)
+	}
+	// Last-resort fallbacks from every provider the user has set up (keys or local server).
+	chain = append(chain, r.autoPool(mode, chain)...)
+	if len(chain) == explicit {
+		// Nothing usable at all: keep the configured models so the user sees why (no key, not installed).
+		chain = append(chain, skipped...)
 	}
 	if len(chain) == 0 {
 		return nil, mode, fmt.Errorf("no suitable models for mode %q", mode)
@@ -121,7 +145,7 @@ func estimateIn(msgs []provider.Message) int {
 func (r *Router) Stream(ctx context.Context, chain []string, req provider.Request, emit func(provider.Event) error) (string, error) {
 	var lastErr error = errors.New("no models to try")
 	for i, id := range chain {
-		m, _ := r.cfg.ModelByID(id)
+		m, _ := r.ModelByID(id)
 		cl := r.clients[m.Provider]
 		if cl == nil {
 			lastErr = fmt.Errorf("provider %q is not available", m.Provider)

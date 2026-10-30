@@ -79,6 +79,7 @@ func Run(args []string) int {
 
 	srv := server.New(cfg, home, token)
 	srv.StartMCP()
+	srv.Discover()
 	for _, p := range cfg.Processes {
 		if p.AutoStart {
 			if err := srv.Procs().Start(p.Name); err != nil {

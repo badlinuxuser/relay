@@ -19,23 +19,23 @@ func cmdKeys() int {
 		return 1
 	}
 	if cl.Spawned {
-		fmt.Println("Бэкенд запущен в фоне (остановить: relay stop)")
+		fmt.Println("Backend started in the background (stop it with: relay stop)")
 	}
 	page := cl.Base + "/ui/keys"
 	full := page + "#token=" + cl.Token
 	if err := browser.Open(full); err != nil {
-		fmt.Println("Не удалось открыть браузер. Открой вручную:")
+		fmt.Println("Could not open the browser. Open it manually:")
 		fmt.Println(full)
 		return 0
 	}
-	fmt.Println("Открыл страницу ключей:", page)
+	fmt.Println("Opened the keys page:", page)
 	return 0
 }
 
 func cmdStatus() int {
 	cl, err := client.Connect(false)
 	if err != nil {
-		fmt.Println("Бэкенд не запущен. Запусти интерфейс командой: relay")
+		fmt.Println("The backend is not running. Start the interface with: relay")
 		return 1
 	}
 	st, err := cl.Status()
@@ -43,31 +43,35 @@ func cmdStatus() int {
 		fmt.Fprintln(os.Stderr, "relay:", err)
 		return 1
 	}
-	fmt.Printf("Relay %s · бэкенд %s · папка %s\n\n", st.Version, cl.Base, st.Workspace)
+	fmt.Printf("Relay %s · backend %s · folder %s\n\n", st.Version, cl.Base, st.Workspace)
 
-	fmt.Println("Режимы:")
+	fmt.Println("Modes:")
 	for _, m := range st.Modes {
 		fmt.Printf("  %-8s %s\n", m.Name, strings.Join(m.Models, " → "))
 	}
 
-	fmt.Println("\nПровайдеры:")
+	fmt.Println("\nProviders:")
 	for _, p := range st.Providers {
 		state := ""
 		switch {
 		case !p.NeedsKey && p.Keys == 0:
-			state = "локальный, ключ не нужен"
+			state = "local, no key needed"
 		case p.Keys == 0:
-			state = "нет ключа (relay keys)"
+			state = "no key (relay keys)"
 		default:
-			state = fmt.Sprintf("ключей: %d (доступно %d)", p.Keys, p.KeysAvailable)
+			state = fmt.Sprintf("keys: %d (available %d)", p.Keys, p.KeysAvailable)
 		}
 		fmt.Printf("  %-12s %-10s %s\n", p.Name, p.Kind, state)
 	}
 
 	if len(st.Processes) > 0 {
-		fmt.Println("\nПроцессы:")
+		fmt.Println("\nProcesses:")
 		for _, p := range st.Processes {
-			fmt.Printf("  %-12s %s\n", p.Name, p.State)
+			state := p.State
+			if p.External {
+				state = "running (external)"
+			}
+			fmt.Printf("  %-12s %s\n", p.Name, state)
 		}
 	}
 	printUsage(st.Usage)
@@ -83,21 +87,21 @@ func printUsage(u map[string]proto.UsageEntry) {
 		names = append(names, n)
 	}
 	sort.Strings(names)
-	fmt.Println("\nРасход:")
+	fmt.Println("\nUsage:")
 	for _, n := range names {
 		e := u[n]
-		fmt.Printf("  %-14s запросов %-5d токенов %d / %d  $%.4f\n", n, e.Requests, e.In, e.Out, e.Cost)
+		fmt.Printf("  %-14s requests %-5d tokens %d / %d  $%.4f\n", n, e.Requests, e.In, e.Out, e.Cost)
 	}
 }
 
 func cmdStop() int {
 	cl, err := client.Connect(false)
 	if err != nil {
-		fmt.Println("Бэкенд не запущен")
+		fmt.Println("The backend is not running")
 		return 0
 	}
 	cl.Shutdown()
-	fmt.Println("Бэкенд остановлен")
+	fmt.Println("Backend stopped")
 	return 0
 }
 

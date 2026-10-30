@@ -66,7 +66,7 @@ func (s *Server) handleGatewayModels(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	data = append(data, item{ID: "auto", Object: "model", OwnedBy: "relay"})
-	for _, m := range s.cfg.Models {
+	for _, m := range s.router.Models() {
 		data = append(data, item{ID: m.ID, Object: "model", OwnedBy: m.Provider})
 	}
 	writeJSON(w, 200, map[string]any{"object": "list", "data": data})
@@ -90,7 +90,7 @@ func (s *Server) handleGatewayChat(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(req.Model, "relay-"):
 		mode = strings.TrimPrefix(req.Model, "relay-")
 	default:
-		if _, ok := s.cfg.ModelByID(req.Model); ok {
+		if _, ok := s.router.ModelByID(req.Model); ok {
 			model = req.Model
 		} else {
 			mode = "auto"

@@ -13,18 +13,18 @@ import (
 	"relay/internal/proto"
 )
 
-const helpText = `Команды:
-  /mode small|medium|hard|maximum   режим (цвет интерфейса и цепочка моделей); короче: /small /medium /hard /max
-  /keys                             страница для ввода и хранения ключей API (откроется в браузере)
-  /model <id>|auto                  выбрать модель или вернуть выбор по режиму
-  /agent on|off                     режим агента (инструменты: файлы, shell, веб, MCP)
-  /preset <имя>|none                системный промпт
-  /compare <id> <id> ... <текст>    один промпт на несколько моделей
-  /new                              новая сессия
-  /sessions   /load <id>            список и загрузка сессий
-  /start <имя>   /stop <имя>        локальные процессы (лаунчер)
+const helpText = `Commands:
+  /mode small|medium|hard|maximum   mode (UI color and model chain); shortcuts: /small /medium /hard /max
+  /keys                             page for adding and storing API keys (opens in your browser)
+  /model <id>|auto                  pick a model, or go back to the mode's own choice
+  /agent on|off                     agent mode (tools: files, shell, web, MCP)
+  /preset <name>|none               system prompt
+  /compare <id> <id> ... <text>     send one prompt to several models
+  /new                              new session
+  /sessions   /load <id>            list and load sessions
+  /start <name>   /stop <name>      local processes (launcher)
   /clear   /quit
-Клавиши: ctrl+t режим · ctrl+a агент · ctrl+n новая · esc стоп · pgup/pgdn прокрутка`
+Keys: ctrl+t mode · ctrl+a agent · ctrl+n new · esc stop · pgup/pgdn scroll`
 
 func statusCmd(cl *client.Client) tea.Cmd {
 	return func() tea.Msg {
@@ -90,7 +90,7 @@ func loadCmd(cl *client.Client, query string) tea.Cmd {
 				return sessionMsg{sess: si, reset: true}
 			}
 		}
-		return errMsg{fmt.Errorf("сессия %q не найдена", query)}
+		return errMsg{fmt.Errorf("session %q not found", query)}
 	}
 }
 
@@ -125,7 +125,7 @@ func (m model) command(line string) (tea.Model, tea.Cmd) {
 	cmd, args := fields[0], fields[1:]
 	needConn := func() bool {
 		if m.cl == nil || m.sess == nil {
-			m.addNotice("Ещё не подключился к бэкенду")
+			m.addNotice("Not connected to the backend yet")
 			return false
 		}
 		return true
@@ -157,7 +157,7 @@ func (m model) command(line string) (tea.Model, tea.Cmd) {
 				return m, cm
 			}
 		}
-		m.addError("Режим " + mode + " не настроен в конфигурации")
+		m.addError("Mode " + mode + " is not configured")
 		return m, nil
 
 	case "/keys":
@@ -165,17 +165,17 @@ func (m model) command(line string) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		url := m.cl.Base + "/ui/keys#token=" + m.cl.Token
-		m.mc.react("noticed", 2*time.Second, "Ключи в браузере")
+		m.mc.react("noticed", 2*time.Second, "")
 		if err := browser.Open(url); err != nil {
-			m.addNotice("Не удалось открыть браузер. Открой вручную: " + url)
+			m.addNotice("Could not open the browser. Open it manually: " + url)
 		} else {
-			m.addNotice("Открыл страницу ключей в браузере. Добавь ключи и возвращайся: они применяются сразу.")
+			m.addNotice("Opened the keys page in your browser. Add your keys and come back: they apply immediately.")
 		}
 		return m, nil
 
 	case "/mode":
 		if len(args) != 1 {
-			m.addNotice("Режим сейчас: " + m.mode + ". Использование: /mode " + strings.Join(m.modeNames(), "|"))
+			m.addNotice("Current mode: " + m.mode + ". Usage: /mode " + strings.Join(m.modeNames(), "|"))
 			return m, nil
 		}
 		for _, n := range m.modeNames() {
@@ -184,7 +184,7 @@ func (m model) command(line string) (tea.Model, tea.Cmd) {
 				return m, c
 			}
 		}
-		m.addError("Неизвестный режим " + args[0])
+		m.addError("Unknown mode " + args[0])
 		return m, nil
 
 	case "/model":
@@ -192,20 +192,17 @@ func (m model) command(line string) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if len(args) != 1 {
-			var ids []string
-			if m.status != nil {
-				for _, md := range m.status.Models {
-					ids = append(ids, md.ID)
-				}
-			}
-			m.addNotice("Использование: /model <id>|auto. Доступны: " + strings.Join(ids, ", "))
+			// open the model list above the input
+			m.input.SetValue("/model ")
+			m.input.CursorEnd()
+			m.sel = 0
 			return m, nil
 		}
 		v := args[0]
 		if v == "auto" {
 			v = ""
 		}
-		m.addNotice("Модель: " + args[0])
+		m.addNotice("Model: " + args[0])
 		return m, settingsCmd(m.cl, m.sess.ID, proto.SettingsReq{Model: &v})
 
 	case "/agent":
@@ -225,7 +222,7 @@ func (m model) command(line string) (tea.Model, tea.Cmd) {
 		}
 		if len(args) != 1 {
 			if m.status != nil {
-				m.addNotice("Пресеты: " + strings.Join(m.status.Presets, ", "))
+				m.addNotice("Presets: " + strings.Join(m.status.Presets, ", "))
 			}
 			return m, nil
 		}
@@ -253,7 +250,7 @@ func (m model) command(line string) (tea.Model, tea.Cmd) {
 
 	case "/start", "/stop":
 		if !needConn() || len(args) != 1 {
-			m.addNotice("Использование: " + cmd + " <имя процесса>")
+			m.addNotice("Usage: " + cmd + " <process name>")
 			return m, nil
 		}
 		return m, procCmd(m.cl, args[0], strings.TrimPrefix(cmd, "/"))
@@ -263,7 +260,7 @@ func (m model) command(line string) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if m.streaming {
-			m.addNotice("Подожди, идёт другой запрос")
+			m.addNotice("Wait, another request is running")
 			return m, nil
 		}
 		var models []string
@@ -274,7 +271,7 @@ func (m model) command(line string) (tea.Model, tea.Cmd) {
 		}
 		prompt := strings.Join(args[i:], " ")
 		if len(models) == 0 || prompt == "" {
-			m.addNotice("Использование: /compare <модель> <модель> ... <текст>")
+			m.addNotice("Usage: /compare <model> <model> ... <text>")
 			return m, nil
 		}
 		m.entries = append(m.entries, entry{kind: eUser, text: prompt})
@@ -283,10 +280,10 @@ func (m model) command(line string) (tea.Model, tea.Cmd) {
 		runCmd := m.beginStream(func(ctx context.Context, emit func(proto.Event)) error {
 			return cl.Compare(ctx, proto.CompareReq{Text: prompt, Models: models, Preset: preset}, emit)
 		})
-		m.mc.react("noticed", 2*time.Second, "Сравниваю модели")
+		m.mc.react("noticed", 2*time.Second, "")
 		return m, runCmd
 	}
 
-	m.addError("Неизвестная команда " + cmd + " (/help)")
+	m.addError("Unknown command " + cmd + " (/help)")
 	return m, nil
 }

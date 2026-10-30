@@ -1,4 +1,4 @@
-// relay: лаунчер и роутер нейросетей. Один исполняемый файл:
+// relay: launcher and router for AI models. Один исполняемый файл:
 // интерфейс в терминале, фоновый бэкенд, управление ключами, установка в PATH.
 package main
 
@@ -15,22 +15,22 @@ import (
 	"relay/internal/tui"
 )
 
-const usage = `relay: лаунчер и роутер нейросетей
+const usage = `relay: launcher and router for AI models
 
-Использование:
-  relay                     запустить интерфейс (бэкенд стартует сам)
-  relay keys                открыть в браузере страницу с ключами API
-  relay status              состояние бэкенда: провайдеры, ключи, процессы, расход
-  relay stop                остановить фоновый бэкенд
-  relay daemon              запустить бэкенд в этом терминале
-  relay install [--dir D]   установить в PATH (Linux: ~/.local/bin, Windows: %LOCALAPPDATA%\Programs\relay)
-  relay uninstall           удалить из PATH
-  relay config [--example]  путь к конфигурации или пример конфигурации
+Usage:
+  relay                     start the interface (the backend starts by itself)
+  relay keys                open the API keys page in your browser
+  relay status              backend status: providers, keys, processes, usage
+  relay stop                stop the background backend
+  relay daemon              run the backend in this terminal
+  relay install [--dir D]   install to PATH (Linux: ~/.local/bin, Windows: %LOCALAPPDATA%\Programs\relay)
+  relay uninstall           remove from PATH
+  relay config [--example]  config path, or an example config
   relay version
 
-Флаги интерфейса:
-  --no-spawn   не запускать бэкенд автоматически
-  --keep       не останавливать бэкенд при выходе
+Interface flags:
+  --no-spawn   do not start the backend automatically
+  --keep       do not stop the backend on exit
 `
 
 func main() {
@@ -64,7 +64,7 @@ func dispatch(cmd string, args []string) int {
 		fmt.Print(usage)
 		return 0
 	}
-	fmt.Fprintf(os.Stderr, "relay: неизвестная команда %q\n\n%s", cmd, usage)
+	fmt.Fprintf(os.Stderr, "relay: unknown command %q\n\n%s", cmd, usage)
 	return 2
 }
 

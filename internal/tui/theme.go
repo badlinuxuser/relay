@@ -20,7 +20,7 @@ type theme struct {
 	accent string
 	soft   string
 	bg     string
-	card   string // фон карточки маскота: чуть светлее bg, чтобы чёрный капюшон читался
+	card   string // background behind the mascot; equal to bg, so the mascot has no backdrop
 }
 
 // themeFor вычисляет тему; для maximum цвета плывут по радуге вместе с кадром t.
@@ -67,8 +67,9 @@ func bgSequence(bg string) string {
 	return ""
 }
 
+// withCard sets the mascot backdrop to the theme background: no visible card.
 func withCard(t theme) theme {
-	t.card = mixHex(t.bg, "#FFFFFF", 0.09)
+	t.card = t.bg
 	return t
 }
 

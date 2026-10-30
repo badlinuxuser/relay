@@ -72,6 +72,9 @@ func New(cfg *config.Config, home, token string) *Server {
 	return s
 }
 
+// Discover starts listing the models of all providers in the background.
+func (s *Server) Discover() { s.router.RefreshAsync() }
+
 // Procs даёт доступ к менеджеру процессов (автозапуск и остановка из main).
 func (s *Server) Procs() *runner.Manager { return s.procs }
 
@@ -260,12 +263,18 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Processes:   s.procs.Status(),
 		Usage:       map[string]proto.UsageEntry{},
 	}
+	s.router.RefreshStale()
 	for _, name := range config.ValidModes {
 		if md, ok := s.cfg.Modes[name]; ok {
-			st.Modes = append(st.Modes, proto.ModeInfo{Name: name, Models: md.Models})
+			models := md.Models
+			// the real chain: only usable models, plus fallbacks found through the keys
+			if chain, _, err := s.router.Resolve(name, "", false, router.Hint{}); err == nil {
+				models = chain
+			}
+			st.Modes = append(st.Modes, proto.ModeInfo{Name: name, Models: models})
 		}
 	}
-	for _, m := range s.cfg.Models {
+	for _, m := range s.router.Models() {
 		st.Models = append(st.Models, proto.ModelInfo{
 			ID: m.ID, Provider: m.Provider, Name: m.Name, Tier: m.Tier,
 			Tools: m.Tools, PriceIn: m.PriceIn, PriceOut: m.PriceOut,
@@ -352,7 +361,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Model != nil {
 		if *req.Model != "" && *req.Model != "auto" {
-			if _, ok := s.cfg.ModelByID(*req.Model); !ok {
+			if _, ok := s.router.ModelByID(*req.Model); !ok {
 				httpErr(w, 400, fmt.Sprintf("unknown model %q", *req.Model))
 				return
 			}
@@ -455,7 +464,7 @@ func (s *Server) handleCompare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, id := range req.Models {
-		if _, ok := s.cfg.ModelByID(id); !ok {
+		if _, ok := s.router.ModelByID(id); !ok {
 			httpErr(w, 400, fmt.Sprintf("unknown model %q", id))
 			return
 		}

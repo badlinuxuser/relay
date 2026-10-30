@@ -27,6 +27,21 @@ type Proc struct {
 	stopping bool
 }
 
+// alive reports whether ready_url already answers, i.e. the server is running
+// (started by someone else) and we must not try to start a second copy.
+func (p *Proc) alive() bool {
+	if p.cfg.ReadyURL == "" {
+		return false
+	}
+	client := &http.Client{Timeout: 400 * time.Millisecond}
+	resp, err := client.Get(p.cfg.ReadyURL)
+	if err != nil {
+		return false
+	}
+	resp.Body.Close()
+	return resp.StatusCode < 400
+}
+
 func (p *Proc) addLog(line string) {
 	p.mu.Lock()
 	p.logs = append(p.logs, line)
@@ -37,6 +52,17 @@ func (p *Proc) addLog(line string) {
 }
 
 func (p *Proc) Start() error {
+	p.mu.Lock()
+	if p.state == "starting" || p.state == "ready" {
+		p.mu.Unlock()
+		return nil
+	}
+	p.mu.Unlock()
+	// Something already listens on ready_url (system service, another terminal):
+	// attach to it instead of failing with "address already in use".
+	if p.alive() {
+		return nil
+	}
 	p.mu.Lock()
 	if p.state == "starting" || p.state == "ready" {
 		p.mu.Unlock()
@@ -133,6 +159,9 @@ func (p *Proc) Stop() error {
 	cmd, done := p.cmd, p.done
 	if cmd == nil {
 		p.mu.Unlock()
+		if p.alive() {
+			return fmt.Errorf("%s was not started by Relay, so Relay will not stop it (stop it where you started it, e.g. `systemctl stop %s`)", p.cfg.Name, p.cfg.Name)
+		}
 		return nil
 	}
 	p.stopping = true
@@ -153,12 +182,25 @@ func (p *Proc) Stop() error {
 
 func (p *Proc) info() proto.ProcInfo {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	st := p.state
 	if st == "" {
 		st = "stopped"
 	}
-	pi := proto.ProcInfo{Name: p.cfg.Name, State: st, Error: p.errMsg}
+	own := p.cmd != nil
+	p.mu.Unlock()
+
+	// Not our process, but the port answers: show it as running (external).
+	external := false
+	if !own && st != "starting" && p.alive() {
+		st, external = "ready", true
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	pi := proto.ProcInfo{Name: p.cfg.Name, State: st, External: external}
+	if !external {
+		pi.Error = p.errMsg
+	}
 	if p.cmd != nil && p.cmd.Process != nil {
 		pi.PID = p.cmd.Process.Pid
 	}

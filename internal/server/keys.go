@@ -72,6 +72,7 @@ func (s *Server) handleAddKey(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, 400, err.Error())
 		return
 	}
+	s.router.RefreshAsync() // a new key may unlock more models
 	writeJSON(w, 200, proto.KeyEntry{ID: m.ID, Label: m.Label, Hint: m.Hint})
 }
 
@@ -80,6 +81,7 @@ func (s *Server) handleDeleteKey(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, 404, "no such key")
 		return
 	}
+	s.router.RefreshAsync()
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
 

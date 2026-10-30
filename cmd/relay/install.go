@@ -95,19 +95,19 @@ func cmdInstall(args []string) int {
 		return 1
 	}
 	if sameFile(exe, target) {
-		fmt.Println("Уже установлен:", target)
+		fmt.Println("Already installed:", target)
 	} else {
 		if err := copyFile(exe, target); err != nil {
-			fmt.Fprintln(os.Stderr, "relay: не удалось скопировать:", err)
+			fmt.Fprintln(os.Stderr, "relay: could not copy:", err)
 			return 1
 		}
-		fmt.Println("Скопировал:", target)
+		fmt.Println("Copied:", target)
 	}
 	if err := addToPath(dir); err != nil {
 		fmt.Fprintln(os.Stderr, "relay: PATH:", err)
 		return 1
 	}
-	fmt.Println("Готово. Открой новый терминал и запусти: relay")
+	fmt.Println("Done. Open a new terminal and run: relay")
 	return 0
 }
 
@@ -124,15 +124,15 @@ func cmdUninstall(args []string) int {
 	}
 	target := filepath.Join(dir, binName())
 	if err := os.Remove(target); err != nil && !os.IsNotExist(err) {
-		fmt.Fprintln(os.Stderr, "relay: не удалось удалить", target+":", err)
+		fmt.Fprintln(os.Stderr, "relay: could not remove", target+":", err)
 	} else {
-		fmt.Println("Удалил:", target)
+		fmt.Println("Removed:", target)
 	}
 	if err := removeFromPath(dir); err != nil {
 		fmt.Fprintln(os.Stderr, "relay: PATH:", err)
 		return 1
 	}
-	fmt.Println("Конфигурация и ключи не тронуты (каталог данных можно удалить вручную: relay config)")
+	fmt.Println("Config and keys were left untouched (you can delete the data folder manually: relay config)")
 	return 0
 }
 
@@ -171,7 +171,7 @@ func rcFile() (path string, fish bool) {
 func addToPathUnix(dir string) error {
 	for _, p := range filepath.SplitList(os.Getenv("PATH")) {
 		if p == dir {
-			fmt.Println("Каталог уже в PATH:", dir)
+			fmt.Println("Directory is already in PATH:", dir)
 			return nil
 		}
 	}
@@ -181,7 +181,7 @@ func addToPathUnix(dir string) error {
 	}
 	b, _ := os.ReadFile(rc)
 	if strings.Contains(string(b), pathMarker) {
-		fmt.Println("PATH уже настроен в", rc)
+		fmt.Println("PATH is already set up in", rc)
 		return nil
 	}
 	shown := dir
@@ -200,7 +200,7 @@ func addToPathUnix(dir string) error {
 	if _, err := fmt.Fprintf(f, "\n%s\n%s\n", pathMarker, line); err != nil {
 		return err
 	}
-	fmt.Println("Добавил в PATH через", rc)
+	fmt.Println("Added to PATH via", rc)
 	return nil
 }
 
@@ -222,7 +222,7 @@ func removeFromPathUnix() error {
 	if err := os.WriteFile(rc, []byte(strings.Join(out, "\n")), 0o644); err != nil {
 		return err
 	}
-	fmt.Println("Убрал запись из", rc)
+	fmt.Println("Removed the entry from", rc)
 	return nil
 }
 
@@ -249,9 +249,9 @@ func addToPathWindows(dir string) error {
 		return err
 	}
 	if msg == "exists" {
-		fmt.Println("Каталог уже в PATH пользователя:", dir)
+		fmt.Println("Directory is already in the user PATH:", dir)
 	} else {
-		fmt.Println("Добавил в PATH пользователя:", dir)
+		fmt.Println("Added to the user PATH:", dir)
 	}
 	return nil
 }
@@ -264,6 +264,6 @@ func removeFromPathWindows(dir string) error {
 	if _, err := runPowerShell(script); err != nil {
 		return err
 	}
-	fmt.Println("Убрал из PATH пользователя:", dir)
+	fmt.Println("Removed from the user PATH:", dir)
 	return nil
 }

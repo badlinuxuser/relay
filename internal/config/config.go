@@ -119,11 +119,34 @@ func Ensure(home string) (string, error) {
 	return path, nil
 }
 
+// defaultProviders are added when a config file does not define them, so that keys for
+// these providers always work and their models can be discovered.
+var defaultProviders = []Provider{
+	{Name: "ollama", Kind: "openai", BaseURL: "http://127.0.0.1:11434/v1"},
+	{Name: "anthropic", Kind: "anthropic", BaseURL: "https://api.anthropic.com"},
+	{Name: "openai", Kind: "openai", BaseURL: "https://api.openai.com/v1"},
+	{Name: "gemini", Kind: "openai", BaseURL: "https://generativelanguage.googleapis.com/v1beta/openai"},
+	{Name: "openrouter", Kind: "openai", BaseURL: "https://openrouter.ai/api/v1"},
+}
+
+func (c *Config) addDefaultProviders() {
+	have := map[string]bool{}
+	for _, p := range c.Providers {
+		have[p.Name] = true
+	}
+	for _, p := range defaultProviders {
+		if !have[p.Name] {
+			c.Providers = append(c.Providers, p)
+		}
+	}
+}
+
 func Load(path string) (*Config, error) {
 	var c Config
 	if _, err := toml.DecodeFile(path, &c); err != nil {
 		return nil, fmt.Errorf("config %s: %w", path, err)
 	}
+	c.addDefaultProviders()
 	if err := c.validate(); err != nil {
 		return nil, fmt.Errorf("config %s: %w", path, err)
 	}

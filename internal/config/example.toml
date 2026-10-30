@@ -1,20 +1,21 @@
-# Relay: конфигурация. Файл создаётся автоматически при первом запуске.
-# Ключи API здесь НЕ хранятся: добавляй их командой `relay keys` (или /keys в интерфейсе),
-# откроется страница в браузере. Ключи сохраняются в keys.json и работают между сессиями.
+# Relay configuration. This file is created automatically on first run.
+# API keys are NOT stored here: add them with `relay keys` (or /keys in the UI),
+# which opens a page in your browser. Keys are saved to keys.json and persist between sessions.
 
-listen = "127.0.0.1:8787"     # адрес бэкенда (он же OpenAI-совместимый шлюз /v1)
+listen = "127.0.0.1:8787"     # backend address (also the OpenAI-compatible gateway at /v1)
 default_mode = "small"        # small | medium | hard | maximum
-# workspace = "/path/to/project"  # по умолчанию агент работает в папке, где запущен relay
+# workspace = "/path/to/project"  # by default the agent works in the folder where relay was started
 
-# ---------------------------------------------------------------- провайдеры
-# kind = "openai"    любой OpenAI-совместимый сервер: Ollama, llama.cpp, LM Studio,
-#                    vLLM, OpenAI, OpenRouter, Gemini (через /v1beta/openai)
+# ---------------------------------------------------------------- providers
+# kind = "openai"    any OpenAI-compatible server: Ollama, llama.cpp, LM Studio,
+#                    vLLM, OpenAI, OpenRouter, Gemini (via /v1beta/openai)
 # kind = "anthropic" Anthropic Messages API
-# Ключей на провайдера можно добавить несколько: при лимите Relay переходит на следующий,
-# а когда ключи кончились, на следующую модель режима.
-# api_key_env (необязательно): дополнительно брать ключи из переменных окружения,
-#                    например api_key_env = ["ANTHROPIC_API_KEY"].
-# Локальным серверам (localhost) ключ не нужен.
+# You can add several keys per provider: on a rate limit Relay moves to the next key,
+# and when keys run out, to the next model of the mode.
+# Providers without any key are skipped silently, so you only need keys for the ones you use.
+# api_key_env (optional): also read keys from environment variables,
+#                    e.g. api_key_env = ["ANTHROPIC_API_KEY"].
+# Local servers (localhost) need no key.
 
 [[providers]]
 name = "ollama"
@@ -32,18 +33,27 @@ kind = "anthropic"
 base_url = "https://api.anthropic.com"
 
 [[providers]]
-name = "openrouter"
+name = "openai"
 kind = "openai"
-base_url = "https://openrouter.ai/api/v1"
+base_url = "https://api.openai.com/v1"
 
 [[providers]]
 name = "gemini"
 kind = "openai"
 base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
 
-# -------------------------------------------------------------------- модели
-# price_in / price_out: USD за 1 млн токенов (для подсчёта стоимости, заполни сам)
-# tools = true: модель умеет вызывать инструменты (нужно для режима агента)
+[[providers]]
+name = "openrouter"
+kind = "openai"
+base_url = "https://openrouter.ai/api/v1"
+
+# ------------------------------------------------------------------- models
+# price_in / price_out: USD per 1M tokens (used for cost tracking, fill in yourself)
+# tools = true: the model can call tools (required for agent mode)
+# You do NOT have to list models here. Relay asks every provider you added a key for
+# (and local servers like Ollama) which models they serve; they all appear in the /model
+# list as "provider/name" and are used as fallbacks automatically. Entries below are just
+# short aliases for the modes; an alias whose model the provider does not serve is skipped.
 
 [[models]]
 id = "local-small"
@@ -77,9 +87,10 @@ tier = "hard"
 tools = true
 context = 200000
 
-# ----------------------------------------------------------------- режимы
-# Режим определяет цвет интерфейса и маскота и цепочку моделей: если первая
-# недоступна (лимит, ошибка сервера), берётся следующая.
+# ------------------------------------------------------------------- modes
+# A mode defines the UI/mascot color and the model chain: if the first model is
+# unavailable (rate limit, server error, no key), the next one is used. After the chain,
+# Relay falls back to one discovered model from every other provider that has a key.
 
 [modes.small]
 models = ["local-small", "haiku"]
@@ -97,8 +108,10 @@ max_steps = 24
 models = ["opus", "sonnet"]
 max_steps = 40
 
-# ---------------------------------------------------------- локальные процессы
-# Лаунчер: запускает и останавливает локальные серверы из интерфейса (/start, /stop).
+# ---------------------------------------------------------- local processes
+# Launcher: start and stop local servers from the UI (/start, /stop).
+# If the server is already running (for example the system Ollama service),
+# Relay attaches to it and does not start a second copy.
 
 [[processes]]
 name = "ollama"
@@ -113,15 +126,15 @@ autostart = false
 # args = ["-m", "/models/model.gguf", "--port", "8080"]
 # ready_url = "http://127.0.0.1:8080/health"
 
-# ------------------------------------------------------------ MCP-серверы
-# Инструменты MCP становятся доступны агенту (каждый вызов требует подтверждения).
+# -------------------------------------------------------------- MCP servers
+# MCP tools become available to the agent (every call asks for confirmation).
 
 # [[mcp]]
 # name = "fs"
 # command = "npx"
 # args = ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/dir"]
 
-# ----------------------------------------------------- системные промпты
+# ----------------------------------------------------------- system prompts
 [[presets]]
 name = "coder"
 prompt = "You are a careful senior software engineer. Prefer small, correct changes. Explain briefly."

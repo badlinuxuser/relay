@@ -59,6 +59,16 @@ func (k *Keys) list() []string {
 
 func (k *Keys) NeedsKey() bool { return k.needsKey }
 
+// Any returns the first configured key regardless of cooldowns, or "" if there is none.
+// It is used for read-only calls such as listing a provider's models.
+func (k *Keys) Any() string {
+	list := k.list()
+	if len(list) == 0 {
+		return ""
+	}
+	return list[0]
+}
+
 func (k *Keys) Count() int { return len(k.list()) }
 
 // Available возвращает число ключей, которые сейчас не на паузе.

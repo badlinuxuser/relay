@@ -69,13 +69,14 @@ type model struct {
 
 	transFrom  string // предыдущий режим во время анимации смены ("" = нет)
 	transStart int    // кадр, на котором началась анимация
+	sel        int    // highlighted row in the /model popup
 }
 
 // New создаёт интерфейс. spawn: запускать бэкенд, если он не запущен.
 // keep: не останавливать бэкенд при выходе.
 func New(spawn, keep bool) tea.Model {
 	ti := textinput.New()
-	ti.Placeholder = "Сообщение или /help"
+	ti.Placeholder = "Message or /help"
 	ti.CharLimit = 8000
 	ti.Focus()
 	cwd, _ := os.Getwd()
@@ -89,7 +90,7 @@ func New(spawn, keep bool) tea.Model {
 		slots:    map[int]int{},
 		mc:       newMascot(),
 		sprites:  loadSprites(),
-		entries:  []entry{{kind: eNotice, text: "Подключаюсь к бэкенду…"}},
+		entries:  []entry{{kind: eNotice, text: "Connecting to the backend…"}},
 	}
 }
 
@@ -167,17 +168,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case connectedMsg:
 		m.cl, m.status, m.sess = msg.cl, msg.status, msg.sess
 		m.mode = msg.sess.Mode
-		m.entries = []entry{{kind: eNotice, text: fmt.Sprintf("Relay %s · папка: %s", msg.status.Version, shortPath(msg.sess.Workspace))}}
+		m.entries = []entry{{kind: eNotice, text: fmt.Sprintf("Relay %s · folder: %s", msg.status.Version, shortPath(msg.sess.Workspace))}}
 		if miss := missingKeys(msg.status); len(miss) > 0 {
-			m.addNotice("Нет ключей API: " + strings.Join(miss, ", ") + ". Команда /keys откроет страницу, где их можно вставить (ключи сохраняются).")
+			m.addNotice("No API keys for: " + strings.Join(miss, ", ") + ". Run /keys to open a page where you can add them (keys are saved).")
 		}
-		m.mc.react("joy", 2500*time.Millisecond, "Relay — рядом.")
+		m.mc.react("joy", 2500*time.Millisecond, "Relay is here.")
 		return m, nil
 
 	case errMsg:
 		m.addError(msg.err.Error())
 		m.statusBusy = false
-		m.mc.react("surprise", 4*time.Second, "Что-то пошло не так")
+		m.mc.react("surprise", 4*time.Second, "Something went wrong")
 		return m, nil
 
 	case statusMsg:
@@ -199,7 +200,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case sessionsMsg:
 		if len(msg.list) == 0 {
-			m.addNotice("Сохранённых сессий нет")
+			m.addNotice("No saved sessions")
 		}
 		for i, s := range msg.list {
 			if i >= 12 {
@@ -287,6 +288,33 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// the /model popup is open
+	if items := m.modelSuggestions(); len(items) > 0 {
+		sel := m.selIndex(len(items))
+		switch key {
+		case "up":
+			m.sel = (sel + len(items) - 1) % len(items)
+			return m, nil
+		case "down":
+			m.sel = (sel + 1) % len(items)
+			return m, nil
+		case "tab":
+			m.input.SetValue("/model " + items[sel].id)
+			m.input.CursorEnd()
+			m.sel = 0
+			return m, nil
+		case "enter":
+			id := items[sel].id
+			m.input.SetValue("")
+			m.sel = 0
+			return m.command("/model " + id)
+		case "esc":
+			m.input.SetValue("")
+			m.sel = 0
+			return m, nil
+		}
+	}
+
 	switch key {
 	case "ctrl+t":
 		c := m.cycleMode()
@@ -300,7 +328,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		if m.streaming && m.cancel != nil {
 			m.cancel()
-			m.addNotice("Остановлено")
+			m.addNotice("Stopped")
 		}
 		return m, nil
 	case "pgup":
@@ -321,6 +349,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.send(text)
 	}
 
+	m.sel = 0
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
 	return m, cmd
@@ -346,11 +375,11 @@ func (m *model) beginStream(run func(ctx context.Context, emit func(proto.Event)
 
 func (m model) send(text string) (tea.Model, tea.Cmd) {
 	if m.cl == nil || m.sess == nil {
-		m.addNotice("Ещё не подключился к бэкенду")
+		m.addNotice("Not connected to the backend yet")
 		return m, nil
 	}
 	if m.streaming {
-		m.addNotice("Подожди, предыдущий запрос ещё выполняется (esc: остановить)")
+		m.addNotice("Wait, the previous request is still running (esc to stop)")
 		return m, nil
 	}
 	m.entries = append(m.entries, entry{kind: eUser, text: text})
@@ -387,13 +416,13 @@ func (m *model) handleEvent(ev proto.Event) {
 		m.addNotice(ev.Text)
 		switch ev.Kind {
 		case "rate_limit":
-			m.mc.react("tired", 8*time.Second, "Лимит исчерпан, переключаюсь")
+			m.mc.react("tired", 8*time.Second, "Limit reached, switching")
 		case "key_switch":
-			m.mc.react("noticed", 4*time.Second, "Меняю ключ")
+			m.mc.react("noticed", 4*time.Second, "Switching key")
 		case "fallback":
-			m.mc.react("surprise", 3*time.Second, "Резервная модель")
+			m.mc.react("surprise", 3*time.Second, "Fallback model")
 		case "no_key":
-			m.mc.react("surprise", 5*time.Second, "Нет ключа: /keys")
+			m.mc.react("surprise", 5*time.Second, "No key: /keys")
 		}
 
 	case "tool_call":
@@ -408,7 +437,7 @@ func (m *model) handleEvent(ev proto.Event) {
 	case "approval":
 		e := ev
 		m.approval = &e
-		m.mc.react("surprise", 3*time.Second, "Нужно твоё разрешение")
+		m.mc.react("surprise", 3*time.Second, "Need your approval")
 
 	case "tool_result":
 		for i := len(m.entries) - 1; i >= 0; i-- {
@@ -432,12 +461,12 @@ func (m *model) handleEvent(ev proto.Event) {
 		m.addError(ev.Text)
 		if ev.Kind == "rate_limit" {
 			m.mc.base = "tired"
-			m.mc.react("tired", 10*time.Second, "Закончились запросы на ключе")
+			m.mc.react("tired", 10*time.Second, "Key limit reached")
 		} else if ev.Kind == "no_key" {
-			m.addNotice("Добавь ключ командой /keys (откроется страница в браузере).")
-			m.mc.react("surprise", 6*time.Second, "Нет ключа: /keys")
+			m.addNotice("Add a key with /keys (opens a page in your browser).")
+			m.mc.react("surprise", 6*time.Second, "No key: /keys")
 		} else {
-			m.mc.react("surprise", 4*time.Second, "Что-то пошло не так")
+			m.mc.react("surprise", 4*time.Second, "Something went wrong")
 		}
 	}
 }
@@ -468,7 +497,7 @@ func (m *model) setMode(mode string) tea.Cmd {
 		m.transFrom, m.transStart = m.mode, m.frame
 	}
 	m.mode = mode
-	m.mc.react("joy", 1500*time.Millisecond, "Режим: "+mode)
+	m.mc.react("joy", 1500*time.Millisecond, "")
 	if m.cl == nil || m.sess == nil {
 		return nil
 	}
@@ -494,9 +523,9 @@ func (m *model) toggleAgent() tea.Cmd {
 	on := !m.sess.Agent
 	m.sess.Agent = on
 	if on {
-		m.mc.react("noticed", 2*time.Second, "Режим агента: вкл")
+		m.mc.react("noticed", 2*time.Second, "")
 	} else {
-		m.mc.react("calm", time.Second, "Режим агента: выкл")
+		m.mc.react("calm", time.Second, "")
 	}
 	return settingsCmd(m.cl, m.sess.ID, proto.SettingsReq{Agent: &on})
 }
@@ -505,7 +534,7 @@ func (m *model) newSession() tea.Cmd {
 	if m.cl == nil {
 		return nil
 	}
-	m.entries = []entry{{kind: eNotice, text: "Новая сессия"}}
+	m.entries = []entry{{kind: eNotice, text: "New session"}}
 	m.scroll = 0
 	return newSessionCmd(m.cl, m.mode, m.cwd)
 }
@@ -530,7 +559,7 @@ func shortPath(p string) string {
 
 // entriesFromSession восстанавливает ленту из сохранённых сообщений сессии.
 func entriesFromSession(s *proto.SessionInfo) []entry {
-	out := []entry{{kind: eNotice, text: "Сессия: " + s.Title}}
+	out := []entry{{kind: eNotice, text: "Session: " + s.Title}}
 	for _, pm := range s.Messages {
 		switch pm.Role {
 		case "user":
@@ -554,18 +583,18 @@ func entriesFromSession(s *proto.SessionInfo) []entry {
 	return out
 }
 
-// missingKeys возвращает провайдеров, которым нужен ключ (и которые используются
-// моделями), но ключей нет.
+// missingKeys returns the providers that need an API key, but only when none of them
+// has one yet (one working provider is enough; the rest are optional).
 func missingKeys(st *proto.StatusResp) []string {
-	used := map[string]bool{}
-	for _, md := range st.Models {
-		used[md.Provider] = true
-	}
 	var out []string
 	for _, p := range st.Providers {
-		if used[p.Name] && p.NeedsKey && p.Keys == 0 {
-			out = append(out, p.Name)
+		if !p.NeedsKey {
+			continue
 		}
+		if p.Keys > 0 {
+			return nil
+		}
+		out = append(out, p.Name)
 	}
 	return out
 }

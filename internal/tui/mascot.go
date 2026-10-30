@@ -42,7 +42,7 @@ func (m *mascot) asleep(now time.Time) bool {
 // touch отмечает активность пользователя; если маскот спал, он удивляется.
 func (m *mascot) touch(now time.Time) {
 	if m.asleep(now) {
-		m.react("surprise", time.Second, "Ой! Я не спала")
+		m.react("surprise", time.Second, "Oh! I wasn't asleep")
 	}
 	m.last = now
 }
@@ -61,18 +61,18 @@ func (m *mascot) frame(now time.Time) string {
 }
 
 var moodLabel = map[string]string{
-	"calm":     "спокойна",
-	"joy":      "радость",
-	"surprise": "удивление",
-	"noticed":  "заметила",
-	"tired":    "устала",
+	"calm":     "calm",
+	"joy":      "joy",
+	"surprise": "surprise",
+	"noticed":  "noticed",
+	"tired":    "tired",
 }
 
 func (m *mascot) caption(now time.Time) (label, say string) {
 	f := m.frame(now)
 	label = moodLabel[f]
 	if f == "tired" && m.asleep(now) && !now.Before(m.until) {
-		label = "спит"
+		label = "asleep"
 	}
 	if now.Before(m.sayUntil) {
 		say = m.say
