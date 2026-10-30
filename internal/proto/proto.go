@@ -8,7 +8,7 @@ import (
 	"relay/internal/provider"
 )
 
-const Version = "0.2.0"
+const Version = "0.4.0"
 
 // Event это одно событие потока выполнения (SSE: "data: <json>").
 //
@@ -95,6 +95,24 @@ type ModelInfo struct {
 	Tools    bool    `json:"tools"`
 	PriceIn  float64 `json:"price_in"`
 	PriceOut float64 `json:"price_out"`
+	// Kind: local (runs on this computer) | cloud. Listed: the model was found in the
+	// provider's own model list (otherwise it comes from config.toml).
+	Kind   string `json:"kind,omitempty"`
+	Listed bool   `json:"listed,omitempty"`
+}
+
+// ModelsProvider tells how fetching the model list of one provider went.
+type ModelsProvider struct {
+	Name    string `json:"name"`
+	Count   int    `json:"count"`
+	Skipped string `json:"skipped,omitempty"` // "no key" | "disabled"
+	Error   string `json:"error,omitempty"`
+}
+
+// ModelsResp is the answer of GET /api/models: every model the user can pick.
+type ModelsResp struct {
+	Models    []ModelInfo      `json:"models"`
+	Providers []ModelsProvider `json:"providers"`
 }
 
 type ProviderInfo struct {
@@ -103,6 +121,8 @@ type ProviderInfo struct {
 	NeedsKey      bool   `json:"needs_key"`
 	Keys          int    `json:"keys"`
 	KeysAvailable int    `json:"keys_available"`
+	// KeyFrom: this provider uses the keys of another one (ollama-cloud uses ollama's).
+	KeyFrom string `json:"key_from,omitempty"`
 }
 
 // KeyEntry это сохранённый ключ в безопасном виде (последние 4 символа).
@@ -140,17 +160,20 @@ type AddKeyReq struct {
 type ModeInfo struct {
 	Name   string   `json:"name"`
 	Models []string `json:"models"`
+	// Effective is the chain that is really used now: Models without the ones that
+	// have no key or are not installed, plus installed models in their place.
+	Effective []string `json:"effective,omitempty"`
 }
 
 type ProcInfo struct {
-	Name  string   `json:"name"`
-	State string   `json:"state"` // stopped | starting | ready | failed
+	Name  string `json:"name"`
+	State string `json:"state"` // stopped | starting | ready | failed
 	// External: the process is running but was not started by Relay (for example a
 	// system-wide Ollama service). Relay uses it as is and never stops it.
-	External bool `json:"external,omitempty"`
-	Error string   `json:"error,omitempty"`
-	PID   int      `json:"pid,omitempty"`
-	Log   []string `json:"log,omitempty"`
+	External bool     `json:"external,omitempty"`
+	Error    string   `json:"error,omitempty"`
+	PID      int      `json:"pid,omitempty"`
+	Log      []string `json:"log,omitempty"`
 }
 
 type UsageEntry struct {

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	"relay/internal/catalog"
 	"relay/internal/config"
 	"relay/internal/provider"
 	"relay/internal/usage"
@@ -18,7 +19,7 @@ type Router struct {
 	clients map[string]provider.Client
 	keys    map[string]*provider.Keys
 	usage   *usage.Tracker
-	cat     *catalog
+	cat     *catalog.Catalog
 }
 
 func New(cfg *config.Config, tr *usage.Tracker, src provider.Source) *Router {
@@ -27,10 +28,9 @@ func New(cfg *config.Config, tr *usage.Tracker, src provider.Source) *Router {
 		clients: map[string]provider.Client{},
 		keys:    map[string]*provider.Keys{},
 		usage:   tr,
-		cat:     newCatalog(),
 	}
 	for _, p := range cfg.Providers {
-		k := provider.NewKeys(p.Name, p.APIKeyEnv, src, p.NeedsKey())
+		k := provider.NewKeys(p.KeyName(), p.APIKeyEnv, src, p.NeedsKey())
 		r.keys[p.Name] = k
 		if p.Kind == "anthropic" {
 			r.clients[p.Name] = provider.NewAnthropic(p.Name, p.BaseURL, k, p.Headers)
@@ -40,6 +40,13 @@ func New(cfg *config.Config, tr *usage.Tracker, src provider.Source) *Router {
 	}
 	return r
 }
+
+// SetCatalog connects the list of models the providers really have. With it,
+// Resolve skips models that are not installed and fills mode chains from what is.
+func (r *Router) SetCatalog(c *catalog.Catalog) { r.cat = c }
+
+// Keys returns the key holder of a provider (nil for an unknown provider).
+func (r *Router) Keys(name string) *provider.Keys { return r.keys[name] }
 
 // KeyStats возвращает число ключей провайдера, сколько из них сейчас доступно
 // и нужен ли провайдеру ключ вообще.
@@ -98,28 +105,51 @@ func (r *Router) Resolve(mode, model string, needTools bool, h Hint) (chain []st
 		return false
 	}
 	if model != "" && model != "auto" {
-		if _, ok := r.ModelByID(model); !ok {
+		if _, ok := r.cfg.ModelByID(model); !ok {
 			return nil, mode, fmt.Errorf("unknown model %q", model)
 		}
 		chain = append(chain, model)
 	}
 	explicit := len(chain)
+	var snap *catalog.Snapshot
+	if r.cat != nil {
+		snap = r.cat.Peek()
+		r.cat.Warm()
+	}
 	var skipped []string
 	for _, id := range md.Models {
 		m, ok := r.cfg.ModelByID(id)
 		if !ok || has(id) || (needTools && !m.Tools) {
 			continue
 		}
-		if r.keyless(m) || !r.available(m) {
+		if r.keyless(m) {
 			skipped = append(skipped, id)
+			continue
+		}
+		if snap.Missing(m.Provider, m.Name) {
+			// The model from the config is not installed (or does not exist). If it
+			// was a model on this computer, use the ones that are installed instead.
+			if p, ok := r.cfg.ProviderByName(m.Provider); ok && p.IsLocal() {
+				for _, e := range snap.Pick(m.Provider, 2) {
+					if !has(e.ID) {
+						chain = append(chain, e.ID)
+					}
+				}
+			}
 			continue
 		}
 		chain = append(chain, id)
 	}
-	// Last-resort fallbacks from every provider the user has set up (keys or local server).
-	chain = append(chain, r.autoPool(mode, chain)...)
 	if len(chain) == explicit {
-		// Nothing usable at all: keep the configured models so the user sees why (no key, not installed).
+		// Nothing from the mode's list is usable: take what the providers have.
+		for _, e := range snap.Fallback(3) {
+			if !has(e.ID) {
+				chain = append(chain, e.ID)
+			}
+		}
+	}
+	if len(chain) == explicit {
+		// Every model of the mode lacks a key: keep them so the user sees "no key".
 		chain = append(chain, skipped...)
 	}
 	if len(chain) == 0 {
@@ -145,7 +175,7 @@ func estimateIn(msgs []provider.Message) int {
 func (r *Router) Stream(ctx context.Context, chain []string, req provider.Request, emit func(provider.Event) error) (string, error) {
 	var lastErr error = errors.New("no models to try")
 	for i, id := range chain {
-		m, _ := r.ModelByID(id)
+		m, _ := r.cfg.ModelByID(id)
 		cl := r.clients[m.Provider]
 		if cl == nil {
 			lastErr = fmt.Errorf("provider %q is not available", m.Provider)

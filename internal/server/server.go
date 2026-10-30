@@ -18,11 +18,12 @@ import (
 	"sync"
 
 	"relay/internal/agent"
+	"relay/internal/catalog"
 	"relay/internal/config"
 	"relay/internal/keystore"
 	"relay/internal/mcp"
-	"relay/internal/provider"
 	"relay/internal/proto"
+	"relay/internal/provider"
 	"relay/internal/router"
 	"relay/internal/runner"
 	"relay/internal/session"
@@ -35,6 +36,7 @@ type Server struct {
 	token  string
 	keys   *keystore.Store
 	router *router.Router
+	cat    *catalog.Catalog
 	usage  *usage.Tracker
 	store  *session.Store
 	procs  *runner.Manager
@@ -56,12 +58,15 @@ func New(cfg *config.Config, home, token string) *Server {
 	tr := usage.Load(filepath.Join(home, "usage.json"))
 	ks := keystore.Open(filepath.Join(home, "keys.json"))
 	rt := router.New(cfg, tr, ks)
+	cat := catalog.New(cfg, rt.Keys)
+	rt.SetCatalog(cat)
 	s := &Server{
 		cfg:       cfg,
 		token:     token,
 		keys:      ks,
 		loopback:  isLoopback(cfg.Listen),
 		router:    rt,
+		cat:       cat,
 		usage:     tr,
 		store:     session.NewStore(filepath.Join(home, "sessions")),
 		procs:     runner.NewManager(cfg.Processes),
@@ -69,11 +74,9 @@ func New(cfg *config.Config, home, token string) *Server {
 		Done:      make(chan struct{}),
 	}
 	s.agent = &agent.Agent{Cfg: cfg, Router: rt, Extra: s.mcpTools}
+	cat.Warm() // start looking for models right away: Ollama, Gemini, ...
 	return s
 }
-
-// Discover starts listing the models of all providers in the background.
-func (s *Server) Discover() { s.router.RefreshAsync() }
 
 // Procs даёт доступ к менеджеру процессов (автозапуск и остановка из main).
 func (s *Server) Procs() *runner.Manager { return s.procs }
@@ -120,6 +123,7 @@ func (s *Server) Handler() http.Handler {
 		writeJSON(w, 200, map[string]any{"ok": true, "version": proto.Version})
 	})
 	mux.HandleFunc("GET /api/status", s.handleStatus)
+	mux.HandleFunc("GET /api/models", s.handleModels)
 	mux.HandleFunc("GET /api/sessions", s.handleSessions)
 	mux.HandleFunc("POST /api/sessions", s.handleCreateSession)
 	mux.HandleFunc("GET /api/sessions/{id}", s.handleGetSession)
@@ -263,18 +267,16 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Processes:   s.procs.Status(),
 		Usage:       map[string]proto.UsageEntry{},
 	}
-	s.router.RefreshStale()
 	for _, name := range config.ValidModes {
 		if md, ok := s.cfg.Modes[name]; ok {
-			models := md.Models
-			// the real chain: only usable models, plus fallbacks found through the keys
+			mi := proto.ModeInfo{Name: name, Models: md.Models}
 			if chain, _, err := s.router.Resolve(name, "", false, router.Hint{}); err == nil {
-				models = chain
+				mi.Effective = chain
 			}
-			st.Modes = append(st.Modes, proto.ModeInfo{Name: name, Models: models})
+			st.Modes = append(st.Modes, mi)
 		}
 	}
-	for _, m := range s.router.Models() {
+	for _, m := range s.cfg.Models {
 		st.Models = append(st.Models, proto.ModelInfo{
 			ID: m.ID, Provider: m.Provider, Name: m.Name, Tier: m.Tier,
 			Tools: m.Tools, PriceIn: m.PriceIn, PriceOut: m.PriceOut,
@@ -282,7 +284,9 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, p := range s.cfg.Providers {
 		total, avail, needs := s.router.KeyStats(p.Name)
-		st.Providers = append(st.Providers, proto.ProviderInfo{Name: p.Name, Kind: p.Kind, NeedsKey: needs, Keys: total, KeysAvailable: avail})
+		st.Providers = append(st.Providers, proto.ProviderInfo{
+			Name: p.Name, Kind: p.Kind, NeedsKey: needs, Keys: total, KeysAvailable: avail, KeyFrom: p.KeyFrom,
+		})
 	}
 	for k, v := range s.usage.Snapshot() {
 		st.Usage[k] = proto.UsageEntry{In: v.In, Out: v.Out, Requests: v.Requests, Cost: v.Cost}
@@ -361,7 +365,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Model != nil {
 		if *req.Model != "" && *req.Model != "auto" {
-			if _, ok := s.router.ModelByID(*req.Model); !ok {
+			if _, ok := s.cfg.ModelByID(*req.Model); !ok {
 				httpErr(w, 400, fmt.Sprintf("unknown model %q", *req.Model))
 				return
 			}
@@ -464,7 +468,7 @@ func (s *Server) handleCompare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, id := range req.Models {
-		if _, ok := s.router.ModelByID(id); !ok {
+		if _, ok := s.cfg.ModelByID(id); !ok {
 			httpErr(w, 400, fmt.Sprintf("unknown model %q", id))
 			return
 		}

@@ -66,8 +66,17 @@ func (s *Server) handleGatewayModels(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	data = append(data, item{ID: "auto", Object: "model", OwnedBy: "relay"})
-	for _, m := range s.router.Models() {
+	seen := map[string]bool{}
+	for _, m := range s.cfg.Models {
+		seen[m.ID] = true
 		data = append(data, item{ID: m.ID, Object: "model", OwnedBy: m.Provider})
+	}
+	// models the providers report (local Ollama, Ollama cloud, Gemini, ...)
+	for _, m := range s.cat.Get(r.Context(), false).Models {
+		if !seen[m.ID] {
+			seen[m.ID] = true
+			data = append(data, item{ID: m.ID, Object: "model", OwnedBy: m.Provider})
+		}
 	}
 	writeJSON(w, 200, map[string]any{"object": "list", "data": data})
 }
@@ -90,7 +99,7 @@ func (s *Server) handleGatewayChat(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(req.Model, "relay-"):
 		mode = strings.TrimPrefix(req.Model, "relay-")
 	default:
-		if _, ok := s.router.ModelByID(req.Model); ok {
+		if _, ok := s.cfg.ModelByID(req.Model); ok {
 			model = req.Model
 		} else {
 			mode = "auto"

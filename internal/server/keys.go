@@ -27,6 +27,9 @@ func (s *Server) handleKeysPage(w http.ResponseWriter, r *http.Request) {
 func (s *Server) providerKeys() []proto.ProviderKeys {
 	out := make([]proto.ProviderKeys, 0, len(s.cfg.Providers))
 	for _, p := range s.cfg.Providers {
+		if p.KeyFrom != "" {
+			continue // uses the keys of another provider, which has its own card
+		}
 		total, avail, needs := s.router.KeyStats(p.Name)
 		pk := proto.ProviderKeys{
 			Name: p.Name, Kind: p.Kind, NeedsKey: needs, Total: total, Available: avail,
@@ -47,13 +50,10 @@ func (s *Server) handleKeys(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, proto.KeysResp{Providers: s.providerKeys()})
 }
 
+// knownProvider: keys can be saved for configured providers that keep their own keys.
 func (s *Server) knownProvider(name string) bool {
-	for _, p := range s.cfg.Providers {
-		if p.Name == name {
-			return true
-		}
-	}
-	return false
+	p, ok := s.cfg.ProviderByName(name)
+	return ok && p.KeyFrom == ""
 }
 
 func (s *Server) handleAddKey(w http.ResponseWriter, r *http.Request) {
@@ -72,7 +72,7 @@ func (s *Server) handleAddKey(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, 400, err.Error())
 		return
 	}
-	s.router.RefreshAsync() // a new key may unlock more models
+	s.cat.Invalidate() // a new key can unlock more models
 	writeJSON(w, 200, proto.KeyEntry{ID: m.ID, Label: m.Label, Hint: m.Hint})
 }
 
@@ -81,7 +81,7 @@ func (s *Server) handleDeleteKey(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, 404, "no such key")
 		return
 	}
-	s.router.RefreshAsync()
+	s.cat.Invalidate()
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
 

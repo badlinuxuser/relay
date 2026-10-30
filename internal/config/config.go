@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 )
@@ -23,22 +24,62 @@ type Provider struct {
 	BaseURL   string            `toml:"base_url"`
 	APIKeyEnv []string          `toml:"api_key_env"`
 	Headers   map[string]string `toml:"headers"`
+	// KeyFrom: take keys from another provider (for example ollama-cloud uses the
+	// keys saved for "ollama"). Such a provider has no card on the keys page.
+	KeyFrom string `toml:"key_from"`
+	// Discover: how to list the provider's models: ollama | gemini | anthropic |
+	// openai | none. Empty means "guess from the address".
+	Discover string `toml:"discover"`
+}
+
+// KeyName is the name under which this provider's keys are stored.
+func (p Provider) KeyName() string {
+	if p.KeyFrom != "" {
+		return p.KeyFrom
+	}
+	return p.Name
+}
+
+// DiscoverStyle returns how the provider's model list is fetched (see Discover).
+func (p Provider) DiscoverStyle() string {
+	if p.Discover != "" {
+		return p.Discover
+	}
+	u, err := url.Parse(p.BaseURL)
+	host, port := "", ""
+	if err == nil {
+		host, port = strings.ToLower(u.Hostname()), u.Port()
+	}
+	switch {
+	case host == "generativelanguage.googleapis.com":
+		return "gemini"
+	case p.Kind == "anthropic":
+		return "anthropic"
+	case p.Name == "ollama" || strings.HasPrefix(p.Name, "ollama-") || port == "11434" || host == "ollama.com":
+		return "ollama"
+	}
+	return "openai"
+}
+
+// IsLocal: the provider is a server on this computer (loopback address).
+func (p Provider) IsLocal() bool {
+	u, err := url.Parse(p.BaseURL)
+	if err != nil {
+		return false
+	}
+	switch u.Hostname() {
+	case "localhost", "127.0.0.1", "::1", "0.0.0.0":
+		return true
+	}
+	return false
 }
 
 // NeedsKey: нужен ли провайдеру API-ключ. Локальным серверам (loopback) он не нужен.
 func (p Provider) NeedsKey() bool {
-	if p.Kind == "anthropic" || len(p.APIKeyEnv) > 0 {
+	if p.Kind == "anthropic" || len(p.APIKeyEnv) > 0 || p.KeyFrom != "" {
 		return true
 	}
-	u, err := url.Parse(p.BaseURL)
-	if err != nil {
-		return true
-	}
-	switch u.Hostname() {
-	case "localhost", "127.0.0.1", "::1", "0.0.0.0":
-		return false
-	}
-	return true
+	return !p.IsLocal()
 }
 
 type Model struct {
@@ -119,34 +160,11 @@ func Ensure(home string) (string, error) {
 	return path, nil
 }
 
-// defaultProviders are added when a config file does not define them, so that keys for
-// these providers always work and their models can be discovered.
-var defaultProviders = []Provider{
-	{Name: "ollama", Kind: "openai", BaseURL: "http://127.0.0.1:11434/v1"},
-	{Name: "anthropic", Kind: "anthropic", BaseURL: "https://api.anthropic.com"},
-	{Name: "openai", Kind: "openai", BaseURL: "https://api.openai.com/v1"},
-	{Name: "gemini", Kind: "openai", BaseURL: "https://generativelanguage.googleapis.com/v1beta/openai"},
-	{Name: "openrouter", Kind: "openai", BaseURL: "https://openrouter.ai/api/v1"},
-}
-
-func (c *Config) addDefaultProviders() {
-	have := map[string]bool{}
-	for _, p := range c.Providers {
-		have[p.Name] = true
-	}
-	for _, p := range defaultProviders {
-		if !have[p.Name] {
-			c.Providers = append(c.Providers, p)
-		}
-	}
-}
-
 func Load(path string) (*Config, error) {
 	var c Config
 	if _, err := toml.DecodeFile(path, &c); err != nil {
 		return nil, fmt.Errorf("config %s: %w", path, err)
 	}
-	c.addDefaultProviders()
 	if err := c.validate(); err != nil {
 		return nil, fmt.Errorf("config %s: %w", path, err)
 	}
@@ -174,8 +192,22 @@ func (c *Config) validate() error {
 		if p.BaseURL == "" {
 			return fmt.Errorf("provider %q: base_url is required", p.Name)
 		}
+		if strings.Contains(p.Name, "/") {
+			return fmt.Errorf("provider name %q must not contain \"/\" (model ids are provider/model)", p.Name)
+		}
+		switch p.Discover {
+		case "", "ollama", "gemini", "anthropic", "openai", "none":
+		default:
+			return fmt.Errorf("provider %q: discover must be ollama, gemini, anthropic, openai or none", p.Name)
+		}
 		provs[p.Name] = true
 	}
+	for _, p := range c.Providers {
+		if p.KeyFrom != "" && (!provs[p.KeyFrom] || p.KeyFrom == p.Name) {
+			return fmt.Errorf("provider %q: key_from %q is not another configured provider", p.Name, p.KeyFrom)
+		}
+	}
+	c.addImplicitProviders(provs)
 	models := map[string]bool{}
 	for _, m := range c.Models {
 		if m.ID == "" || models[m.ID] {
@@ -206,6 +238,21 @@ func (c *Config) validate() error {
 	return nil
 }
 
+// addImplicitProviders keeps old config files working: config.toml is created once
+// and never rewritten, so a file from an earlier version has no ollama-cloud
+// provider. If a local Ollama provider is configured, Ollama cloud is added next to
+// it and uses the same keys (the ones saved for "ollama").
+func (c *Config) addImplicitProviders(provs map[string]bool) {
+	if provs["ollama-cloud"] || !provs["ollama"] {
+		return
+	}
+	c.Providers = append(c.Providers, Provider{
+		Name: "ollama-cloud", Kind: "openai", BaseURL: "https://ollama.com/v1",
+		KeyFrom: "ollama", Discover: "ollama",
+	})
+	provs["ollama-cloud"] = true
+}
+
 func validMode(name string) bool {
 	for _, m := range ValidModes {
 		if m == name {
@@ -215,13 +262,31 @@ func validMode(name string) bool {
 	return false
 }
 
+// ModelByID finds a model by id. Besides the models from config.toml, any
+// "<provider>/<model>" is accepted for a configured provider (that is how models
+// found by the provider's own model list are addressed, for example
+// "ollama/granite4.1:3b" or "gemini/gemini-2.5-flash"). Such models have no price.
 func (c *Config) ModelByID(id string) (Model, bool) {
 	for _, m := range c.Models {
 		if m.ID == id {
 			return m, true
 		}
 	}
+	if i := strings.Index(id, "/"); i > 0 && i < len(id)-1 {
+		if _, ok := c.ProviderByName(id[:i]); ok {
+			return Model{ID: id, Provider: id[:i], Name: id[i+1:], Tools: true}, true
+		}
+	}
 	return Model{}, false
+}
+
+func (c *Config) ProviderByName(name string) (Provider, bool) {
+	for _, p := range c.Providers {
+		if p.Name == name {
+			return p, true
+		}
+	}
+	return Provider{}, false
 }
 
 func (c *Config) PresetPrompt(name string) string {

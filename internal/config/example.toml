@@ -16,11 +16,28 @@ default_mode = "small"        # small | medium | hard | maximum
 # api_key_env (optional): also read keys from environment variables,
 #                    e.g. api_key_env = ["ANTHROPIC_API_KEY"].
 # Local servers (localhost) need no key.
+#
+# Models are found automatically: Relay asks each provider which models it has
+# (what is installed in Ollama, what Ollama cloud and the Gemini API offer for your
+# key, ...) and shows them in /models as <provider>/<model>, for example
+# ollama/granite4.1:3b or gemini/gemini-2.5-flash. You do not have to list them below.
+# The [[models]] section is only for short names, prices, and the mode chains.
+# discover = "none" turns the model search off for a provider
+# (other values: ollama | gemini | anthropic | openai; by default it is guessed from base_url).
 
 [[providers]]
 name = "ollama"
 kind = "openai"
 base_url = "http://127.0.0.1:11434/v1"
+
+# Ollama cloud (ollama.com): uses the key you add for "ollama" on the /keys page
+# (create one at https://ollama.com/settings/keys). Models installed locally and cloud
+# models both show up in /models. Without a key this provider is skipped silently.
+[[providers]]
+name = "ollama-cloud"
+kind = "openai"
+base_url = "https://ollama.com/v1"
+key_from = "ollama"
 
 [[providers]]
 name = "llamacpp"
@@ -50,10 +67,10 @@ base_url = "https://openrouter.ai/api/v1"
 # ------------------------------------------------------------------- models
 # price_in / price_out: USD per 1M tokens (used for cost tracking, fill in yourself)
 # tools = true: the model can call tools (required for agent mode)
-# You do NOT have to list models here. Relay asks every provider you added a key for
-# (and local servers like Ollama) which models they serve; they all appear in the /model
-# list as "provider/name" and are used as fallbacks automatically. Entries below are just
-# short aliases for the modes; an alias whose model the provider does not serve is skipped.
+# Model names change often: if a provider answers "model not found", pick another
+# one with /models. A model of a local server that is not installed (for example
+# local-small below when you have not pulled it) is skipped: the mode uses the models
+# that are installed instead.
 
 [[models]]
 id = "local-small"
@@ -87,25 +104,48 @@ tier = "hard"
 tools = true
 context = 200000
 
+[[models]]
+id = "gpt"
+provider = "openai"
+model = "gpt-5.5"
+tier = "hard"
+tools = true
+context = 200000
+
+[[models]]
+id = "gemini-flash"
+provider = "gemini"
+model = "gemini-3.5-flash"
+tier = "small"
+tools = true
+context = 200000
+
+[[models]]
+id = "openrouter-auto"
+provider = "openrouter"
+model = "openrouter/auto"
+tier = "medium"
+tools = true
+context = 128000
+
 # ------------------------------------------------------------------- modes
 # A mode defines the UI/mascot color and the model chain: if the first model is
-# unavailable (rate limit, server error, no key), the next one is used. After the chain,
-# Relay falls back to one discovered model from every other provider that has a key.
+# unavailable (rate limit, server error, no key), the next one is used.
 
 [modes.small]
-models = ["local-small", "haiku"]
+models = ["local-small", "haiku", "gemini-flash"]
 max_steps = 10
 
 [modes.medium]
-models = ["sonnet", "haiku"]
+models = ["sonnet", "gpt", "gemini-flash", "openrouter-auto", "haiku"]
 max_steps = 16
 
 [modes.hard]
-models = ["opus", "sonnet"]
+models = ["opus", "gpt", "sonnet", "gemini-flash"]
 max_steps = 24
 
 [modes.maximum]
-models = ["opus", "sonnet"]
+models = ["opus", "gpt", "sonnet", "gemini-flash"]
 max_steps = 40
 
 # ---------------------------------------------------------- local processes

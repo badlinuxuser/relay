@@ -63,8 +63,13 @@ footer{margin-top:26px;color:var(--dim);font-size:13px}
     anthropic:['https://console.anthropic.com/settings/keys','Anthropic Console'],
     openai:['https://platform.openai.com/api-keys','OpenAI Platform'],
     openrouter:['https://openrouter.ai/keys','OpenRouter'],
-    gemini:['https://aistudio.google.com/apikey','Google AI Studio']
+    gemini:['https://aistudio.google.com/apikey','Google AI Studio'],
+    ollama:['https://ollama.com/settings/keys','Ollama (cloud keys)']
   };
+  var NOTES = {
+    ollama:'Local models need no key. A key from ollama.com also unlocks the Ollama cloud models.'
+  };
+  var badges = {};
   var q = new URLSearchParams(location.hash.slice(1));
   var token = q.get('token') || sessionStorage.getItem('relay_token') || '';
   if (q.get('token')) { sessionStorage.setItem('relay_token', token); history.replaceState(null, '', location.pathname); }
@@ -86,9 +91,41 @@ footer{margin-top:26px;color:var(--dim);font-size:13px}
     return el('span','badge ok','keys: '+p.total+(p.available<p.total?' (available '+p.available+')':''));
   }
 
+  // one line about the models found for a provider (r is the answer of /api/models)
+  function modelsText(r, name){
+    var by = {}; (r.providers||[]).forEach(function(x){ by[x.name]=x; });
+    function one(x, label){
+      if(!x) return null;
+      if(x.error) return {t:label+': '+x.error, bad:true};
+      if(x.skipped==='no key') return null;
+      return {t:label+': '+x.count+' model'+(x.count===1?'':'s'), bad:false};
+    }
+    var parts = [];
+    if(name==='ollama'){
+      parts.push(one(by['ollama'],'local'));
+      parts.push(one(by['ollama-cloud'],'cloud'));
+    } else { parts.push(one(by[name],'models')); }
+    parts = parts.filter(function(x){ return x; });
+    if(!parts.length) return null;
+    return {t:parts.map(function(x){return x.t;}).join(' · '), bad:parts.some(function(x){return x.bad;})};
+  }
+
+  function fillModels(r){
+    Object.keys(badges).forEach(function(name){
+      var m = modelsText(r, name), b = badges[name];
+      if(!m){ b.style.display='none'; return; }
+      b.textContent = m.t; b.className = 'badge '+(m.bad?'bad':'ok'); b.style.display='';
+    });
+  }
+
+  function loadModels(refresh){
+    return api('GET','/api/models'+(refresh?'?refresh=1':'')).then(function(r){ fillModels(r); return r; });
+  }
+
   function card(p){
     var c = el('section','card');
-    var h = el('h2'); h.appendChild(document.createTextNode(p.name)); h.appendChild(el('span','kind',p.kind)); h.appendChild(badge(p)); c.appendChild(h);
+    var h = el('h2'); h.appendChild(document.createTextNode(p.name)); h.appendChild(el('span','kind',p.kind)); h.appendChild(badge(p));
+    var mb = el('span','badge',''); mb.style.display='none'; badges[p.name]=mb; h.appendChild(mb); c.appendChild(h);
     var ul = el('ul','keys');
     p.stored.forEach(function(k){
       var li = el('li'); li.appendChild(el('span','hint',k.hint)); li.appendChild(el('span','label',k.label||''));
@@ -108,8 +145,16 @@ footer{margin-top:26px;color:var(--dim);font-size:13px}
     var b = el('button',null,'Add'); b.type='submit';
     f.appendChild(key); f.appendChild(lbl); f.appendChild(b);
     f.onsubmit=function(ev){ ev.preventDefault(); if(!key.value.trim()) return;
-      api('POST','/api/keys',{provider:p.name,key:key.value,label:lbl.value}).then(function(){ key.value=''; lbl.value=''; toast('Key saved'); load(); }).catch(fail); };
+      api('POST','/api/keys',{provider:p.name,key:key.value,label:lbl.value}).then(function(){
+        key.value=''; lbl.value=''; toast('Key saved. Checking models…'); load();
+        // ask the provider what the key gives access to: this also checks that the key works
+        return loadModels(true).then(function(r){
+          var m = modelsText(r, p.name);
+          toast('Key saved'+(m?' · '+m.t:''), !!(m&&m.bad));
+        });
+      }).catch(fail); };
     c.appendChild(f);
+    if(NOTES[p.name]){ c.appendChild(el('p','hintline',NOTES[p.name])); }
     if(LINKS[p.name]){ var hl = el('p','hintline'); hl.appendChild(document.createTextNode('Get a key: ')); var a=el('a',null,LINKS[p.name][1]); a.href=LINKS[p.name][0]; a.target='_blank'; a.rel='noopener noreferrer'; hl.appendChild(a); c.appendChild(hl); }
     return c;
   }
@@ -121,7 +166,9 @@ footer{margin-top:26px;color:var(--dim);font-size:13px}
     api('GET','/api/keys').then(function(r){
       banner('');
       var list = document.getElementById('list'); list.textContent='';
+      badges = {};
       r.providers.forEach(function(p){ list.appendChild(card(p)); });
+      loadModels(false).catch(function(){}); // how many models each provider has (does not block the page)
     }).catch(fail);
   }
   load();

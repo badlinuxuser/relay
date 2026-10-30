@@ -207,7 +207,13 @@ func (m model) modelLabel() string {
 	}
 	if m.status != nil {
 		for _, md := range m.status.Modes {
-			if md.Name == m.mode && len(md.Models) > 0 {
+			if md.Name != m.mode {
+				continue
+			}
+			if len(md.Effective) > 0 { // what is really used: installed models, keys present
+				return md.Effective[0]
+			}
+			if len(md.Models) > 0 {
 				return md.Models[0]
 			}
 		}
@@ -298,8 +304,8 @@ func (m model) sidebar(w, h int, th theme, st styles) []string {
 	if m.status != nil {
 		var keyLines []string
 		for _, p := range m.status.Providers {
-			if p.Keys == 0 && !p.NeedsKey {
-				continue
+			if (p.Keys == 0 && !p.NeedsKey) || p.KeyFrom != "" {
+				continue // local server, or it shares the keys of another provider
 			}
 			switch {
 			case p.Keys == 0:
@@ -396,9 +402,10 @@ func (m model) View() string {
 	end := min(len(all), start+bodyH)
 	visible := all[start:end]
 
-	popup := m.modelPopup(mainW-1, st)
-	if len(popup) > bodyH-1 {
-		popup = popup[len(popup)-(bodyH-1):]
+	// the model list covers the bottom of the feed (not the side panel)
+	var pick []string
+	if m.pickerOpen() {
+		pick = m.pickerLines(mainW-1, bodyH, st)
 	}
 
 	var side []string
@@ -413,8 +420,8 @@ func (m model) View() string {
 		if i < len(visible) {
 			left = visible[i]
 		}
-		if k := i - (bodyH - len(popup)); len(popup) > 0 && k >= 0 {
-			left = popup[k]
+		if k := i - (bodyH - len(pick)); pick != nil && k >= 0 {
+			left = pick[k]
 		}
 		row := padRight(left, mainW)
 		if m.showSidebar() {

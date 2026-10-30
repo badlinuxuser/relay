@@ -67,9 +67,15 @@ type model struct {
 	totIn, totOut int
 	totCost       float64
 
+	// model picker (/models): the full list from the backend and the picker's state
+	models       *proto.ModelsResp
+	catAt        time.Time
+	catBusy      bool
+	pickSel      int
+	pickClosedAt string // input text at which esc closed the picker
+
 	transFrom  string // предыдущий режим во время анимации смены ("" = нет)
 	transStart int    // кадр, на котором началась анимация
-	sel        int    // highlighted row in the /model popup
 }
 
 // New создаёт интерфейс. spawn: запускать бэкенд, если он не запущен.
@@ -173,6 +179,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.addNotice("No API keys for: " + strings.Join(miss, ", ") + ". Run /keys to open a page where you can add them (keys are saved).")
 		}
 		m.mc.react("joy", 2500*time.Millisecond, "Relay is here.")
+		m.catBusy = true // look for models (Ollama, Gemini, ...) in the background
+		return m, catalogCmd(msg.cl, false)
+
+	case catalogMsg:
+		m.catBusy = false
+		if msg.err == nil && msg.resp != nil {
+			m.models, m.catAt = msg.resp, time.Now()
+		}
 		return m, nil
 
 	case errMsg:
@@ -288,30 +302,11 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// the /model popup is open
-	if items := m.modelSuggestions(); len(items) > 0 {
-		sel := m.selIndex(len(items))
-		switch key {
-		case "up":
-			m.sel = (sel + len(items) - 1) % len(items)
-			return m, nil
-		case "down":
-			m.sel = (sel + 1) % len(items)
-			return m, nil
-		case "tab":
-			m.input.SetValue("/model " + items[sel].id)
-			m.input.CursorEnd()
-			m.sel = 0
-			return m, nil
-		case "enter":
-			id := items[sel].id
-			m.input.SetValue("")
-			m.sel = 0
-			return m.command("/model " + id)
-		case "esc":
-			m.input.SetValue("")
-			m.sel = 0
-			return m, nil
+	// the model list is open above the input line: it takes ↑ ↓ tab enter esc
+	if m.pickerOpen() {
+		handled, c := m.pickerKey(key)
+		if handled {
+			return m, c
 		}
 	}
 
@@ -349,10 +344,11 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.send(text)
 	}
 
-	m.sel = 0
+	prev := m.input.Value()
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
-	return m, cmd
+	pc := m.syncPicker(prev)
+	return m, tea.Batch(cmd, pc)
 }
 
 // ---- запуск запросов ---------------------------------------------------------
@@ -583,18 +579,26 @@ func entriesFromSession(s *proto.SessionInfo) []entry {
 	return out
 }
 
-// missingKeys returns the providers that need an API key, but only when none of them
-// has one yet (one working provider is enough; the rest are optional).
+// missingKeys возвращает провайдеров, которым нужен ключ (и которые используются
+// моделями), но ключей нет.
 func missingKeys(st *proto.StatusResp) []string {
+	used := map[string]bool{}
+	for _, md := range st.Models {
+		used[md.Provider] = true
+	}
 	var out []string
+	seen := map[string]bool{}
 	for _, p := range st.Providers {
-		if !p.NeedsKey {
-			continue
+		if used[p.Name] && p.NeedsKey && p.Keys == 0 {
+			name := p.Name
+			if p.KeyFrom != "" {
+				name = p.KeyFrom // the keys are added under the provider that owns them
+			}
+			if !seen[name] {
+				seen[name] = true
+				out = append(out, name)
+			}
 		}
-		if p.Keys > 0 {
-			return nil
-		}
-		out = append(out, p.Name)
 	}
 	return out
 }

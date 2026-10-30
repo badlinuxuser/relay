@@ -16,7 +16,8 @@ import (
 const helpText = `Commands:
   /mode small|medium|hard|maximum   mode (UI color and model chain); shortcuts: /small /medium /hard /max
   /keys                             page for adding and storing API keys (opens in your browser)
-  /model <id>|auto                  pick a model, or go back to the mode's own choice
+  /models [text]                    pick a model: local Ollama, Ollama cloud, Gemini, ... (↑↓ enter);
+                                    "auto" goes back to the mode's own choice
   /agent on|off                     agent mode (tools: files, shell, web, MCP)
   /preset <name>|none               system prompt
   /compare <id> <id> ... <text>     send one prompt to several models
@@ -108,12 +109,17 @@ func procCmd(cl *client.Client, name, action string) tea.Cmd {
 }
 
 func (m model) isModelID(id string) bool {
-	if m.status == nil {
-		return false
-	}
-	for _, md := range m.status.Models {
+	for _, md := range m.modelList() {
 		if md.ID == id {
 			return true
+		}
+	}
+	// "<provider>/<model>" works for any provider, even if the model is not in the list
+	if i := strings.Index(id, "/"); i > 0 && i < len(id)-1 && m.status != nil {
+		for _, p := range m.status.Providers {
+			if p.Name == id[:i] {
+				return true
+			}
 		}
 	}
 	return false
@@ -171,6 +177,7 @@ func (m model) command(line string) (tea.Model, tea.Cmd) {
 		} else {
 			m.addNotice("Opened the keys page in your browser. Add your keys and come back: they apply immediately.")
 		}
+		m.catAt = time.Time{} // keys may change which models are available: ask again
 		return m, nil
 
 	case "/mode":
@@ -187,23 +194,20 @@ func (m model) command(line string) (tea.Model, tea.Cmd) {
 		m.addError("Unknown mode " + args[0])
 		return m, nil
 
-	case "/model":
+	case "/models":
 		if !needConn() {
 			return m, nil
 		}
-		if len(args) != 1 {
-			// open the model list above the input
-			m.input.SetValue("/model ")
-			m.input.CursorEnd()
-			m.sel = 0
+		if len(args) == 0 {
+			m.listModels()
+			if m.catStale() {
+				m.catBusy = true
+				return m, catalogCmd(m.cl, false)
+			}
 			return m, nil
 		}
-		v := args[0]
-		if v == "auto" {
-			v = ""
-		}
-		m.addNotice("Model: " + args[0])
-		return m, settingsCmd(m.cl, m.sess.ID, proto.SettingsReq{Model: &v})
+		c := m.useModel(args[0])
+		return m, c
 
 	case "/agent":
 		if !needConn() {

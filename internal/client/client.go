@@ -222,6 +222,20 @@ func (c *Client) Status() (*proto.StatusResp, error) {
 	return &st, nil
 }
 
+// Models returns every model the user can pick (what the providers report plus
+// the models from config.toml). refresh forces the backend to ask the providers again.
+func (c *Client) Models(refresh bool) (*proto.ModelsResp, error) {
+	path := "/api/models"
+	if refresh {
+		path += "?refresh=1"
+	}
+	var r proto.ModelsResp
+	if err := c.do("GET", path, nil, &r); err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
 func (c *Client) CreateSession(mode, workspace string) (*proto.SessionInfo, error) {
 	var si proto.SessionInfo
 	err := c.do("POST", "/api/sessions", proto.CreateSessionReq{Mode: mode, Workspace: workspace}, &si)

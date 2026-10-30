@@ -59,16 +59,6 @@ func (k *Keys) list() []string {
 
 func (k *Keys) NeedsKey() bool { return k.needsKey }
 
-// Any returns the first configured key regardless of cooldowns, or "" if there is none.
-// It is used for read-only calls such as listing a provider's models.
-func (k *Keys) Any() string {
-	list := k.list()
-	if len(list) == 0 {
-		return ""
-	}
-	return list[0]
-}
-
 func (k *Keys) Count() int { return len(k.list()) }
 
 // Available возвращает число ключей, которые сейчас не на паузе.
@@ -112,6 +102,11 @@ func (k *Keys) Get() (string, bool) {
 	}
 	return "", false
 }
+
+// All returns every key (saved ones first, then from environment variables),
+// including those resting after a rate limit. Used for requests that are not
+// chats, such as listing models.
+func (k *Keys) All() []string { return k.list() }
 
 func (k *Keys) Cooldown(key string) {
 	k.mu.Lock()
