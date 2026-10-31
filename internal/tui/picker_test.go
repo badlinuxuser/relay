@@ -235,19 +235,64 @@ func TestViewDrawsPickerOverFeed(t *testing.T) {
 	}
 }
 
-func TestPickerShowsProviderProblems(t *testing.T) {
+// API errors are for the keys page only: the terminal never shows them.
+func TestPickerNeverShowsProviderErrors(t *testing.T) {
 	m := testModel()
 	m.models.Providers = []proto.ModelsProvider{
 		{Name: "gemini", Error: "HTTP 400: API key not valid. Please pass a valid API key."},
-		{Name: "ollama-cloud", Skipped: "no key"},
+		{Name: "llamacpp", Local: true, Error: "not reachable: connection refused"},
 	}
 	m.input.SetValue("/models")
 	out := m.View()
-	if !strings.Contains(out, "gemini: HTTP 400: API key not valid") {
-		t.Errorf("a failing provider must be visible in the picker:\n%s", out)
+	for _, bad := range []string{"API key not valid", "not reachable", "llamacpp"} {
+		if strings.Contains(out, bad) {
+			t.Errorf("the picker must not mention %q:\n%s", bad, out)
+		}
 	}
-	if strings.Contains(out, "ollama-cloud:") {
-		t.Error("a provider without a key is not an error")
+}
+
+func TestSidebarHasNoKeysOrProcesses(t *testing.T) {
+	m := testModel()
+	m.status = &proto.StatusResp{
+		Processes: []proto.ProcInfo{{Name: "ollama", State: "ready"}},
+		Providers: []proto.ProviderInfo{{Name: "gemini", NeedsKey: true, Keys: 1, KeysAvailable: 1}},
+	}
+	out := m.View()
+	for _, gone := range []string{"processes", "/keys: add", "ollama  ready", "gemini  1/1"} {
+		if strings.Contains(out, gone) {
+			t.Errorf("the side panel must not show %q", gone)
+		}
+	}
+	for _, kept := range []string{"mode", "model", "agent", "folder", "tokens", "cost"} {
+		if !strings.Contains(out, kept) {
+			t.Errorf("the side panel lost %q", kept)
+		}
+	}
+}
+
+func TestMouseJunkIsRemovedFromInput(t *testing.T) {
+	for in, want := range map[string]string{
+		"[<64;101;29M[<64;101;29M[<65;101;29M": "",
+		"hello[<64;101;29M":                    "hello",
+		"\x1b[<64;101;29M world":               " world",
+		"<64;101;29M":                          "",
+		"a < b; c > d":                         "a < b; c > d",
+		"/models gemini":                       "/models gemini",
+		"array[<3;4;5]":                        "array[<3;4;5]",
+	} {
+		if got := mouseJunk.ReplaceAllString(in, ""); got != want {
+			t.Errorf("%q -> %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestHelpWithoutBackendPrintsQuickReference(t *testing.T) {
+	m := testModel()
+	m.cl = nil
+	next, _ := m.command("/help")
+	e := next.(model).entries
+	if len(e) < 3 || !strings.Contains(e[1].text+e[2].text, "/models") {
+		t.Errorf("entries: %+v", e)
 	}
 }
 

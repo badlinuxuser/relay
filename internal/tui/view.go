@@ -238,7 +238,7 @@ func (m model) sidebar(w, h int, th theme, st styles) []string {
 		set = m.sprites["small"]
 	}
 	mood := m.mc.frame(now)
-	if cols, rows := set.size(mood); rows > 0 && h >= rows+13 {
+	if cols, rows := set.size(mood); rows > 0 && h >= rows+12 {
 		var art string
 		if p, on := m.transition(); on {
 			scan := mixHex(th.accent, "#FFFFFF", 0.6)
@@ -280,47 +280,6 @@ func (m model) sidebar(w, h int, th theme, st styles) []string {
 		kv("tokens", st.text.Render(fmt.Sprintf("%d / %d", m.totIn, m.totOut))),
 		kv("cost", st.text.Render(fmt.Sprintf("$%.4f", m.totCost))),
 	)
-
-	if m.status != nil && len(m.status.Processes) > 0 {
-		lines = append(lines, sep, " "+st.gray.Render("processes"))
-		for _, p := range m.status.Processes {
-			dot, style := "○", st.dim
-			switch p.State {
-			case "ready":
-				dot, style = "●", st.accent
-			case "starting":
-				dot, style = "◐", st.gray
-			case "failed":
-				dot, style = "✗", st.red
-			}
-			label := p.State
-			if p.External {
-				label = "running (external)"
-			}
-			lines = append(lines, " "+style.Render(dot)+" "+st.text.Render(p.Name)+" "+st.dim.Render(label))
-		}
-	}
-
-	if m.status != nil {
-		var keyLines []string
-		for _, p := range m.status.Providers {
-			if (p.Keys == 0 && !p.NeedsKey) || p.KeyFrom != "" {
-				continue // local server, or it shares the keys of another provider
-			}
-			switch {
-			case p.Keys == 0:
-				keyLines = append(keyLines, " "+st.red.Render(fmt.Sprintf("%s  no key", p.Name)))
-			case p.KeysAvailable == 0:
-				keyLines = append(keyLines, " "+st.red.Render(fmt.Sprintf("%s  %d/%d", p.Name, p.KeysAvailable, p.Keys)))
-			default:
-				keyLines = append(keyLines, " "+st.text.Render(fmt.Sprintf("%s  %d/%d", p.Name, p.KeysAvailable, p.Keys)))
-			}
-		}
-		if len(keyLines) > 0 {
-			lines = append(lines, sep, " "+st.gray.Render("keys")+"  "+st.dim.Render("/keys: add"))
-			lines = append(lines, keyLines...)
-		}
-	}
 
 	if len(lines) > h {
 		lines = lines[:h]

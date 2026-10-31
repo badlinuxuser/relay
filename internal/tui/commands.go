@@ -13,19 +13,11 @@ import (
 	"relay/internal/proto"
 )
 
-const helpText = `Commands:
-  /mode small|medium|hard|maximum   mode (UI color and model chain); shortcuts: /small /medium /hard /max
-  /keys                             page for adding and storing API keys (opens in your browser)
-  /models [text]                    pick a model: local Ollama, Ollama cloud, Gemini, ... (↑↓ enter);
-                                    "auto" goes back to the mode's own choice
-  /agent on|off                     agent mode (tools: files, shell, web, MCP)
-  /preset <name>|none               system prompt
-  /compare <id> <id> ... <text>     send one prompt to several models
-  /new                              new session
-  /sessions   /load <id>            list and load sessions
-  /start <name>   /stop <name>      local processes (launcher)
-  /clear   /quit
-Keys: ctrl+t mode · ctrl+a agent · ctrl+n new · esc stop · pgup/pgdn scroll`
+// helpText is shown only when the help page cannot be opened in a browser.
+const helpText = `Relay help is a web page: run /help to open it, or open <backend address>/ui/help.
+Quick reference: /models pick a model · /mode small|medium|hard|maximum · /agent on|off · /keys API keys
+/preset <name>|none · /compare <model> <model> <text> · /new · /sessions · /load <id> · /start|/stop <name> · /clear · /quit
+Keys: ctrl+t mode · ctrl+a agent · ctrl+n new session · esc stop · pgup/pgdn scroll · ctrl+c quit`
 
 func statusCmd(cl *client.Client) tea.Cmd {
 	return func() tea.Msg {
@@ -139,8 +131,18 @@ func (m model) command(line string) (tea.Model, tea.Cmd) {
 
 	switch cmd {
 	case "/help", "/?":
-		for _, l := range strings.Split(helpText, "\n") {
-			m.addNotice(l)
+		if m.cl == nil {
+			for _, l := range strings.Split(helpText, "\n") {
+				m.addNotice(l)
+			}
+			return m, nil
+		}
+		url := m.cl.Base + "/ui/help"
+		m.mc.react("noticed", 2*time.Second, "")
+		if err := browser.Open(url); err != nil {
+			m.addNotice("Could not open the browser. Open the help page manually: " + url)
+		} else {
+			m.addNotice("Opened the help page in your browser: " + url)
 		}
 		return m, nil
 

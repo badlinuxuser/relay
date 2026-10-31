@@ -8,7 +8,7 @@ import (
 	"relay/internal/provider"
 )
 
-const Version = "0.4.0"
+const Version = "0.5.0"
 
 // Event это одно событие потока выполнения (SSE: "data: <json>").
 //
@@ -105,6 +105,7 @@ type ModelInfo struct {
 type ModelsProvider struct {
 	Name    string `json:"name"`
 	Count   int    `json:"count"`
+	Local   bool   `json:"local,omitempty"`   // a server on this computer
 	Skipped string `json:"skipped,omitempty"` // "no key" | "disabled"
 	Error   string `json:"error,omitempty"`
 }

@@ -8,8 +8,8 @@ import (
 )
 
 // handleModels returns every model the user can pick: what the providers report
-// (local Ollama, Ollama cloud, Gemini, ...) and the models from config.toml of the
-// providers whose list could not be fetched. ?refresh=1 forces a new look.
+// (local Ollama, Ollama cloud, Gemini, ...), official providers first. Providers
+// that refuse or cannot be reached contribute nothing. ?refresh=1 forces a new look.
 func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 	snap := s.cat.Get(r.Context(), r.URL.Query().Get("refresh") != "")
 	writeJSON(w, 200, s.modelList(snap))
@@ -17,11 +17,11 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) modelList(snap *catalog.Snapshot) proto.ModelsResp {
 	resp := proto.ModelsResp{Models: []proto.ModelInfo{}, Providers: []proto.ModelsProvider{}}
-	for _, p := range s.cfg.Providers {
+	for _, p := range s.cfg.OrderedProviders() {
 		res, ok := snap.Result(p.Name)
 		if ok {
 			resp.Providers = append(resp.Providers, proto.ModelsProvider{
-				Name: p.Name, Count: res.Count, Skipped: res.Skipped, Error: res.Error,
+				Name: p.Name, Count: res.Count, Local: res.Local, Skipped: res.Skipped, Error: res.Error,
 			})
 		}
 		if ok && res.Listed {
@@ -32,12 +32,13 @@ func (s *Server) modelList(snap *catalog.Snapshot) proto.ModelsResp {
 			}
 			continue
 		}
-		// No list from this provider: offer the models written in config.toml, but only
-		// if the provider can be used at all (a remote one that has a key).
-		if !p.NeedsKey() || res.Skipped != "" {
+		// A provider whose list was refused or is unreachable offers nothing (no access).
+		// Only a provider with the model search switched off (discover = "none") offers
+		// the models written in config.toml, if it has a key or needs none.
+		if res.Skipped != "disabled" {
 			continue
 		}
-		if total, _, _ := s.router.KeyStats(p.Name); total == 0 {
+		if total, _, _ := s.router.KeyStats(p.Name); p.NeedsKey() && total == 0 {
 			continue
 		}
 		for _, m := range s.cfg.Models {

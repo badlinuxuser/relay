@@ -8,7 +8,7 @@ default_mode = "small"        # small | medium | hard | maximum
 
 # ---------------------------------------------------------------- providers
 # kind = "openai"    any OpenAI-compatible server: Ollama, llama.cpp, LM Studio,
-#                    vLLM, OpenAI, OpenRouter, Gemini (via /v1beta/openai)
+#                    vLLM, OpenAI, OpenRouter, Gemini (via /v1beta/openai), Grok, DeepSeek
 # kind = "anthropic" Anthropic Messages API
 # You can add several keys per provider: on a rate limit Relay moves to the next key,
 # and when keys run out, to the next model of the mode.
@@ -21,6 +21,9 @@ default_mode = "small"        # small | medium | hard | maximum
 # (what is installed in Ollama, what Ollama cloud and the Gemini API offer for your
 # key, ...) and shows them in /models as <provider>/<model>, for example
 # ollama/granite4.1:3b or gemini/gemini-2.5-flash. You do not have to list them below.
+# The list shows the model makers' own APIs first (Anthropic, OpenAI, Gemini, Grok,
+# DeepSeek), then the rest (Ollama, llama.cpp, OpenRouter, ...). Providers that have no
+# key, refuse the key, or are not running contribute no models.
 # The [[models]] section is only for short names, prices, and the mode chains.
 # discover = "none" turns the model search off for a provider
 # (other values: ollama | gemini | anthropic | openai; by default it is guessed from base_url).
@@ -58,6 +61,17 @@ base_url = "https://api.openai.com/v1"
 name = "gemini"
 kind = "openai"
 base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
+
+# Grok (xAI) and DeepSeek: official APIs, keys from console.x.ai and platform.deepseek.com.
+[[providers]]
+name = "grok"
+kind = "openai"
+base_url = "https://api.x.ai/v1"
+
+[[providers]]
+name = "deepseek"
+kind = "openai"
+base_url = "https://api.deepseek.com"
 
 [[providers]]
 name = "openrouter"

@@ -1,177 +1,198 @@
 # Relay
 
-**Relay** это лаунчер и роутер для нейросетей в терминале: локальные модели и облачные API
-в одном интерфейсе, агенты для работы с кодом и маскот, который живёт вместе с интерфейсом.
+**Relay** is a terminal launcher and router for AI models: local models and cloud APIs in one interface,
+a coding agent, and a mascot that lives in the interface.
 
-> Быстрее. Ближе. Вместе.
+> Faster. Closer. Together.
 
 ```
-┌────────────┐   HTTP + SSE    ┌──────────────────────────────────────────────┐
-│  relay     │ ◄─────────────► │  relay daemon (тот же файл, фоновый процесс) │
-│  (TUI)     │   localhost     │  роутер · агент · процессы · MCP · шлюз /v1  │
-└────────────┘                 └───────┬───────────┬───────────┬──────────────┘
-  любой другой интерфейс               │           │           │
-  (web, GUI, скрипты)              Ollama /     Anthropic    OpenAI-совместимые
-                                  llama.cpp /   (ключи с     (OpenAI, OpenRouter,
-                                  LM Studio     ротацией)    Gemini, vLLM ...)
+┌────────────┐   HTTP + SSE    ┌───────────────────────────────────────────────┐
+│  relay     │ ◄─────────────► │  relay daemon (same binary, background)       │
+│  (TUI)     │   localhost     │  router · agent · processes · MCP · /v1 API   │
+└────────────┘                 └───────┬───────────┬───────────┬───────────────┘
+  any other client                     │           │           │
+  (web, GUI, scripts)              Ollama /     Anthropic    OpenAI-compatible
+                                  llama.cpp /   (keys with   (OpenAI, Gemini, Grok,
+                                  LM Studio     rotation)    DeepSeek, OpenRouter ...)
 ```
 
-Relay это один исполняемый файл `relay`. Интерфейс и бэкенд работают как два процесса: интерфейс сам
-запускает бэкенд в фоне (`relay daemon`). Интерфейс ничего не знает о провайдерах, всё делает бэкенд,
-поэтому можно написать любой другой клиент (см. [docs/PROTOCOL.md](docs/PROTOCOL.md)).
+Relay is a single executable, `relay`. The interface and the backend run as two processes: the interface
+starts the backend in the background by itself (`relay daemon`). The interface knows nothing about providers,
+the backend does everything, so any other client can be written against the same API
+(see [docs/PROTOCOL.md](docs/PROTOCOL.md)).
 
-## Возможности
+## Features
 
-- **Провайдеры:** Ollama, llama.cpp, LM Studio, vLLM, OpenAI, OpenRouter, Gemini (все через OpenAI-совместимый
-  адаптер) и Anthropic. Ответы идут потоком.
-- **Режимы small / medium / hard / maximum:** каждый задаёт цепочку моделей, цвет интерфейса и маскота
-  (maximum: радужная палитра). Переключение `ctrl+t`.
-- **Роутинг:** цепочка моделей режима с фолбэком при лимитах и ошибках; несколько ключей на провайдера с
-  автоматической ротацией; учёт токенов и стоимости; режим `auto` для шлюза.
-- **Лаунчер:** запуск и остановка локальных серверов (`/start ollama`), проверка готовности.
-- **Агент для кода:** цикл «модель → инструмент → результат»: чтение, поиск, запись и правка файлов,
-  shell, веб, а также инструменты MCP-серверов. Файлы ограничены рабочей папкой, опасные действия
-  требуют подтверждения (`y` разово, `a` на сессию, `n` отказ).
-- **Сессии:** история сохраняется на диск, смена модели и режима посреди диалога, системные промпты-пресеты.
-- **Сравнение:** `/compare модель1 модель2 текст`: один промпт на несколько моделей одновременно.
-- **Шлюз:** Бэкенд отдаёт OpenAI-совместимый endpoint, и другие программы работают через Relay.
-- **Маскот:** реагирует на события (подробнее ниже).
+- **Providers:** the model makers' own APIs (Anthropic, OpenAI, Gemini, Grok, DeepSeek) and also Ollama
+  (local and cloud), llama.cpp, LM Studio, vLLM and OpenRouter. Answers are streamed.
+- **Models are found automatically.** Relay asks each provider what it has (what is installed in Ollama, what
+  your Ollama cloud, Gemini, ... keys give access to) and lists it in `/models`. No model names to type in a
+  config file. Providers without access add nothing to the list.
+- **Modes small / medium / hard / maximum:** each sets a chain of models, the colour of the interface and the
+  mascot (maximum: rainbow). Switch with `ctrl+t`.
+- **Routing:** the mode's model chain with fallback on limits and errors; several keys per provider with
+  automatic rotation; token and cost tracking.
+- **Launcher:** start and stop local servers (`/start ollama`) with a readiness check.
+- **Coding agent:** a "model → tool → result" loop: read, search, write and edit files, shell, web, and tools of
+  MCP servers. Files are limited to the working folder; dangerous actions ask for confirmation.
+- **Sessions:** history is saved to disk; change model or mode in the middle of a conversation; system prompt presets.
+- **Compare:** `/compare model1 model2 text` sends one prompt to several models at once.
+- **Gateway:** the backend exposes an OpenAI-compatible endpoint, so other programs can work through Relay.
+- **Help in the browser:** `/help` opens a full guide; `/keys` opens the API keys page.
 
-## Быстрый старт
+## Quick start
 
-Нужен Go 1.22+.
+Requires Go 1.22+.
 
 ```bash
-make install        # сборка и добавление в PATH (Linux и Windows)
-relay               # запуск из любого каталога: агент работает в текущей папке
+make install        # build and add to PATH (Linux and Windows)
+relay               # run from any folder: the agent works in the current folder
 ```
 
-Без make: `go build -o relay ./cmd/relay && ./relay install`.
-`relay install` копирует файл в `~/.local/bin` (Linux) или `%LOCALAPPDATA%\Programs\relay` (Windows) и
-добавляет каталог в PATH (`~/.bashrc`, `~/.zshrc`, fish или пользовательский PATH Windows). После этого
-открой новый терминал.
+Without make: `go build -o relay ./cmd/relay && ./relay install`. `relay install` copies the binary to
+`~/.local/bin` (Linux) or `%LOCALAPPDATA%\Programs\relay` (Windows) and adds that folder to PATH
+(`~/.bashrc`, `~/.zshrc`, fish, or the Windows user PATH). Open a new terminal afterwards.
 
-### Ключи API
+Then, inside Relay:
 
-Команда `relay keys` (или `/keys` в интерфейсе) открывает в браузере страницу на localhost: там для
-каждого провайдера можно вставить один или несколько ключей. Ключи сохраняются в `keys.json`
-(права только владельцу), работают между сессиями и применяются сразу. Переменные окружения не нужны
-(но поддерживаются как необязательный вариант: `api_key_env` в конфиге).
+1. `/keys` opens a page in your browser where you paste API keys (local models need none).
+2. `/models` opens the model list: pick one with `↑` `↓` `enter`, or stay on `auto`.
+3. Type a message. `ctrl+a` turns on agent mode.
+4. `/help` opens the full guide.
 
-### Локальные модели
+### API keys
 
-Установи Ollama, скачай модель из конфига (`ollama pull qwen2.5-coder:7b`) и в интерфейсе выполни
-`/start ollama`. Локальным серверам ключ не нужен.
+`relay keys` (or `/keys`) opens a page on localhost where you can add one or more keys for each provider.
+Keys are stored in `keys.json` (owner-only permissions), persist between sessions and apply immediately.
+After a key is saved, the page asks the provider which models the key opens and shows the number, or the
+provider's error, so you know the key works. Environment variables are not needed (but supported as an option:
+`api_key_env` in the config).
 
-## Команды CLI
-
-| Команда | Что делает |
+| Provider | Get a key |
 |---|---|
-| `relay` | интерфейс в терминале (бэкенд стартует сам) |
-| `relay keys` | страница для ввода и хранения ключей API |
-| `relay status` | провайдеры, ключи, процессы, расход |
-| `relay stop` | остановить фоновый бэкенд |
-| `relay daemon` | бэкенд в текущем терминале (для отладки) |
-| `relay install` / `uninstall` | добавить в PATH или убрать |
-| `relay config [--example]` | путь к конфигурации или пример |
+| Anthropic | https://console.anthropic.com/settings/keys |
+| OpenAI | https://platform.openai.com/api-keys |
+| Gemini | https://aistudio.google.com/apikey |
+| Grok (xAI) | https://console.x.ai |
+| DeepSeek | https://platform.deepseek.com/api_keys |
+| Ollama (cloud models) | https://ollama.com/settings/keys |
+| OpenRouter | https://openrouter.ai/keys |
 
-Файлы данных: Linux `~/.config/relay/`, Windows `%AppData%\relay\` (`config.toml`, `keys.json`, `sessions/`,
-`usage.json`, `token`).
+Local servers (Ollama, llama.cpp) need no key. A key saved for `ollama` also unlocks Ollama cloud models.
 
-Кросс-сборка: `make dist` (Linux и Windows).
+### Local models
 
-## Управление
+Install Ollama, pull a model (`ollama pull granite4.1:3b`) and, if Ollama is not already running, type
+`/start ollama`. The installed models show up in `/models` as `ollama/<name>`.
 
-| Клавиша | Действие |
+## Choosing a model: `/models`
+
+Type `/models` and a list opens above the input line (`↑` `↓` select, `tab` fill, `enter` use, `esc` close).
+Text after the command filters the list: `/models gemini`, `/models cloud`.
+
+- Model ids are `<provider>/<model>`: `ollama/granite4.1:3b`, `ollama-cloud/gpt-oss:120b`, `gemini/gemini-2.5-flash`.
+- **Order:** the model makers' own APIs first (Anthropic, OpenAI, Gemini, Grok, DeepSeek), then the rest
+  (Ollama, Ollama cloud, llama.cpp, OpenRouter, ...).
+- **Only what you can use:** a provider without a key, with a rejected key, or a server that is not running
+  adds nothing. API errors are not shown in the terminal; the keys page shows them next to the provider.
+- `auto` returns the choice to the current mode. The list is cached for a minute and refreshed immediately
+  when a key is added or deleted.
+- A model of a local server in the mode chain that is not installed (for example `local-small` in the default
+  config) is replaced by the models you have installed. Models found automatically have no price, so their
+  cost shows as $0; tokens are still counted.
+
+## CLI commands
+
+| Command | What it does |
 |---|---|
-| `enter` | отправить сообщение |
-| `ctrl+t` | следующий режим (small → medium → hard → maximum) |
-| `ctrl+a` | включить или выключить режим агента |
-| `ctrl+n` | новая сессия |
-| `esc` | остановить выполнение |
-| `pgup` / `pgdn`, колесо мыши | прокрутка |
-| `ctrl+c` | выход |
+| `relay` | the terminal interface (the backend starts by itself) |
+| `relay keys` | page for adding and storing API keys |
+| `relay status` | providers, keys, processes, usage |
+| `relay stop` | stop the background backend |
+| `relay daemon` | the backend in this terminal (for debugging) |
+| `relay install` / `uninstall` | add to PATH or remove |
+| `relay config [--example]` | config path, or an example config |
 
-Команды: `/mode` (или `/small` `/medium` `/hard` `/max`), `/keys`, `/models`, `/agent`, `/preset`, `/compare`,
-`/new`, `/sessions`, `/load`, `/start`, `/stop`, `/clear`, `/help`, `/quit`.
+Data files: Linux `~/.config/relay/`, Windows `%AppData%\relay\` (`config.toml`, `keys.json`, `sessions/`,
+`usage.json`, `token`). Cross-build: `make dist` (Linux and Windows).
 
-### Выбор модели: `/models`
+## Controls
 
-Набери `/models`: над строкой ввода откроется список (↑↓ выбор, `tab` подставить, `enter` выбрать, `esc` закрыть;
-текст после команды фильтрует). Модели Relay находит сам, спрашивая провайдеров:
-
-- **Ollama** (локальный): всё, что установлено (`ollama list`), как `ollama/<имя>`;
-- **Ollama cloud**: ключ с ollama.com (`/keys`, карточка `ollama`) открывает облачные модели, `ollama-cloud/<имя>`;
-- **Gemini**: ключ из Google AI Studio (`/keys`, карточка `gemini`), `gemini/<имя>`; Anthropic, OpenAI, OpenRouter и
-  другие OpenAI-совместимые серверы тоже показывают свои списки.
-
-`auto` возвращает выбор режима. Ключи действуют сразу: после `/keys` список обновится при следующем `/models`;
-страница ключей после сохранения показывает, сколько моделей нашлось (так же проверяется, что ключ рабочий).
-Если модель из `config.toml` для локального сервера не установлена (например `local-small`), режим берёт
-установленные модели вместо неё. Цены у найденных моделей не заданы (расход считается как $0), токены считаются.
-
-## Маскот
-
-Пять эмоций из спрайт-листа, четыре цветовые темы (small: зелёная, medium: фиолетовая, hard: красная,
-maximum: радужная).
-
-| Событие | Эмоция |
+| Key | Action |
 |---|---|
-| ожидание | спокойная |
-| вызов инструмента, смена ключа | заметила |
-| ошибка, нужно подтверждение, внезапное пробуждение | удивление |
-| ответ получен, смена режима, старт | радость |
-| лимит ключа исчерпан, долго нет активности | устала (спит) |
+| `enter` | send the message |
+| `ctrl+t` | next mode (small → medium → hard → maximum) |
+| `ctrl+a` | agent mode on / off |
+| `ctrl+n` | new session |
+| `esc` | stop the running request (closes the model list when it is open) |
+| `pgup` / `pgdn`, mouse wheel | scroll |
+| `ctrl+c` | quit |
 
-Смена режима анимируется: цвета интерфейса плавно перетекают, а маскот «перекрашивается» волной
-с яркой линией-разделителем.
+Commands: `/help`, `/keys`, `/models`, `/mode` (or `/small` `/medium` `/hard` `/max`), `/agent`, `/preset`,
+`/compare`, `/new`, `/sessions`, `/load`, `/start`, `/stop`, `/clear`, `/quit`. Details are in `/help`.
 
-Спрайты собираются из `assets/sheets/*.png` скриптом `tools/sprites/build.py` (`make sprites`): чёткие
-пиксели 44x36, два пикселя на ячейку терминала (символ `▀`), маскот стоит на карточке.
-Радужная тема строится из зелёного листа: акцентные цвета перекрашиваются на лету.
+## Mascot
 
-## Шлюз OpenAI
+Five emotions from a sprite sheet and four colour themes (small: green, medium: purple, hard: red,
+maximum: rainbow).
+
+| Event | Emotion |
+|---|---|
+| idle | calm |
+| tool call, key switch | noticed |
+| error, approval needed, sudden wake-up | surprise |
+| answer received, mode change, start | joy |
+| key limit reached, long inactivity | tired (sleeping) |
+
+A mode change is animated: the interface colours blend smoothly and the mascot is "repainted" by a wave with
+a bright dividing line. Sprites are built from `assets/sheets/*.png` by `tools/sprites/build.py`
+(`make sprites`): crisp 44x36 pixels, two pixels per terminal cell (the `▀` character). The rainbow theme is
+computed from the green sheet at runtime.
+
+## OpenAI-compatible gateway
 
 ```bash
 TOKEN=$(cat ~/.config/relay/token)     # Windows: %AppData%\relay\token
 curl http://127.0.0.1:8787/v1/chat/completions \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"model":"relay-medium","messages":[{"role":"user","content":"Привет"}]}'
+  -d '{"model":"relay-medium","messages":[{"role":"user","content":"Hello"}]}'
 ```
 
-`model`: `relay-small|medium|hard|maximum`, `auto` или id модели из конфигурации.
+`model`: `relay-small|medium|hard|maximum`, `auto`, a model id from the config, or any `<provider>/<model>`
+from `/models`. `GET /v1/models` lists them all.
 
-## Безопасность
+## Security
 
-- API слушает только `127.0.0.1`, требует токен (`<home>/token`, права 0600) и проверяет заголовок Host
-  (защита от DNS rebinding). Страница ключей получает токен из фрагмента URL, он не уходит на сервер.
-- Ключи в `keys.json` хранятся открытым текстом (права 0600), интерфейс и API показывают только последние 4 символа.
-- Агент ограничен рабочей папкой; запись, shell и MCP всегда спрашивают подтверждение.
-- Shell не изолирован: подтверждай команды внимательно.
+- The API listens on `127.0.0.1` only, requires a token (`<home>/token`, mode 0600) and checks the Host
+  header (DNS rebinding protection). The keys page gets the token from the URL fragment, which is never sent
+  to the server.
+- Keys in `keys.json` are stored as plain text (mode 0600); the interface and API show only the last 4 characters.
+- The agent is limited to the working folder; writing, shell and MCP always ask for confirmation.
+- The shell is not sandboxed: read commands before you confirm them.
 
-## Структура
+## Layout
 
 ```
-cmd/relay          единственный исполняемый файл: TUI, daemon, keys, status, stop, install, config
-internal/daemon    запуск бэкенда (relay daemon)
-internal/config    конфигурация (TOML)
-internal/keystore  хранилище ключей API (keys.json)
-internal/provider  адаптеры openai и anthropic, ротация ключей
-internal/router    режимы, цепочки моделей, фолбэк, учёт расхода
-internal/agent     цикл агента
-internal/tools     инструменты агента (файлы, shell, веб, MCP)
-internal/mcp       клиент MCP (stdio)
-internal/runner    лаунчер локальных процессов
-internal/session   история диалогов
-internal/server    HTTP API, SSE, шлюз /v1, страница ключей (ui/keys.html)
-internal/client    клиент API, автозапуск бэкенда в фоне
-internal/browser   открытие URL в браузере
-internal/tui       интерфейс, маскот, темы
-tools/sprites      конвертер спрайтов
-assets/sheets      исходные спрайт-листы
+cmd/relay          the only executable: TUI, daemon, keys, status, stop, install, config
+internal/daemon    backend startup (relay daemon)
+internal/config    configuration (TOML), provider and model lookup
+internal/catalog   finds the models each provider has (Ollama, Gemini, ...), cache
+internal/keystore  API key storage (keys.json)
+internal/provider  openai and anthropic adapters, key rotation
+internal/router    modes, model chains, fallback, usage accounting
+internal/agent     the agent loop
+internal/tools     agent tools (files, shell, web, MCP)
+internal/mcp       MCP client (stdio)
+internal/runner    launcher for local processes
+internal/session   conversation history
+internal/server    HTTP API, SSE, /v1 gateway, keys page (ui/keys.html), help page (ui/help.html)
+internal/client    API client, background backend startup
+internal/browser   opens URLs in the browser
+internal/tui       interface, model list, mascot, themes
+tools/sprites      sprite converter
+assets/sheets      source sprite sheets
 ```
 
-## Статус
+## Status
 
-Версия 0.2. Версия 0.1 собралась и запустилась у автора; изменения 0.2 (единый бинарник, ключи через
-страницу, новые спрайты, анимация) написаны без компилятора, подробности и план в [PROJECT.md](PROJECT.md).
+Version 0.5. Notes, decisions and the plan are in [PROJECT.md](PROJECT.md) (in Russian).

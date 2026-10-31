@@ -61,6 +61,22 @@ func (p Provider) DiscoverStyle() string {
 	return "openai"
 }
 
+// officialHosts are the APIs of the companies that make the models themselves.
+var officialHosts = map[string]bool{
+	"api.anthropic.com":                 true,
+	"api.openai.com":                    true,
+	"generativelanguage.googleapis.com": true,
+	"api.x.ai":                          true,
+	"api.deepseek.com":                  true,
+}
+
+// IsOfficial: the provider is the model maker's own API (Anthropic, OpenAI, Gemini,
+// Grok, DeepSeek), as opposed to local servers, Ollama and resellers like OpenRouter.
+func (p Provider) IsOfficial() bool {
+	u, err := url.Parse(p.BaseURL)
+	return err == nil && officialHosts[strings.ToLower(u.Hostname())]
+}
+
 // IsLocal: the provider is a server on this computer (loopback address).
 func (p Provider) IsLocal() bool {
 	u, err := url.Parse(p.BaseURL)
@@ -239,18 +255,39 @@ func (c *Config) validate() error {
 }
 
 // addImplicitProviders keeps old config files working: config.toml is created once
-// and never rewritten, so a file from an earlier version has no ollama-cloud
-// provider. If a local Ollama provider is configured, Ollama cloud is added next to
-// it and uses the same keys (the ones saved for "ollama").
+// and never rewritten, so a file from an earlier version lacks the providers added
+// later. They are added here: Ollama cloud (next to a local Ollama, with the same
+// keys), Grok and DeepSeek.
 func (c *Config) addImplicitProviders(provs map[string]bool) {
-	if provs["ollama-cloud"] || !provs["ollama"] {
-		return
+	add := func(p Provider) {
+		if !provs[p.Name] {
+			c.Providers = append(c.Providers, p)
+			provs[p.Name] = true
+		}
 	}
-	c.Providers = append(c.Providers, Provider{
-		Name: "ollama-cloud", Kind: "openai", BaseURL: "https://ollama.com/v1",
-		KeyFrom: "ollama", Discover: "ollama",
-	})
-	provs["ollama-cloud"] = true
+	if provs["ollama"] {
+		add(Provider{Name: "ollama-cloud", Kind: "openai", BaseURL: "https://ollama.com/v1", KeyFrom: "ollama", Discover: "ollama"})
+	}
+	add(Provider{Name: "grok", Kind: "openai", BaseURL: "https://api.x.ai/v1"})
+	add(Provider{Name: "deepseek", Kind: "openai", BaseURL: "https://api.deepseek.com"})
+}
+
+// OrderedProviders lists the providers the way the user sees them: the model
+// makers' own APIs first, then the rest (Ollama, llama.cpp, OpenRouter, ...);
+// the configured order is kept inside each group.
+func (c *Config) OrderedProviders() []Provider {
+	out := make([]Provider, 0, len(c.Providers))
+	for _, p := range c.Providers {
+		if p.IsOfficial() {
+			out = append(out, p)
+		}
+	}
+	for _, p := range c.Providers {
+		if !p.IsOfficial() {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func validMode(name string) bool {

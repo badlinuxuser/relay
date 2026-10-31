@@ -140,6 +140,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/keys", s.handleAddKey)
 	mux.HandleFunc("DELETE /api/keys/{provider}/{id}", s.handleDeleteKey)
 	mux.HandleFunc("GET /ui/keys", s.handleKeysPage)
+	mux.HandleFunc("GET /ui/help", s.handleHelpPage)
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/ui/keys", http.StatusFound)
 	})
@@ -282,7 +283,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			Tools: m.Tools, PriceIn: m.PriceIn, PriceOut: m.PriceOut,
 		})
 	}
-	for _, p := range s.cfg.Providers {
+	for _, p := range s.cfg.OrderedProviders() {
 		total, avail, needs := s.router.KeyStats(p.Name)
 		st.Providers = append(st.Providers, proto.ProviderInfo{
 			Name: p.Name, Kind: p.Kind, NeedsKey: needs, Keys: total, KeysAvailable: avail, KeyFrom: p.KeyFrom,

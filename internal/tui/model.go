@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -274,6 +275,10 @@ func (m model) quit() (tea.Model, tea.Cmd) {
 	return m, tea.Quit
 }
 
+// mouseJunk matches terminal mouse reports ("\x1b[<64;101;29M") that were split while the
+// screen was busy and ended up in the input line as plain text, e.g. "[<64;101;29M".
+var mouseJunk = regexp.MustCompile(`(?:\x1b)?\[?<\d{1,3};\d{1,4};\d{1,4}[Mm]`)
+
 func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.mc.touch(time.Now())
 	key := msg.String()
@@ -347,6 +352,11 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	prev := m.input.Value()
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
+	if v := m.input.Value(); mouseJunk.MatchString(v) {
+		// Mouse wheel events that reached the input as text (see mouseJunk).
+		m.input.SetValue(mouseJunk.ReplaceAllString(v, ""))
+		m.input.CursorEnd()
+	}
 	pc := m.syncPicker(prev)
 	return m, tea.Batch(cmd, pc)
 }

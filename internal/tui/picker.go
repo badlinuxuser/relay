@@ -214,7 +214,7 @@ func (m *model) useModel(id string) tea.Cmd {
 func (m *model) listModels() {
 	list := m.modelList()
 	if len(list) == 0 {
-		m.addNotice("No models found yet. Start Ollama or add keys with /keys, then try /models again.")
+		m.addNotice("No models available yet. Start Ollama or add keys on the keys page (/keys), then try /models again.")
 		return
 	}
 	var order []string
@@ -231,21 +231,6 @@ func (m *model) listModels() {
 	}
 }
 
-// providerProblems is a short line about providers whose model list could not be
-// fetched (wrong key, server down, ...).
-func (m model) providerProblems() string {
-	if m.models == nil {
-		return ""
-	}
-	var parts []string
-	for _, p := range m.models.Providers {
-		if p.Error != "" {
-			parts = append(parts, p.Name+": "+shorten(p.Error, 70))
-		}
-	}
-	return strings.Join(parts, " · ")
-}
-
 // pickerLines draws the picker; the lines replace the bottom of the feed.
 func (m model) pickerLines(w, maxH int, st styles) []string {
 	items := m.pickerItems()
@@ -258,7 +243,6 @@ func (m model) pickerLines(w, maxH int, st styles) []string {
 	}
 	lines := []string{st.dim.Render(fmt.Sprintf("models %d/%d · ↑↓ select · tab fill · enter use · esc close", pos, n))}
 
-	prob := m.providerProblems()
 	rows := min(n, pickMaxRows, max(1, maxH-2))
 	if n == 0 {
 		switch {
@@ -285,9 +269,6 @@ func (m model) pickerLines(w, maxH int, st styles) []string {
 		} else {
 			lines = append(lines, "  "+st.text.Render(id)+"  "+st.dim.Render(it.desc))
 		}
-	}
-	if prob != "" && len(lines) < maxH {
-		lines = append(lines, st.red.Render("  ✗ "+shorten(prob, max(10, w-6))))
 	}
 	return lines
 }

@@ -242,3 +242,14 @@ func TestOpenAIChatFilter(t *testing.T) {
 		}
 	}
 }
+
+func TestXAIFilter(t *testing.T) {
+	for id, nonChat := range map[string]bool{
+		"grok-4": false, "grok-3-mini": false, "grok-2-vision-1212": false,
+		"grok-2-image-1212": true, "grok-imagine-video": true,
+	} {
+		if got := isXAINonChat(id); got != nonChat {
+			t.Errorf("isXAINonChat(%q) = %v, want %v", id, got, nonChat)
+		}
+	}
+}

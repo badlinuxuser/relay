@@ -527,10 +527,11 @@ func (c *Catalog) openai(ctx context.Context, p config.Provider, key string) ([]
 	if err := c.getJSON(ctx, p, strings.TrimRight(p.BaseURL, "/")+"/models", bearer(key), &r); err != nil {
 		return nil, err
 	}
-	official := strings.Contains(p.BaseURL, "api.openai.com")
+	openaiHost := strings.Contains(p.BaseURL, "api.openai.com")
+	xaiHost := strings.Contains(p.BaseURL, "api.x.ai")
 	var out []string
 	for _, m := range r.Data {
-		if official && !isOpenAIChat(m.ID) {
+		if (openaiHost && !isOpenAIChat(m.ID)) || (xaiHost && isXAINonChat(m.ID)) {
 			continue
 		}
 		out = append(out, m.ID)
@@ -553,4 +554,15 @@ func isOpenAIChat(id string) bool {
 		}
 	}
 	return true
+}
+
+// isXAINonChat drops the image and video models of api.x.ai.
+func isXAINonChat(id string) bool {
+	n := strings.ToLower(id)
+	for _, bad := range []string{"image", "imagine", "video", "embedding"} {
+		if strings.Contains(n, bad) {
+			return true
+		}
+	}
+	return false
 }

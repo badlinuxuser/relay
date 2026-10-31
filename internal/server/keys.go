@@ -26,7 +26,7 @@ func (s *Server) handleKeysPage(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) providerKeys() []proto.ProviderKeys {
 	out := make([]proto.ProviderKeys, 0, len(s.cfg.Providers))
-	for _, p := range s.cfg.Providers {
+	for _, p := range s.cfg.OrderedProviders() {
 		if p.KeyFrom != "" {
 			continue // uses the keys of another provider, which has its own card
 		}

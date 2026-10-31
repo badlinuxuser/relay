@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Relay · Help</title>
+<style>
+:root{--bg:#0C1510;--card:#14201A;--line:#25402F;--accent:#67DD5D;--text:#E6E8EA;--dim:#8A948D;--red:#F26D6D;--soft:#2E8B3E;--code:#0e1812}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+a{color:var(--accent)}
+.wrap{max-width:1040px;margin:0 auto;padding:28px 18px 80px;display:grid;grid-template-columns:210px minmax(0,1fr);gap:34px}
+header{grid-column:1/-1;display:flex;align-items:center;gap:18px}
+header img{width:132px;height:108px;image-rendering:pixelated}
+h1{margin:0;font-size:26px;color:var(--accent)}
+h1 small{color:var(--dim);font-weight:400;font-size:14px}
+.lead{margin:6px 0 0;color:var(--dim)}
+nav{position:sticky;top:18px;align-self:start;font-size:13px}
+nav ol{margin:0;padding:0;list-style:none}
+nav li{margin:0}
+nav a{display:block;padding:4px 10px;border-left:2px solid var(--line);color:var(--dim);text-decoration:none}
+nav a:hover{color:var(--accent);border-left-color:var(--accent)}
+main{min-width:0}
+section{margin:0 0 34px}
+h2{margin:0 0 12px;font-size:20px;color:var(--accent);padding-bottom:6px;border-bottom:1px solid var(--line)}
+h3{margin:22px 0 8px;font-size:16px}
+p{margin:0 0 12px}
+ul,ol.steps{margin:0 0 12px;padding-left:22px}
+li{margin:3px 0}
+code{background:var(--code);border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:13.5px}
+pre{background:var(--code);border:1px solid var(--line);border-radius:10px;padding:12px 14px;overflow-x:auto;margin:0 0 14px;font-size:13.5px;line-height:1.5}
+pre code{border:0;padding:0;background:none}
+kbd{background:var(--card);border:1px solid var(--soft);border-bottom-width:2px;border-radius:5px;padding:0 6px;font:inherit;font-size:13px;color:var(--accent);white-space:nowrap}
+table{width:100%;border-collapse:collapse;margin:0 0 16px;font-size:14px}
+th,td{text-align:left;vertical-align:top;padding:7px 10px;border-top:1px solid var(--line)}
+th{color:var(--dim);font-weight:400;border-top:0;border-bottom:1px solid var(--line)}
+td:first-child{white-space:nowrap}
+.tablewrap{overflow-x:auto}
+.note,.warn{border:1px solid var(--soft);border-radius:10px;padding:10px 14px;margin:0 0 14px;background:var(--card)}
+.warn{border-color:var(--red)}
+.note b,.warn b{color:var(--accent)}
+.warn b{color:var(--red)}
+.dim{color:var(--dim)}
+.pill{font-size:12px;padding:1px 8px;border-radius:99px;border:1px solid var(--line);color:var(--dim)}
+footer{grid-column:1/-1;color:var(--dim);font-size:13px;border-top:1px solid var(--line);padding-top:14px}
+@media (max-width:820px){
+  .wrap{grid-template-columns:1fr;gap:18px}
+  nav{position:static}
+  nav ol{display:flex;flex-wrap:wrap;gap:4px 14px}
+  nav a{border-left:0;padding:2px 0}
+  header img{width:88px;height:72px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <img alt="Relay" src="data:image/png;base64,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">
+  <div>
+    <h1>Relay <small>· Help</small></h1>
+    <p class="lead">One terminal app for local and cloud AI models. Faster. Closer. Together.</p>
+  </div>
+</header>
+
+<nav aria-label="Contents">
+  <ol>
+    <li><a href="#start">Quick start</a></li>
+    <li><a href="#screen">The screen</a></li>
+    <li><a href="#commands">Commands</a></li>
+    <li><a href="#keys-kbd">Keyboard</a></li>
+    <li><a href="#models">Choosing a model</a></li>
+    <li><a href="#modes">Modes</a></li>
+    <li><a href="#keys">API keys</a></li>
+    <li><a href="#local">Local models</a></li>
+    <li><a href="#agent">Agent mode</a></li>
+    <li><a href="#compare">Compare models</a></li>
+    <li><a href="#sessions">Sessions &amp; presets</a></li>
+    <li><a href="#config">Configuration</a></li>
+    <li><a href="#gateway">OpenAI-compatible API</a></li>
+    <li><a href="#cli">Command line</a></li>
+    <li><a href="#trouble">Troubleshooting</a></li>
+    <li><a href="#safety">Privacy &amp; safety</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<section id="start">
+<h2>Quick start</h2>
+<ol class="steps">
+  <li><b>Start Relay.</b> Run <code>relay</code> in the folder you want to work in. The background service starts by itself.</li>
+  <li><b>Add keys</b> for the cloud providers you use: type <code>/keys</code>. A page opens in your browser where you paste a key for each provider. Keys are saved on your computer and work immediately. Local models (Ollama, llama.cpp) need no key.</li>
+  <li><b>Pick a model:</b> type <code>/models</code>, move with <kbd>↑</kbd> <kbd>↓</kbd> and press <kbd>enter</kbd>. Or leave it on <code>auto</code> and let the current mode choose.</li>
+  <li><b>Chat.</b> Type a message and press <kbd>enter</kbd>. Press <kbd>ctrl</kbd>+<kbd>a</kbd> to let the model work with the files in your folder (agent mode).</li>
+</ol>
+<div class="note"><b>Tip.</b> In Relay, <code>/help</code> opens this page again and <code>/keys</code> opens the keys page.</div>
+</section>
+
+<section id="screen">
+<h2>The screen</h2>
+<ul>
+  <li><b>Header</b>: current mode and whether agent mode is on.</li>
+  <li><b>Feed</b> (left): your messages, the answers (with the model that wrote them under each answer), tool calls of the agent, and notices. Scroll with <kbd>pgup</kbd> / <kbd>pgdn</kbd> or the mouse wheel.</li>
+  <li><b>Input</b> (bottom): a message, or a command that starts with <code>/</code>.</li>
+  <li><b>Side panel</b> (right, wide terminals only): the mascot and its mood, and the current <code>mode</code>, <code>model</code>, <code>agent</code> state, working <code>folder</code>, <code>tokens</code> (in / out) and <code>cost</code> of this session.</li>
+</ul>
+<p>The mascot reacts to what happens: it is happy when an answer arrives, notices tool calls and key switches, is surprised by errors and approval requests, and gets tired when a key hits its rate limit or when nothing happens for a while. The colour of the whole interface follows the <a href="#modes">mode</a>.</p>
+<p class="dim">The <code>model</code> row shows the model you chose, or, on <code>auto</code>, the first model of the current mode that can actually be used right now.</p>
+</section>
+
+<section id="commands">
+<h2>Commands</h2>
+<p>Type them in the input line. Arguments in <code>&lt;angle brackets&gt;</code> are required, in <code>[square brackets]</code> optional.</p>
+<div class="tablewrap"><table>
+<tr><th>Command</th><th>What it does</th></tr>
+<tr><td><code>/help</code></td><td>Open this page in your browser.</td></tr>
+<tr><td><code>/keys</code></td><td>Open the API keys page in your browser.</td></tr>
+<tr><td><code>/models [text]</code></td><td>Open the model list. The text filters it. Choose <code>auto</code> to go back to the mode's own choice. See <a href="#models">Choosing a model</a>.</td></tr>
+<tr><td><code>/models &lt;id&gt;</code></td><td>Use a model by its id, even if it is not in the list (for example one you have just pulled with Ollama).</td></tr>
+<tr><td><code>/mode &lt;name&gt;</code></td><td>Switch the mode: <code>small</code>, <code>medium</code>, <code>hard</code> or <code>maximum</code>. Shortcuts: <code>/small</code> <code>/medium</code> <code>/hard</code> <code>/max</code>.</td></tr>
+<tr><td><code>/agent [on|off]</code></td><td>Turn agent mode on or off (without an argument it toggles).</td></tr>
+<tr><td><code>/preset &lt;name&gt;|none</code></td><td>Set a system prompt for this session. Presets are defined in the config (<code>coder</code> and <code>concise</code> come with Relay).</td></tr>
+<tr><td><code>/compare &lt;model&gt; &lt;model&gt; … &lt;text&gt;</code></td><td>Send the same prompt to up to 4 models at once.</td></tr>
+<tr><td><code>/new</code></td><td>Start a new session (the old one stays saved).</td></tr>
+<tr><td><code>/sessions</code></td><td>List recent sessions.</td></tr>
+<tr><td><code>/load &lt;id&gt;</code></td><td>Continue a saved session. Part of the id is enough.</td></tr>
+<tr><td><code>/start &lt;name&gt;</code> <code>/stop &lt;name&gt;</code></td><td>Start or stop a local server from the config, such as <code>ollama</code>.</td></tr>
+<tr><td><code>/clear</code></td><td>Clear the feed on screen (the session history is kept).</td></tr>
+<tr><td><code>/quit</code></td><td>Exit (also <kbd>ctrl</kbd>+<kbd>c</kbd>).</td></tr>
+</table></div>
+</section>
+
+<section id="keys-kbd">
+<h2>Keyboard</h2>
+<div class="tablewrap"><table>
+<tr><th>Keys</th><th>Action</th></tr>
+<tr><td><kbd>enter</kbd></td><td>Send the message or run the command.</td></tr>
+<tr><td><kbd>ctrl</kbd>+<kbd>t</kbd></td><td>Next mode: small → medium → hard → maximum → small.</td></tr>
+<tr><td><kbd>ctrl</kbd>+<kbd>a</kbd></td><td>Agent mode on / off.</td></tr>
+<tr><td><kbd>ctrl</kbd>+<kbd>n</kbd></td><td>New session.</td></tr>
+<tr><td><kbd>esc</kbd></td><td>Stop the answer that is being written. When the model list is open, it closes the list instead.</td></tr>
+<tr><td><kbd>pgup</kbd> <kbd>pgdn</kbd>, mouse wheel</td><td>Scroll the feed.</td></tr>
+<tr><td><kbd>ctrl</kbd>+<kbd>c</kbd></td><td>Quit.</td></tr>
+</table></div>
+<h3>Inside the model list</h3>
+<div class="tablewrap"><table>
+<tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Move the selection (it wraps around).</td></tr>
+<tr><td><kbd>tab</kbd></td><td>Copy the selected id into the input line (the list narrows to it).</td></tr>
+<tr><td><kbd>enter</kbd></td><td>Use the selected model.</td></tr>
+<tr><td><kbd>esc</kbd></td><td>Close the list.</td></tr>
+</table></div>
+<h3>When Relay asks for approval</h3>
+<p><kbd>y</kbd> allow this once · <kbd>a</kbd> always allow this tool in this session · <kbd>n</kbd> or <kbd>esc</kbd> deny.</p>
+</section>
+
+<section id="models">
+<h2>Choosing a model</h2>
+<p>Type <code>/models</code>. A list opens above the input line. Text after the command filters it: <code>/models gemini</code>, <code>/models cloud</code>, <code>/models qwen coder</code> (all words must match).</p>
+
+<h3>Where the list comes from</h3>
+<p>Relay asks every provider which models it really has, so you do not have to write model names into a config file:</p>
+<ul>
+  <li><b>Ollama</b> (on this computer): everything you have installed (<code>ollama list</code>). Shown as <code>ollama/&lt;name&gt;</code>. Cloud models that your local Ollama forwards (names ending in <code>-cloud</code>) appear here too.</li>
+  <li><b>Ollama cloud</b>: add an Ollama key on the keys page and the models of your ollama.com account appear as <code>ollama-cloud/&lt;name&gt;</code>.</li>
+  <li><b>Gemini, Anthropic, OpenAI, Grok, DeepSeek, OpenRouter</b>: add the key and the provider's own model list appears (<code>gemini/&lt;name&gt;</code>, <code>anthropic/&lt;name&gt;</code>, …). Models that are not for chat (embeddings, speech, images) are left out.</li>
+</ul>
+
+<h3>What you see</h3>
+<ul>
+  <li><b>Order.</b> The model makers' own APIs come first (Anthropic, OpenAI, Gemini, Grok, DeepSeek), then everything else: Ollama, Ollama cloud, llama.cpp, OpenRouter, and so on.</li>
+  <li><b>Only what you can use.</b> A provider without a key, with a key it refuses, or a local server that is not running adds nothing to the list. Errors are not shown in the terminal: open <code>/keys</code> to see them next to the provider.</li>
+  <li><b>Fresh.</b> The list is cached for a minute. Adding or deleting a key refreshes it at once, so after <code>/keys</code> just type <code>/models</code> again.</li>
+  <li><b><code>auto</code></b> (the first line) means "no fixed model": the current <a href="#modes">mode</a> picks from its chain.</li>
+</ul>
+
+<h3>Good to know</h3>
+<ul>
+  <li>The model stays selected for the current session until you choose another one or <code>auto</code>. A new session starts on <code>auto</code>.</li>
+  <li>If the chosen model fails because of a rate limit or a server error before it has written anything, Relay tries the next model of the mode.</li>
+  <li>Prices are not known for models that were found automatically, so their cost shows as $0.00; tokens are still counted. To track cost, add the model to <code>config.toml</code> with <code>price_in</code> / <code>price_out</code> (see <a href="#config">Configuration</a>).</li>
+  <li>Not every model can use tools. If agent mode answers with an error such as "does not support tools", pick another model.</li>
+</ul>
+</section>
+
+<section id="modes">
+<h2>Modes</h2>
+<p>A mode is a colour theme plus a <b>chain of models</b>: Relay tries the first model; if it is out of quota, has no key or fails, it moves to the next one.</p>
+<div class="tablewrap"><table>
+<tr><th>Mode</th><th>Colour</th><th>Meant for</th></tr>
+<tr><td><code>small</code></td><td>green</td><td>Quick questions, local and cheap models. Starts with your local Ollama models.</td></tr>
+<tr><td><code>medium</code></td><td>purple</td><td>Everyday coding and writing with a stronger cloud model.</td></tr>
+<tr><td><code>hard</code></td><td>red</td><td>Difficult tasks; the strongest models first, longer agent runs.</td></tr>
+<tr><td><code>maximum</code></td><td>rainbow</td><td>Same models as hard, the longest agent runs.</td></tr>
+</table></div>
+<p>Switch with <kbd>ctrl</kbd>+<kbd>t</kbd> or <code>/mode</code>. The chains and the agent step limit of each mode are in <code>config.toml</code> (<code>[modes.small]</code> and so on).</p>
+<p>Models of the chain that have no key, or that a local server does not have installed, are skipped quietly. If a local model from the chain is not installed, the models you do have installed take its place.</p>
+</section>
+
+<section id="keys">
+<h2>API keys</h2>
+<p><code>/keys</code> (or <code>relay keys</code> in a terminal) opens the keys page on your own computer. For each provider you can add one or several keys, give them labels, and delete them. After a key is saved the page asks the provider which models the key opens and shows the number, or the provider's error if the key is wrong.</p>
+<div class="tablewrap"><table>
+<tr><th>Provider</th><th>Get a key</th><th>Notes</th></tr>
+<tr><td>anthropic</td><td><a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer">console.anthropic.com</a></td><td>Claude models.</td></tr>
+<tr><td>openai</td><td><a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">platform.openai.com</a></td><td>GPT models.</td></tr>
+<tr><td>gemini</td><td><a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">aistudio.google.com</a></td><td>Google Gemini API. Only models that can generate text are listed.</td></tr>
+<tr><td>grok</td><td><a href="https://console.x.ai" target="_blank" rel="noopener noreferrer">console.x.ai</a></td><td>xAI Grok models.</td></tr>
+<tr><td>deepseek</td><td><a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener noreferrer">platform.deepseek.com</a></td><td>DeepSeek models.</td></tr>
+<tr><td>ollama</td><td><a href="https://ollama.com/settings/keys" target="_blank" rel="noopener noreferrer">ollama.com/settings/keys</a></td><td>Local models need no key. A key unlocks <b>Ollama cloud</b> models (<code>ollama-cloud/…</code>). The same key is used for both.</td></tr>
+<tr><td>openrouter</td><td><a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer">openrouter.ai/keys</a></td><td>Many models from many makers through one key.</td></tr>
+<tr><td>llamacpp</td><td class="dim">none</td><td>Local server (<code>llama-server</code>), no key needed.</td></tr>
+</table></div>
+<h3>Several keys for one provider</h3>
+<p>Add as many as you like. While one works, Relay keeps using it. When a key hits its rate limit or runs out of credit, Relay switches to the next key (you see a notice), and the tired key rests for two minutes. When all keys are used up, it moves on to the next model of the mode.</p>
+<h3>Where keys are stored</h3>
+<p>In <code>keys.json</code> in the Relay folder, readable only by you. They never leave your computer except in requests to the provider they belong to. The page shows only the last four characters. Environment variables also work if you list them in the config (<code>api_key_env = ["MY_VAR"]</code>), but you do not need them.</p>
+</section>
+
+<section id="local">
+<h2>Local models</h2>
+<h3>Ollama</h3>
+<ol class="steps">
+  <li>Install Ollama from <a href="https://ollama.com/download" target="_blank" rel="noopener noreferrer">ollama.com/download</a>.</li>
+  <li>Download a model: <code>ollama pull granite4.1:3b</code> (any model from the Ollama library).</li>
+  <li>If Ollama is not already running, type <code>/start ollama</code>. If it is (for example as a system service), Relay simply uses it and never stops it.</li>
+  <li>Type <code>/models</code>: your models are listed as <code>ollama/…</code>.</li>
+</ol>
+<h3>llama.cpp, LM Studio, vLLM and others</h3>
+<p>Any server with an OpenAI-compatible <code>/v1</code> API works. llama.cpp is preconfigured on port 8080. For others add a provider to <code>config.toml</code> (see <a href="#config">Configuration</a>). To let Relay start the server for you, add a <code>[[processes]]</code> entry and use <code>/start &lt;name&gt;</code> and <code>/stop &lt;name&gt;</code>.</p>
+<p class="dim">A local server that is not running is not an error: its card on the keys page says "not running" and it adds nothing to the model list.</p>
+</section>
+
+<section id="agent">
+<h2>Agent mode</h2>
+<p>Turn it on with <kbd>ctrl</kbd>+<kbd>a</kbd> (the header shows <code>agent on</code>). The model can then work with the folder where you started Relay, in steps: it looks at files, changes them, runs commands, and reads the result before the next step.</p>
+<div class="tablewrap"><table>
+<tr><th>Tool</th><th>What it does</th><th>Asks you first?</th></tr>
+<tr><td><code>read_file</code></td><td>Read a file in the folder.</td><td>no</td></tr>
+<tr><td><code>list_dir</code></td><td>List a directory.</td><td>no</td></tr>
+<tr><td><code>grep</code></td><td>Search text in files.</td><td>no</td></tr>
+<tr><td><code>web_fetch</code></td><td>Download a web page and read it.</td><td>no</td></tr>
+<tr><td><code>write_file</code></td><td>Create or overwrite a file.</td><td><b>yes</b></td></tr>
+<tr><td><code>edit_file</code></td><td>Replace part of a file.</td><td><b>yes</b></td></tr>
+<tr><td><code>run_shell</code></td><td>Run a shell command.</td><td><b>yes</b></td></tr>
+<tr><td>MCP tools</td><td>Tools of MCP servers from the config.</td><td><b>yes</b></td></tr>
+</table></div>
+<p>When approval is needed, the input box turns into a question showing what is about to happen. Answer <kbd>y</kbd> (once), <kbd>a</kbd> (always for this tool in this session) or <kbd>n</kbd>.</p>
+<p>The number of steps for one request is limited by the mode (10 in small, up to 40 in maximum). When the limit is reached, send another message to continue.</p>
+<p>Agent mode needs a model that supports tool calls. In automatic mode Relay skips models marked without tools; if you pick a model yourself and it cannot use tools, the provider will say so.</p>
+<h3>MCP servers</h3>
+<p>Add a <code>[[mcp]]</code> entry to <code>config.toml</code> and its tools become available to the agent:</p>
+<pre><code>[[mcp]]
+name = "fs"
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/dir"]</code></pre>
+</section>
+
+<section id="compare">
+<h2>Compare models</h2>
+<p>Send one prompt to several models at the same time and read the answers one under another:</p>
+<pre><code>/compare ollama/granite4.1:3b gemini/gemini-2.5-flash Explain what a mutex is in two sentences.</code></pre>
+<p>List up to four model ids first (ids from <code>/models</code>, or short names from the config), then the prompt. The active system preset is used; agent tools are not.</p>
+</section>
+
+<section id="sessions">
+<h2>Sessions &amp; presets</h2>
+<p>Every conversation is a session saved on disk. <code>/new</code> (<kbd>ctrl</kbd>+<kbd>n</kbd>) starts a fresh one in the same folder and mode. <code>/sessions</code> lists the latest ones, <code>/load &lt;id&gt;</code> brings one back with its full history. You can change the mode, model and preset in the middle of a conversation; the next message uses the new settings.</p>
+<p>A <b>preset</b> is a system prompt. <code>/preset coder</code> makes the model a careful software engineer, <code>/preset concise</code> asks for short answers, <code>/preset none</code> removes it. Add your own with <code>[[presets]]</code> in the config.</p>
+</section>
+
+<section id="config">
+<h2>Configuration</h2>
+<p>Relay works without any configuration. To change anything, edit <code>config.toml</code>. Print its location with <code>relay config</code>; print the full commented example with <code>relay config --example</code>.</p>
+<div class="note"><b>Restart needed.</b> The config is read when the background service starts. After editing it run <code>relay stop</code>, then <code>relay</code> again. The file is created once and never overwritten, so new Relay versions do not change your edits.</div>
+
+<h3>Add a provider</h3>
+<p>Any OpenAI-compatible server:</p>
+<pre><code>[[providers]]
+name = "lmstudio"
+kind = "openai"
+base_url = "http://127.0.0.1:1234/v1"</code></pre>
+<p>Its card appears on the keys page and its models in <code>/models</code>. Optional fields: <code>api_key_env</code> (read keys from environment variables), <code>headers</code> (extra HTTP headers), <code>discover</code> (<code>"none"</code> turns the model search off for the provider; other values force a search style: <code>ollama</code>, <code>gemini</code>, <code>anthropic</code>, <code>openai</code>), <code>key_from</code> (use the keys of another provider, as <code>ollama-cloud</code> does).</p>
+
+<h3>Give a model a short name, a price, and a place in a mode</h3>
+<pre><code>[[models]]
+id = "flash"                 # short name you can type: /models flash
+provider = "gemini"
+model = "gemini-2.5-flash"   # the provider's own name
+tier = "small"
+tools = true                 # the model can call tools (needed for agent mode)
+price_in = 0.30              # USD per 1M input tokens, for the cost counter
+price_out = 2.50
+
+[modes.small]
+models = ["local-small", "flash"]   # the chain: tried in this order
+max_steps = 10</code></pre>
+
+<h3>Other sections</h3>
+<ul>
+  <li><code>listen</code>: address of the background service (default <code>127.0.0.1:8787</code>).</li>
+  <li><code>workspace</code>: fixed folder for the agent (default: the folder where Relay was started).</li>
+  <li><code>default_mode</code>: mode of a new session.</li>
+  <li><code>[[processes]]</code>: local servers that <code>/start</code> and <code>/stop</code> manage, with <code>command</code>, <code>args</code>, <code>ready_url</code> and <code>autostart</code>.</li>
+  <li><code>[[presets]]</code>: your own system prompts.</li>
+</ul>
+</section>
+
+<section id="gateway">
+<h2>OpenAI-compatible API</h2>
+<p>While Relay is running, other programs can use it as an OpenAI endpoint. They get Relay's routing, key rotation and cost tracking, and you keep all your keys in one place.</p>
+<pre><code># the access token is in the "token" file in the Relay folder
+TOKEN=$(cat ~/.config/relay/token)
+
+curl http://127.0.0.1:8787/v1/chat/completions \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"model":"relay-medium","messages":[{"role":"user","content":"Hello"}]}'</code></pre>
+<p>Settings for other tools: base URL <code>http://127.0.0.1:8787/v1</code>, API key = the token.</p>
+<p><code>model</code> can be <code>relay-small</code> / <code>relay-medium</code> / <code>relay-hard</code> / <code>relay-maximum</code> (use that mode's chain), <code>auto</code> (Relay chooses a mode by the size and kind of the request), or any model id from <code>/models</code> such as <code>ollama/granite4.1:3b</code>. <code>GET /v1/models</code> lists them all. Streaming works; tool calls are not supported through this endpoint.</p>
+<p class="dim">The full description of the backend API is in <code>docs/PROTOCOL.md</code> in the Relay repository.</p>
+</section>
+
+<section id="cli">
+<h2>Command line</h2>
+<div class="tablewrap"><table>
+<tr><th>Command</th><th>What it does</th></tr>
+<tr><td><code>relay</code></td><td>Start the interface. The background service starts automatically and stops when you quit (use <code>relay --keep</code> to leave it running).</td></tr>
+<tr><td><code>relay keys</code></td><td>Open the keys page.</td></tr>
+<tr><td><code>relay status</code></td><td>Show providers, keys, local servers and usage.</td></tr>
+<tr><td><code>relay stop</code></td><td>Stop the background service.</td></tr>
+<tr><td><code>relay daemon</code></td><td>Run the service in this terminal (for debugging).</td></tr>
+<tr><td><code>relay install</code> / <code>uninstall</code></td><td>Add Relay to your PATH or remove it.</td></tr>
+<tr><td><code>relay config [--example]</code></td><td>Print the config path, or an example config.</td></tr>
+<tr><td><code>relay version</code></td><td>Print the version.</td></tr>
+</table></div>
+<h3>Where Relay keeps its files</h3>
+<p>Linux: <code>~/.config/relay/</code> · Windows: <code>%AppData%\relay\</code> · macOS: <code>~/Library/Application Support/relay/</code>. Set <code>RELAY_HOME</code> to use another folder.</p>
+<ul>
+  <li><code>config.toml</code>: settings</li>
+  <li><code>keys.json</code>: your API keys</li>
+  <li><code>sessions/</code>: saved conversations</li>
+  <li><code>usage.json</code>: token and cost totals per model</li>
+  <li><code>token</code>, <code>daemon.json</code>: access token and address of the running service</li>
+  <li><code>relayd.out</code>: output of the background service (look here if it does not start)</li>
+</ul>
+</section>
+
+<section id="trouble">
+<h2>Troubleshooting</h2>
+<h3>The model list is empty or a provider is missing</h3>
+<ul>
+  <li>No key? Add it with <code>/keys</code>. Providers without a key are skipped.</li>
+  <li>Open <code>/keys</code> and look at the badge next to the provider: it shows how many models were found, or what the provider answered (for example "API key not valid").</li>
+  <li>Ollama: make sure it is running (<code>/start ollama</code>) and that you have pulled a model (<code>ollama list</code>).</li>
+  <li>Just added a key? Type <code>/models</code> again; the list refreshes by itself.</li>
+</ul>
+<h3>"model not found" from a provider</h3>
+<p>A model name from <code>config.toml</code> may be outdated. Pick a model from <code>/models</code> instead; those names come straight from the provider.</p>
+<h3>"no API key for …"</h3>
+<p>The model you chose belongs to a provider without a key. Add one with <code>/keys</code>, or pick another model.</p>
+<h3>"rate limit" or the mascot looks tired</h3>
+<p>The key's quota is used up. Relay switches to another key or model automatically. Add more keys, or wait a couple of minutes.</p>
+<h3>The interface does not start or says the service did not start</h3>
+<p>Read <code>relayd.out</code> in the Relay folder, or run <code>relay daemon</code> in a terminal to see the error. A broken <code>config.toml</code> is the usual reason; the message names the line.</p>
+<h3>The old settings are still used after I edited the config</h3>
+<p>Run <code>relay stop</code> and start <code>relay</code> again.</p>
+<h3>The side panel or the mascot is not shown</h3>
+<p>The side panel needs a terminal at least 104 columns wide. The mascot also needs enough height.</p>
+<h3>Odd characters like <code>[&lt;64;101;29M</code> in the input</h3>
+<p>That is a mouse wheel report that a busy terminal split in two. Relay removes it automatically. If your terminal keeps doing this, scroll with <kbd>pgup</kbd> / <kbd>pgdn</kbd> instead.</p>
+</section>
+
+<section id="safety">
+<h2>Privacy &amp; safety</h2>
+<ul>
+  <li>The Relay service listens only on <code>127.0.0.1</code>, requires the access token and checks the <code>Host</code> header, so other computers and web pages cannot talk to it.</li>
+  <li>Your keys are stored in a plain text file readable only by you. The terminal and the pages never show more than the last four characters.</li>
+  <li>Your messages go only to the provider of the model you use. Relay has no servers of its own and sends no telemetry.</li>
+  <li>The agent can read and write files only inside its working folder (symbolic links are not checked). Writing, editing, shell commands and MCP tools always ask first.</li>
+  <li class="dim">The shell is <b>not sandboxed</b>: <code>run_shell</code> can do anything you can do. Read each command before you press <kbd>y</kbd>, and be careful with <kbd>a</kbd>.</li>
+</ul>
+</section>
+
+</main>
+<footer>Relay · Faster. Closer. Together. · This page is served by your own Relay service and works offline.</footer>
+</div>
+</body>
+</html>

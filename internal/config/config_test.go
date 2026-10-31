@@ -21,17 +21,17 @@ func TestExampleConfigLoads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	n := 0
+	count := map[string]int{}
 	for _, p := range c.Providers {
-		if p.Name == "ollama-cloud" {
-			n++
-			if p.KeyFrom != "ollama" || !p.NeedsKey() {
-				t.Errorf("ollama-cloud: %+v", p)
-			}
+		count[p.Name]++
+		if p.Name == "ollama-cloud" && (p.KeyFrom != "ollama" || !p.NeedsKey()) {
+			t.Errorf("ollama-cloud: %+v", p)
 		}
 	}
-	if n != 1 {
-		t.Errorf("ollama-cloud must appear once, found %d", n)
+	for _, name := range []string{"ollama-cloud", "grok", "deepseek"} {
+		if count[name] != 1 {
+			t.Errorf("%s must appear once in the example, found %d", name, count[name])
+		}
 	}
 }
 
@@ -151,5 +151,73 @@ func TestDiscoverStyle(t *testing.T) {
 	}
 	if strings.Contains(ExampleTOML, "discover = \"") && !strings.Contains(ExampleTOML, "# discover") {
 		t.Log("example uses discover outside a comment")
+	}
+}
+
+// Old config files have no Grok and DeepSeek: they are added, as official providers.
+func TestOldConfigGetsGrokAndDeepSeek(t *testing.T) {
+	c, err := Load(write(t, `
+[[providers]]
+name = "gemini"
+kind = "openai"
+base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
+
+[modes.small]
+models = []
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, ok := c.ProviderByName("grok")
+	if !ok || g.BaseURL != "https://api.x.ai/v1" || !g.IsOfficial() || !g.NeedsKey() {
+		t.Errorf("grok: %+v ok=%v", g, ok)
+	}
+	d, ok := c.ProviderByName("deepseek")
+	if !ok || d.BaseURL != "https://api.deepseek.com" || !d.IsOfficial() {
+		t.Errorf("deepseek: %+v ok=%v", d, ok)
+	}
+	// a provider the user already has is not duplicated or changed
+	c2, _ := Load(write(t, `
+[[providers]]
+name = "grok"
+kind = "openai"
+base_url = "http://my-proxy:9000/v1"
+
+[modes.small]
+models = []
+`))
+	n := 0
+	for _, p := range c2.Providers {
+		if p.Name == "grok" {
+			n++
+			if p.BaseURL != "http://my-proxy:9000/v1" {
+				t.Errorf("user's grok was changed: %+v", p)
+			}
+		}
+	}
+	if n != 1 {
+		t.Errorf("grok appears %d times", n)
+	}
+}
+
+func TestOfficialProvidersComeFirst(t *testing.T) {
+	c := &Config{Providers: []Provider{
+		{Name: "ollama", BaseURL: "http://127.0.0.1:11434/v1"},
+		{Name: "openrouter", BaseURL: "https://openrouter.ai/api/v1"},
+		{Name: "anthropic", Kind: "anthropic", BaseURL: "https://api.anthropic.com"},
+		{Name: "llamacpp", BaseURL: "http://127.0.0.1:8080/v1"},
+		{Name: "gemini", BaseURL: "https://generativelanguage.googleapis.com/v1beta/openai"},
+		{Name: "ollama-cloud", BaseURL: "https://ollama.com/v1"},
+		{Name: "grok", BaseURL: "https://api.x.ai/v1"},
+		{Name: "openai", BaseURL: "https://api.openai.com/v1"},
+		{Name: "deepseek", BaseURL: "https://api.deepseek.com"},
+	}}
+	var got []string
+	for _, p := range c.OrderedProviders() {
+		got = append(got, p.Name)
+	}
+	want := "anthropic gemini grok openai deepseek ollama openrouter llamacpp ollama-cloud"
+	if strings.Join(got, " ") != want {
+		t.Errorf("order:\n got  %s\n want %s", strings.Join(got, " "), want)
 	}
 }

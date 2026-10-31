@@ -54,7 +54,7 @@ footer{margin-top:26px;color:var(--dim);font-size:13px}
   </header>
   <div class="banner" id="banner"></div>
   <div id="list"></div>
-  <footer>Keys from environment variables (if set in the config) are listed separately and cannot be edited here. You can close this tab when you are done.</footer>
+  <footer>Need help? <a href="/ui/help">Open the Relay help</a>. Keys from environment variables (if set in the config) are listed separately and cannot be edited here. You can close this tab when you are done.</footer>
 </main>
 <div id="toast"></div>
 <script>
@@ -64,7 +64,9 @@ footer{margin-top:26px;color:var(--dim);font-size:13px}
     openai:['https://platform.openai.com/api-keys','OpenAI Platform'],
     openrouter:['https://openrouter.ai/keys','OpenRouter'],
     gemini:['https://aistudio.google.com/apikey','Google AI Studio'],
-    ollama:['https://ollama.com/settings/keys','Ollama (cloud keys)']
+    ollama:['https://ollama.com/settings/keys','Ollama (cloud keys)'],
+    grok:['https://console.x.ai','xAI Console'],
+    deepseek:['https://platform.deepseek.com/api_keys','DeepSeek Platform']
   };
   var NOTES = {
     ollama:'Local models need no key. A key from ollama.com also unlocks the Ollama cloud models.'
@@ -96,8 +98,12 @@ footer{margin-top:26px;color:var(--dim);font-size:13px}
     var by = {}; (r.providers||[]).forEach(function(x){ by[x.name]=x; });
     function one(x, label){
       if(!x) return null;
-      if(x.error) return {t:label+': '+x.error, bad:true};
-      if(x.skipped==='no key') return null;
+      if(x.error){
+        // a local server that is simply not started is not a problem
+        if(x.local && x.error.indexOf('not reachable')===0) return {t:label+': not running', bad:false, dim:true};
+        return {t:label+': '+x.error, bad:true};
+      }
+      if(x.skipped) return null;
       return {t:label+': '+x.count+' model'+(x.count===1?'':'s'), bad:false};
     }
     var parts = [];
@@ -107,14 +113,15 @@ footer{margin-top:26px;color:var(--dim);font-size:13px}
     } else { parts.push(one(by[name],'models')); }
     parts = parts.filter(function(x){ return x; });
     if(!parts.length) return null;
-    return {t:parts.map(function(x){return x.t;}).join(' · '), bad:parts.some(function(x){return x.bad;})};
+    return {t:parts.map(function(x){return x.t;}).join(' · '), bad:parts.some(function(x){return x.bad;}),
+            dim:parts.every(function(x){return x.dim;})};
   }
 
   function fillModels(r){
     Object.keys(badges).forEach(function(name){
       var m = modelsText(r, name), b = badges[name];
       if(!m){ b.style.display='none'; return; }
-      b.textContent = m.t; b.className = 'badge '+(m.bad?'bad':'ok'); b.style.display='';
+      b.textContent = m.t; b.className = 'badge'+(m.dim?'':(m.bad?' bad':' ok')); b.style.display='';
     });
   }
 
