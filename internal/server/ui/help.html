@@ -75,6 +75,7 @@ footer{grid-column:1/-1;color:var(--dim);font-size:13px;border-top:1px solid var
     <li><a href="#local">Local models</a></li>
     <li><a href="#agent">Agent mode</a></li>
     <li><a href="#compare">Compare models</a></li>
+    <li><a href="#panel">Side panel, mouse, Windows</a></li>
     <li><a href="#sessions">Sessions &amp; presets</a></li>
     <li><a href="#config">Configuration</a></li>
     <li><a href="#gateway">OpenAI-compatible API</a></li>
@@ -123,9 +124,11 @@ footer{grid-column:1/-1;color:var(--dim);font-size:13px;border-top:1px solid var
 <tr><td><code>/preset &lt;name&gt;|none</code></td><td>Set a system prompt for this session. Presets are defined in the config (<code>coder</code> and <code>concise</code> come with Relay).</td></tr>
 <tr><td><code>/compare &lt;model&gt; &lt;model&gt; … &lt;text&gt;</code></td><td>Send the same prompt to up to 4 models at once.</td></tr>
 <tr><td><code>/new</code></td><td>Start a new session (the old one stays saved).</td></tr>
-<tr><td><code>/sessions</code></td><td>List recent sessions.</td></tr>
+<tr><td><code>/sessions</code></td><td>Open a list of saved sessions above the input line. Click one (or use <kbd>↑</kbd> <kbd>↓</kbd> and <kbd>enter</kbd>) to switch to it.</td></tr>
 <tr><td><code>/load &lt;id&gt;</code></td><td>Continue a saved session. Part of the id is enough.</td></tr>
-<tr><td><code>/start &lt;name&gt;</code> <code>/stop &lt;name&gt;</code></td><td>Start or stop a local server from the config, such as <code>ollama</code>.</td></tr>
+<tr><td><code>/ollama</code></td><td>Start Ollama (if it is not already running).</td></tr>
+<tr><td><code>/llamacpp &lt;model.gguf&gt;</code></td><td>Start llama.cpp's <code>llama-server</code> with that model file. Quotes around a path with spaces are fine.</td></tr>
+<tr><td><code>/stop</code></td><td>Open a list of the running servers. Click one to stop it. <code>/stop &lt;name&gt;</code> stops it directly.</td></tr>
 <tr><td><code>/clear</code></td><td>Clear the feed on screen (the session history is kept).</td></tr>
 <tr><td><code>/quit</code></td><td>Exit (also <kbd>ctrl</kbd>+<kbd>c</kbd>).</td></tr>
 </table></div>
@@ -223,11 +226,11 @@ footer{grid-column:1/-1;color:var(--dim);font-size:13px;border-top:1px solid var
 <ol class="steps">
   <li>Install Ollama from <a href="https://ollama.com/download" target="_blank" rel="noopener noreferrer">ollama.com/download</a>.</li>
   <li>Download a model: <code>ollama pull granite4.1:3b</code> (any model from the Ollama library).</li>
-  <li>If Ollama is not already running, type <code>/start ollama</code>. If it is (for example as a system service), Relay simply uses it and never stops it.</li>
+  <li>If Ollama is not already running, type <code>/ollama</code>. If it is (for example as a system service), Relay simply uses it and never stops it.</li>
   <li>Type <code>/models</code>: your models are listed as <code>ollama/…</code>.</li>
 </ol>
 <h3>llama.cpp, LM Studio, vLLM and others</h3>
-<p>Any server with an OpenAI-compatible <code>/v1</code> API works. llama.cpp is preconfigured on port 8080. For others add a provider to <code>config.toml</code> (see <a href="#config">Configuration</a>). To let Relay start the server for you, add a <code>[[processes]]</code> entry and use <code>/start &lt;name&gt;</code> and <code>/stop &lt;name&gt;</code>.</p>
+<p>Any server with an OpenAI-compatible <code>/v1</code> API works. llama.cpp is preconfigured on port 8080. For others add a provider to <code>config.toml</code> (see <a href="#config">Configuration</a>). To let Relay start the server for you, add a <code>[[processes]]</code> entry and then type <code>/&lt;name&gt;</code> to start it and <code>/stop</code> to stop it. For llama.cpp: <code>/llamacpp path/to/model.gguf</code>.</p>
 <p class="dim">A local server that is not running is not an error: its card on the keys page says "not running" and it adds nothing to the model list.</p>
 </section>
 
@@ -245,7 +248,7 @@ footer{grid-column:1/-1;color:var(--dim);font-size:13px;border-top:1px solid var
 <tr><td><code>run_shell</code></td><td>Run a shell command.</td><td><b>yes</b></td></tr>
 <tr><td>MCP tools</td><td>Tools of MCP servers from the config.</td><td><b>yes</b></td></tr>
 </table></div>
-<p>When approval is needed, the input box turns into a question showing what is about to happen. Answer <kbd>y</kbd> (once), <kbd>a</kbd> (always for this tool in this session) or <kbd>n</kbd>.</p>
+<p>When approval is needed, a list opens above the input line showing what is about to happen, with three buttons: <b>Allow once</b>, <b>Always allow</b> (this tool, until the session ends) and <b>Deny</b>. Click one, or use <kbd>↑</kbd> <kbd>↓</kbd> and <kbd>enter</kbd>, or press <kbd>y</kbd> / <kbd>a</kbd> / <kbd>n</kbd> (<kbd>esc</kbd> denies).</p>
 <p>The number of steps for one request is limited by the mode (10 in small, up to 40 in maximum). When the limit is reached, send another message to continue.</p>
 <p>Agent mode needs a model that supports tool calls. In automatic mode Relay skips models marked without tools; if you pick a model yourself and it cannot use tools, the provider will say so.</p>
 <h3>MCP servers</h3>
@@ -263,9 +266,20 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/dir"]</code><
 <p>List up to four model ids first (ids from <code>/models</code>, or short names from the config), then the prompt. The active system preset is used; agent tools are not.</p>
 </section>
 
+<section id="panel">
+<h2>Side panel, mouse, Windows</h2>
+<h3>The side panel: processes</h3>
+<p>The <b>processes</b> block lists the local servers that are running right now (Ollama, llama.cpp, LM Studio, ...), also ones you started yourself. When there are none it says <code>Nothing running :)</code>.</p>
+<h3>Mouse</h3>
+<p>Every list above the input line (models, sessions, running servers, approval) can be clicked. The mouse wheel scrolls the conversation.</p>
+<h3>Windows</h3>
+<p>Relay switches the console to UTF-8 while it runs, so box lines and non-English text display correctly (Windows Terminal is recommended). Windows has no <code>systemctl</code>: if Ollama was started by the Ollama app, Relay does not stop it; quit it from the Ollama icon in the system tray.</p>
+
+</section>
+
 <section id="sessions">
 <h2>Sessions &amp; presets</h2>
-<p>Every conversation is a session saved on disk. <code>/new</code> (<kbd>ctrl</kbd>+<kbd>n</kbd>) starts a fresh one in the same folder and mode. <code>/sessions</code> lists the latest ones, <code>/load &lt;id&gt;</code> brings one back with its full history. You can change the mode, model and preset in the middle of a conversation; the next message uses the new settings.</p>
+<p>Every conversation is a session saved on disk. <code>/new</code> (<kbd>ctrl</kbd>+<kbd>n</kbd>) starts a fresh one in the same folder and mode. <code>/sessions</code> opens a list of the latest ones: click one to bring it back with its full history (<code>/load &lt;id&gt;</code> does the same by id). You can change the mode, model and preset in the middle of a conversation; the next message uses the new settings.</p>
 <p>A <b>preset</b> is a system prompt. <code>/preset coder</code> makes the model a careful software engineer, <code>/preset concise</code> asks for short answers, <code>/preset none</code> removes it. Add your own with <code>[[presets]]</code> in the config.</p>
 </section>
 
@@ -301,7 +315,7 @@ max_steps = 10</code></pre>
   <li><code>listen</code>: address of the background service (default <code>127.0.0.1:8787</code>).</li>
   <li><code>workspace</code>: fixed folder for the agent (default: the folder where Relay was started).</li>
   <li><code>default_mode</code>: mode of a new session.</li>
-  <li><code>[[processes]]</code>: local servers that <code>/start</code> and <code>/stop</code> manage, with <code>command</code>, <code>args</code>, <code>ready_url</code> and <code>autostart</code>.</li>
+  <li><code>[[processes]]</code>: local servers that <code>/&lt;name&gt;</code> (for example <code>/ollama</code>) and <code>/stop</code> manage, with <code>command</code>, <code>args</code>, <code>ready_url</code> and <code>autostart</code>.</li>
   <li><code>[[presets]]</code>: your own system prompts.</li>
 </ul>
 </section>
@@ -351,7 +365,7 @@ curl http://127.0.0.1:8787/v1/chat/completions \
 <ul>
   <li>No key? Add it with <code>/keys</code>. Providers without a key are skipped.</li>
   <li>Open <code>/keys</code> and look at the badge next to the provider: it shows how many models were found, or what the provider answered (for example "API key not valid").</li>
-  <li>Ollama: make sure it is running (<code>/start ollama</code>) and that you have pulled a model (<code>ollama list</code>).</li>
+  <li>Ollama: make sure it is running (<code>/ollama</code>) and that you have pulled a model (<code>ollama list</code>).</li>
   <li>Just added a key? Type <code>/models</code> again; the list refreshes by itself.</li>
 </ul>
 <h3>"model not found" from a provider</h3>

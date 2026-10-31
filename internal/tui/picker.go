@@ -21,8 +21,9 @@ const (
 )
 
 type pickItem struct {
-	id   string // "" for auto
-	desc string
+	id    string // "" for auto
+	title string // what to show instead of the id (sessions, servers, answers)
+	desc  string
 }
 
 type catalogMsg struct {
@@ -52,7 +53,7 @@ func pickerQuery(v string) (filter string, ok bool) {
 }
 
 func (m model) pickerOpen() bool {
-	if m.cl == nil || m.approval != nil {
+	if m.cl == nil || m.approval != nil || m.ov.kind != ovNone {
 		return false
 	}
 	v := m.input.Value()
@@ -108,6 +109,9 @@ func (m model) pickerItems() []pickItem {
 }
 
 func (it pickItem) label() string {
+	if it.title != "" {
+		return it.title
+	}
 	if it.id == "" {
 		return "auto"
 	}
@@ -231,44 +235,11 @@ func (m *model) listModels() {
 	}
 }
 
-// pickerLines draws the picker; the lines replace the bottom of the feed.
+// pickerLines draws the model list (the lines replace the bottom of the feed).
 func (m model) pickerLines(w, maxH int, st styles) []string {
-	items := m.pickerItems()
-	n := len(items)
-	sel := m.pickSelected(items)
-
-	pos := 0
-	if n > 0 {
-		pos = sel + 1
+	a, ok := m.active(w, st)
+	if !ok || a.kind != "models" {
+		return nil
 	}
-	lines := []string{st.dim.Render(fmt.Sprintf("models %d/%d · ↑↓ select · tab fill · enter use · esc close", pos, n))}
-
-	rows := min(n, pickMaxRows, max(1, maxH-2))
-	if n == 0 {
-		switch {
-		case m.catBusy && m.models == nil:
-			lines = append(lines, st.dim.Render("  loading models…"))
-		default:
-			lines = append(lines, st.dim.Render("  no models match"))
-		}
-	}
-	start := 0
-	if sel >= rows {
-		start = sel - rows + 1
-	}
-	idW := 0
-	for _, it := range items {
-		idW = max(idW, runeLen(it.label()))
-	}
-	idW = min(idW, max(12, w/2))
-	for i := start; i < start+rows && i < n; i++ {
-		it := items[i]
-		id := padRight(shorten(it.label(), idW), idW)
-		if i == sel {
-			lines = append(lines, st.accentBold.Render("❯ "+id)+"  "+st.dim.Render(it.desc))
-		} else {
-			lines = append(lines, "  "+st.text.Render(id)+"  "+st.dim.Render(it.desc))
-		}
-	}
-	return lines
+	return drawList(a, w, maxH, st).lines
 }

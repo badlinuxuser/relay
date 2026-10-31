@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -16,7 +17,8 @@ import (
 // helpText is shown only when the help page cannot be opened in a browser.
 const helpText = `Relay help is a web page: run /help to open it, or open <backend address>/ui/help.
 Quick reference: /models pick a model · /mode small|medium|hard|maximum · /agent on|off · /keys API keys
-/preset <name>|none · /compare <model> <model> <text> · /new · /sessions · /load <id> · /start|/stop <name> · /clear · /quit
+/preset <name>|none · /compare <model> <model> <text> · /new · /sessions · /load <id> · /clear · /quit
+Servers: /ollama · /llamacpp <model.gguf> · /stop (pick what to stop)
 Keys: ctrl+t mode · ctrl+a agent · ctrl+n new session · esc stop · pgup/pgdn scroll · ctrl+c quit`
 
 func statusCmd(cl *client.Client) tea.Cmd {
@@ -87,17 +89,62 @@ func loadCmd(cl *client.Client, query string) tea.Cmd {
 	}
 }
 
-func procCmd(cl *client.Client, name, action string) tea.Cmd {
+// procMsg is the result of starting or stopping a process.
+type procMsg struct {
+	name, action string
+	already      bool
+	st           *proto.StatusResp
+}
+
+func procCmd(cl *client.Client, name, action string, args ...string) tea.Cmd {
 	return func() tea.Msg {
-		if err := cl.Process(name, action); err != nil {
+		already, err := cl.Process(name, action, args...)
+		if err != nil {
 			return errMsg{err}
 		}
-		st, err := cl.Status()
-		if err != nil {
-			return infoMsg{fmt.Sprintf("%s: %s", name, action)}
-		}
-		return statusMsg{st: st}
+		st, _ := cl.Status()
+		return procMsg{name: name, action: action, already: already, st: st}
 	}
+}
+
+// processNames are the names of the processes from the config (every one gets a /name command).
+func (m model) isProcess(name string) bool {
+	if m.status == nil {
+		return name == "ollama" || name == "llamacpp"
+	}
+	for _, p := range m.status.Processes {
+		if p.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// unquote removes quotes around a path pasted with spaces and expands ~.
+func unquote(s string) string {
+	s = strings.TrimSpace(s)
+	if len(s) >= 2 && (s[0] == '"' || s[0] == '\'') && s[len(s)-1] == s[0] {
+		s = s[1 : len(s)-1]
+	}
+	if s == "~" || strings.HasPrefix(s, "~/") || strings.HasPrefix(s, "~\\") {
+		if home, err := os.UserHomeDir(); err == nil {
+			s = home + s[1:]
+		}
+	}
+	return s
+}
+
+// processArgs turns the text after /<name> into extra arguments. llama.cpp takes a
+// model file (the path may contain spaces); other servers take plain arguments.
+func processArgs(name, rest string) []string {
+	rest = strings.TrimSpace(rest)
+	if rest == "" {
+		return nil
+	}
+	if name == "llamacpp" && !strings.HasPrefix(rest, "-") {
+		return []string{"-m", unquote(rest)}
+	}
+	return strings.Fields(rest)
 }
 
 func (m model) isModelID(id string) bool {
@@ -246,6 +293,7 @@ func (m model) command(line string) (tea.Model, tea.Cmd) {
 		if !needConn() {
 			return m, nil
 		}
+		m.ov = overlay{}
 		return m, sessionsCmd(m.cl)
 
 	case "/load":
@@ -254,12 +302,18 @@ func (m model) command(line string) (tea.Model, tea.Cmd) {
 		}
 		return m, loadCmd(m.cl, args[0])
 
-	case "/start", "/stop":
-		if !needConn() || len(args) != 1 {
-			m.addNotice("Usage: " + cmd + " <process name>")
+	case "/stop":
+		if !needConn() {
 			return m, nil
 		}
-		return m, procCmd(m.cl, args[0], strings.TrimPrefix(cmd, "/"))
+		if len(args) == 0 {
+			return m, stopListCmd(m)
+		}
+		return m, procCmd(m.cl, args[0], "stop")
+
+	case "/start":
+		m.addNotice("/start is gone: use /ollama or /llamacpp <model.gguf>")
+		return m, nil
 
 	case "/compare":
 		if !needConn() {
@@ -288,6 +342,15 @@ func (m model) command(line string) (tea.Model, tea.Cmd) {
 		})
 		m.mc.react("noticed", 2*time.Second, "")
 		return m, runCmd
+	}
+
+	if name := strings.TrimPrefix(cmd, "/"); m.isProcess(name) {
+		if !needConn() {
+			return m, nil
+		}
+		rest := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), cmd))
+		m.mc.react("noticed", 1500*time.Millisecond, "")
+		return m, procCmd(m.cl, name, "start", processArgs(name, rest)...)
 	}
 
 	m.addError("Unknown command " + cmd + " (/help)")

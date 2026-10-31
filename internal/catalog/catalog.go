@@ -161,6 +161,57 @@ type Catalog struct {
 	running atomic.Bool
 
 	refreshMu sync.Mutex
+
+	srvMu  sync.Mutex
+	srvAt  time.Time
+	srvOut []Server
+}
+
+// Server is a local model server that answers right now.
+type Server struct {
+	Name   string
+	Models int
+}
+
+const serversTTL = 3 * time.Second
+
+// Running returns the local servers (providers on this computer: Ollama, llama.cpp,
+// LM Studio, ...) that answer right now, in config order. It asks them directly,
+// separately from the model list cache, but remembers the answer for a few seconds.
+func (c *Catalog) Running(ctx context.Context) []Server {
+	c.srvMu.Lock()
+	defer c.srvMu.Unlock()
+	if !c.srvAt.IsZero() && time.Since(c.srvAt) < serversTTL {
+		return c.srvOut
+	}
+	ctx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
+	defer cancel()
+
+	var local []config.Provider
+	for _, p := range c.cfg.Providers {
+		if p.IsLocal() && p.KeyFrom == "" && p.DiscoverStyle() != "none" {
+			local = append(local, p)
+		}
+	}
+	results := make([]ProviderResult, len(local))
+	var wg sync.WaitGroup
+	for i, p := range local {
+		wg.Add(1)
+		go func(i int, p config.Provider) {
+			defer wg.Done()
+			results[i], _ = c.one(ctx, p)
+		}(i, p)
+	}
+	wg.Wait()
+
+	out := []Server{}
+	for _, r := range results {
+		if r.Listed {
+			out = append(out, Server{Name: r.Name, Models: r.Count})
+		}
+	}
+	c.srvOut, c.srvAt = out, time.Now()
+	return out
 }
 
 // New creates a catalog. keys returns the key holder of a provider (may return nil).

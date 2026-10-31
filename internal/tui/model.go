@@ -75,6 +75,12 @@ type model struct {
 	pickSel      int
 	pickClosedAt string // input text at which esc closed the picker
 
+	appSel int // selected line of the approval list (see approval.go)
+
+	ov          overlay         // list opened by /sessions or /stop (overlay.go)
+	statusBurst int             // ticks left of fast status polling after a start
+	failSeen    map[string]bool // failed processes that were already reported
+
 	transFrom  string // предыдущий режим во время анимации смены ("" = нет)
 	transStart int    // кадр, на котором началась анимация
 }
@@ -166,7 +172,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tickMsg:
 		m.frame++
-		if m.cl != nil && !m.statusBusy && m.frame%40 == 0 {
+		every := 40
+		if m.statusBurst > 0 { // a server was just started: watch it come up
+			m.statusBurst--
+			every = 8
+		}
+		if m.cl != nil && !m.statusBusy && m.frame%every == 0 {
 			m.statusBusy = true
 			return m, tea.Batch(tick(), statusCmd(m.cl))
 		}
@@ -199,8 +210,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case statusMsg:
 		if msg.st != nil {
 			m.status = msg.st
+			m.reportFailed(msg.st)
 		}
 		m.statusBusy = false
+		return m, nil
+
+	case procMsg:
+		switch {
+		case msg.action == "stop":
+			m.addNotice("Stopped " + msg.name)
+		case msg.already:
+			m.addNotice(msg.name + " is already running")
+		default:
+			m.addNotice("Starting " + msg.name + "…")
+			m.statusBurst = 125 // about 15 s of quick polling
+		}
+		if msg.st != nil {
+			m.status = msg.st
+		}
+		return m, nil
+
+	case stopListMsg:
+		m.openStopList(msg.procs)
 		return m, nil
 
 	case sessionMsg:
@@ -214,15 +245,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case sessionsMsg:
-		if len(msg.list) == 0 {
-			m.addNotice("No saved sessions")
-		}
-		for i, s := range msg.list {
-			if i >= 12 {
-				break
-			}
-			m.addNotice(fmt.Sprintf("%s  [%s]  %s", s.ID, s.Mode, s.Title))
-		}
+		m.openSessions(msg.list)
 		return m, nil
 
 	case infoMsg:
@@ -252,6 +275,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.scroll -= 3
 			if m.scroll < 0 {
 				m.scroll = 0
+			}
+		case tea.MouseButtonLeft:
+			if msg.Action == tea.MouseActionPress {
+				_, c := m.click(msg.X, msg.Y)
+				return m, c
 			}
 		}
 		return m, nil
@@ -287,24 +315,9 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.quit()
 	}
 
-	// ожидается подтверждение действия агента
-	if m.approval != nil {
-		decision := ""
-		switch key {
-		case "y", "Y", "н", "Н":
-			decision = "allow"
-		case "a", "A", "ф", "Ф":
-			decision = "always"
-		case "n", "N", "esc", "т", "Т":
-			decision = "deny"
-		}
-		if decision != "" && m.cl != nil {
-			id := m.approval.CallID
-			m.approval = nil
-			m.mc.react("noticed", 1500*time.Millisecond, "")
-			return m, approveCmd(m.cl, id, decision)
-		}
-		return m, nil
+	// the agent's question or a list (sessions, running processes) takes the keys first
+	if handled, c := m.overlayKey(key); handled {
+		return m, c
 	}
 
 	// the model list is open above the input line: it takes ↑ ↓ tab enter esc
@@ -443,6 +456,8 @@ func (m *model) handleEvent(ev proto.Event) {
 	case "approval":
 		e := ev
 		m.approval = &e
+		m.appSel = 0
+		m.ov = overlay{}
 		m.mc.react("surprise", 3*time.Second, "Need your approval")
 
 	case "tool_result":
@@ -611,4 +626,26 @@ func missingKeys(st *proto.StatusResp) []string {
 		}
 	}
 	return out
+}
+
+// reportFailed tells once when a process Relay started has died, with the last line of its log.
+func (m *model) reportFailed(st *proto.StatusResp) {
+	if m.failSeen == nil {
+		m.failSeen = map[string]bool{}
+	}
+	for _, p := range st.Processes {
+		if p.State != "failed" {
+			m.failSeen[p.Name] = false
+			continue
+		}
+		if m.failSeen[p.Name] {
+			continue
+		}
+		m.failSeen[p.Name] = true
+		why := p.Error
+		if n := len(p.Log); n > 0 {
+			why = p.Log[n-1]
+		}
+		m.addError(p.Name + " did not start: " + shorten(why, 200))
+	}
 }

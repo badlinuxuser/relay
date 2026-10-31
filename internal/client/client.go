@@ -272,8 +272,18 @@ func (c *Client) Approve(id, decision string) error {
 	return c.do("POST", "/api/approvals/"+id, proto.ApprovalReq{Decision: decision}, nil)
 }
 
-func (c *Client) Process(name, action string) error {
-	return c.do("POST", "/api/processes/"+name+"/"+action, nil, nil)
+// Process starts or stops a local server. For "start", args are added to the
+// arguments of the config. already is true if the server was running already.
+func (c *Client) Process(name, action string, args ...string) (already bool, err error) {
+	var body any
+	if len(args) > 0 {
+		body = proto.ProcessReq{Args: args}
+	}
+	var r proto.ProcessResp
+	if err := c.do("POST", "/api/processes/"+name+"/"+action, body, &r); err != nil {
+		return false, err
+	}
+	return r.Already, nil
 }
 
 // Shutdown просит бэкенд завершиться (останавливает и управляемые процессы).

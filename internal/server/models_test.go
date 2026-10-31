@@ -168,6 +168,18 @@ func TestModelsEndpointFollowsKeys(t *testing.T) {
 	if len(st.Modes) != 1 || len(st.Modes[0].Effective) == 0 {
 		t.Errorf("status modes: %+v", st.Modes)
 	}
+	// local servers that answer are listed; the one that is not running is not
+	// (the fake cloud providers of this test also sit on localhost, so only check the two that matter)
+	have := map[string]int{}
+	for _, sv := range st.Servers {
+		have[sv.Name] = sv.Models
+	}
+	if have["ollama"] != 1 || have["ollama-cloud"] != 0 {
+		t.Errorf("status servers: %+v", st.Servers)
+	}
+	if _, ok := have["llamacpp"]; ok {
+		t.Errorf("llamacpp is not running: %+v", st.Servers)
+	}
 
 	// the help page is served without a token and covers the main topics
 	req := httptest.NewRequest("GET", "/ui/help", nil)

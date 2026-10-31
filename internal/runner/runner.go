@@ -3,10 +3,14 @@ package runner
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,6 +19,38 @@ import (
 )
 
 const maxLog = 200
+
+// ErrAlready: Start did nothing, the server is already running.
+var ErrAlready = errors.New("already running")
+
+// lacksModel: llama-server cannot start without a model, so say so instead of
+// letting it exit with an obscure message.
+func lacksModel(c config.Process, args []string) bool {
+	base := strings.TrimSuffix(strings.ToLower(filepath.Base(strings.ReplaceAll(c.Command, "\\", "/"))), ".exe")
+	if base != "llama-server" && base != "llama-cpp-server" {
+		return false
+	}
+	for _, a := range args {
+		switch a {
+		case "-m", "--model", "-hf", "--hf-repo", "-mu", "--model-url", "-hfr":
+			return false
+		}
+	}
+	return true
+}
+
+// stopHint says how to stop a server that Relay did not start, for this OS.
+func stopHint(name string) string {
+	switch {
+	case name == "ollama" && runtime.GOOS == "windows":
+		return "Ollama runs outside Relay (the Ollama app). To stop it, right-click the Ollama icon in the system tray (next to the clock) and choose Quit Ollama."
+	case name == "ollama" && runtime.GOOS == "darwin":
+		return "Ollama runs outside Relay (the Ollama app). To stop it, click the Ollama icon in the menu bar and choose Quit Ollama."
+	case name == "ollama":
+		return "Ollama runs outside Relay (a system service or another terminal). To stop it: `sudo systemctl stop ollama`, or press ctrl+c in the terminal where it runs."
+	}
+	return name + " was not started by Relay, so Relay will not stop it. Stop it the way you started it."
+}
 
 type Proc struct {
 	cfg      config.Process
@@ -51,24 +87,28 @@ func (p *Proc) addLog(line string) {
 	p.mu.Unlock()
 }
 
-func (p *Proc) Start() error {
+func (p *Proc) Start(extra []string) error {
 	p.mu.Lock()
 	if p.state == "starting" || p.state == "ready" {
 		p.mu.Unlock()
-		return nil
+		return ErrAlready
 	}
 	p.mu.Unlock()
 	// Something already listens on ready_url (system service, another terminal):
 	// attach to it instead of failing with "address already in use".
 	if p.alive() {
-		return nil
+		return ErrAlready
+	}
+	args := append(append([]string(nil), p.cfg.Args...), extra...)
+	if lacksModel(p.cfg, args) {
+		return fmt.Errorf("%s needs a model: type /%s <path to a .gguf file>, or add \"-m\", \"<path>\" to args of [[processes]] %s in config.toml", p.cfg.Name, p.cfg.Name, p.cfg.Name)
 	}
 	p.mu.Lock()
 	if p.state == "starting" || p.state == "ready" {
 		p.mu.Unlock()
-		return nil
+		return ErrAlready
 	}
-	cmd := exec.Command(p.cfg.Command, p.cfg.Args...)
+	cmd := exec.Command(p.cfg.Command, args...)
 	if p.cfg.Dir != "" {
 		cmd.Dir = p.cfg.Dir
 	}
@@ -83,6 +123,9 @@ func (p *Proc) Start() error {
 	if err := cmd.Start(); err != nil {
 		p.state, p.errMsg = "failed", err.Error()
 		p.mu.Unlock()
+		if errors.Is(err, exec.ErrNotFound) {
+			return fmt.Errorf("%s is not installed (or not in PATH): `%s` was not found. Install it first, then try again", p.cfg.Name, p.cfg.Command)
+		}
 		return fmt.Errorf("%s: %w", p.cfg.Name, err)
 	}
 	done := make(chan struct{})
@@ -160,7 +203,7 @@ func (p *Proc) Stop() error {
 	if cmd == nil {
 		p.mu.Unlock()
 		if p.alive() {
-			return fmt.Errorf("%s was not started by Relay, so Relay will not stop it (stop it where you started it, e.g. `systemctl stop %s`)", p.cfg.Name, p.cfg.Name)
+			return errors.New(stopHint(p.cfg.Name))
 		}
 		return nil
 	}
@@ -226,12 +269,14 @@ func NewManager(list []config.Process) *Manager {
 	return m
 }
 
-func (m *Manager) Start(name string) error {
+// Start starts a process; extra arguments are added to those of the config.
+// It returns ErrAlready if the server is already running.
+func (m *Manager) Start(name string, extra []string) error {
 	p := m.procs[name]
 	if p == nil {
 		return fmt.Errorf("unknown process %q", name)
 	}
-	return p.Start()
+	return p.Start(extra)
 }
 
 func (m *Manager) Stop(name string) error {

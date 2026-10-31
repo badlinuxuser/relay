@@ -8,7 +8,7 @@ import (
 	"relay/internal/provider"
 )
 
-const Version = "0.5.0"
+const Version = "0.6.0"
 
 // Event это одно событие потока выполнения (SSE: "data: <json>").
 //
@@ -166,6 +166,19 @@ type ModeInfo struct {
 	Effective []string `json:"effective,omitempty"`
 }
 
+// ProcessReq is the optional body of POST /api/processes/{name}/start.
+type ProcessReq struct {
+	// Args are added to the arguments from config.toml (for llama.cpp: ["-m", "model.gguf"]).
+	Args []string `json:"args,omitempty"`
+}
+
+// ProcessResp is the answer of POST /api/processes/{name}/{start|stop}.
+type ProcessResp struct {
+	Processes []ProcInfo `json:"processes"`
+	// Already: nothing was done because the server was already running (start).
+	Already bool `json:"already,omitempty"`
+}
+
 type ProcInfo struct {
 	Name  string `json:"name"`
 	State string `json:"state"` // stopped | starting | ready | failed
@@ -175,6 +188,12 @@ type ProcInfo struct {
 	Error    string   `json:"error,omitempty"`
 	PID      int      `json:"pid,omitempty"`
 	Log      []string `json:"log,omitempty"`
+}
+
+// ServerInfo is a local model server (Ollama, llama.cpp, LM Studio, ...) that answers right now.
+type ServerInfo struct {
+	Name   string `json:"name"`
+	Models int    `json:"models"`
 }
 
 type UsageEntry struct {
@@ -192,6 +211,7 @@ type StatusResp struct {
 	Models      []ModelInfo           `json:"models"`
 	Providers   []ProviderInfo        `json:"providers"`
 	Processes   []ProcInfo            `json:"processes"`
+	Servers     []ServerInfo          `json:"servers"` // local servers that are running now
 	Usage       map[string]UsageEntry `json:"usage"`
 	Presets     []string              `json:"presets"`
 	MCP         []string              `json:"mcp"`

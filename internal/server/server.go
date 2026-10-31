@@ -8,6 +8,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -292,6 +293,12 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	for k, v := range s.usage.Snapshot() {
 		st.Usage[k] = proto.UsageEntry{In: v.In, Out: v.Out, Requests: v.Requests, Cost: v.Cost}
 	}
+	for _, sv := range s.cat.Running(r.Context()) {
+		st.Servers = append(st.Servers, proto.ServerInfo{Name: sv.Name, Models: sv.Models})
+	}
+	if st.Servers == nil {
+		st.Servers = []proto.ServerInfo{}
+	}
 	for _, p := range s.cfg.Presets {
 		st.Presets = append(st.Presets, p.Name)
 	}
@@ -527,10 +534,16 @@ func errKind(err error) string {
 
 func (s *Server) handleProcess(w http.ResponseWriter, r *http.Request) {
 	name, action := r.PathValue("name"), r.PathValue("action")
+	already := false
 	var err error
 	switch action {
 	case "start":
-		err = s.procs.Start(name)
+		var req proto.ProcessReq
+		_ = readJSON(r, &req) // the body is optional
+		err = s.procs.Start(name, req.Args)
+		if errors.Is(err, runner.ErrAlready) {
+			already, err = true, nil
+		}
 	case "stop":
 		err = s.procs.Stop(name)
 	default:
@@ -541,5 +554,5 @@ func (s *Server) handleProcess(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, 400, err.Error())
 		return
 	}
-	writeJSON(w, 200, s.procs.Status())
+	writeJSON(w, 200, proto.ProcessResp{Processes: s.procs.Status(), Already: already})
 }

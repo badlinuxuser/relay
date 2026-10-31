@@ -21,7 +21,7 @@
 | `POST /api/sessions/{id}/messages` | `{"text":"..."}` → поток событий SSE |
 | `POST /api/approvals/{id}` | `{"decision":"allow\|always\|deny"}` (id из события `approval`) |
 | `POST /api/compare` | `{"text","models":["a","b"],"preset"}` → поток событий с полем `slot` |
-| `POST /api/processes/{name}/{start\|stop}` | управление локальными процессами |
+| `POST /api/processes/{name}/{start\|stop}` | управление локальными процессами; в теле start можно передать `{"args":[...]}` (добавятся к args из конфига), ответ `{"processes":[...],"already":bool}` |
 | `GET /api/keys` | провайдеры и ключи: `stored` (id, label, hint = последние 4 символа), `env`, `total`, `available`, `needs_key` |
 | `POST /api/keys` | добавить ключ: `{"provider","key","label"}`; полный ключ назад не возвращается |
 | `DELETE /api/keys/{provider}/{id}` | удалить сохранённый ключ |

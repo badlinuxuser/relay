@@ -224,6 +224,7 @@ func (c *Config) validate() error {
 		}
 	}
 	c.addImplicitProviders(provs)
+	c.addImplicitProcesses()
 	models := map[string]bool{}
 	for _, m := range c.Models {
 		if m.ID == "" || models[m.ID] {
@@ -257,7 +258,7 @@ func (c *Config) validate() error {
 // addImplicitProviders keeps old config files working: config.toml is created once
 // and never rewritten, so a file from an earlier version lacks the providers added
 // later. They are added here: Ollama cloud (next to a local Ollama, with the same
-// keys), Grok and DeepSeek.
+// keys), Grok, DeepSeek and LM Studio.
 func (c *Config) addImplicitProviders(provs map[string]bool) {
 	add := func(p Provider) {
 		if !provs[p.Name] {
@@ -270,6 +271,28 @@ func (c *Config) addImplicitProviders(provs map[string]bool) {
 	}
 	add(Provider{Name: "grok", Kind: "openai", BaseURL: "https://api.x.ai/v1"})
 	add(Provider{Name: "deepseek", Kind: "openai", BaseURL: "https://api.deepseek.com"})
+	add(Provider{Name: "lmstudio", Kind: "openai", BaseURL: "http://127.0.0.1:1234/v1"})
+}
+
+// addImplicitProcesses makes sure /ollama and /llamacpp work with an old config.toml:
+// the two local servers are added unless the file already defines them.
+func (c *Config) addImplicitProcesses() {
+	have := map[string]bool{}
+	for _, p := range c.Processes {
+		have[p.Name] = true
+	}
+	if !have["ollama"] {
+		c.Processes = append(c.Processes, Process{
+			Name: "ollama", Command: "ollama", Args: []string{"serve"},
+			ReadyURL: "http://127.0.0.1:11434/api/tags",
+		})
+	}
+	if !have["llamacpp"] {
+		c.Processes = append(c.Processes, Process{
+			Name: "llamacpp", Command: "llama-server", Args: []string{"--port", "8080"},
+			ReadyURL: "http://127.0.0.1:8080/health",
+		})
+	}
 }
 
 // OrderedProviders lists the providers the way the user sees them: the model

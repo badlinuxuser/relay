@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"relay/internal/config"
-	"relay/internal/provider"
 	"relay/internal/proto"
+	"relay/internal/provider"
 	"relay/internal/router"
 	"relay/internal/session"
 	"relay/internal/tools"

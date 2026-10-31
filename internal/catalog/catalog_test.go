@@ -253,3 +253,33 @@ func TestXAIFilter(t *testing.T) {
 		}
 	}
 }
+
+func TestRunningListsOnlyLocalServersThatAnswer(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"data":[{"id":"qwen"},{"id":"llama"}]}`))
+	}))
+	defer up.Close()
+	down := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	down.Close() // nothing listens any more
+
+	cfg := &config.Config{Providers: []config.Provider{
+		{Name: "lmstudio", Kind: "openai", BaseURL: up.URL + "/v1"},
+		{Name: "llamacpp", Kind: "openai", BaseURL: down.URL + "/v1"},
+		{Name: "gemini", Kind: "openai", BaseURL: "https://generativelanguage.googleapis.com/v1beta/openai"}, // remote: never asked
+		{Name: "off", Kind: "openai", BaseURL: up.URL + "/v1", Discover: "none"},
+	}}
+	c := newCatalog(cfg, keysrc{})
+	got := c.Running(context.Background())
+	if len(got) != 1 || got[0].Name != "lmstudio" || got[0].Models != 2 {
+		t.Fatalf("running: %+v", got)
+	}
+	// remembered for a few seconds
+	up.Close()
+	if again := c.Running(context.Background()); len(again) != 1 {
+		t.Errorf("must answer from memory: %+v", again)
+	}
+	c.srvAt = time.Now().Add(-time.Minute)
+	if later := c.Running(context.Background()); len(later) != 0 {
+		t.Errorf("after the memory expires the stopped server is gone: %+v", later)
+	}
+}

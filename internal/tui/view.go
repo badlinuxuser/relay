@@ -221,6 +221,49 @@ func (m model) modelLabel() string {
 	return "—"
 }
 
+type runRow struct{ name, note, dot string }
+
+// runningList is what the side panel shows under "processes": the processes that
+// run now, plus local servers that answer but are not in the config (LM Studio, ...).
+func (m model) runningList() []runRow {
+	if m.status == nil {
+		return nil
+	}
+	var out []runRow
+	seen := map[string]bool{}
+	models := map[string]int{}
+	for _, sv := range m.status.Servers {
+		models[sv.Name] = sv.Models
+	}
+	count := func(n int) string {
+		if n == 1 {
+			return "1 model"
+		}
+		return fmt.Sprintf("%d models", n)
+	}
+	for _, p := range procsRunning(m.status) {
+		seen[p.Name] = true
+		r := runRow{name: p.Name, dot: "●"}
+		switch {
+		case p.State == "starting":
+			r.dot, r.note = "○", "starting…"
+		case models[p.Name] > 0:
+			r.note = count(models[p.Name])
+		case p.External:
+			r.note = "running"
+		default:
+			r.note = "ready"
+		}
+		out = append(out, r)
+	}
+	for _, sv := range m.status.Servers {
+		if !seen[sv.Name] {
+			out = append(out, runRow{name: sv.Name, dot: "●", note: count(sv.Models)})
+		}
+	}
+	return out
+}
+
 func shortLeft(s string, n int) string {
 	r := []rune(s)
 	if len(r) <= n {
@@ -238,7 +281,7 @@ func (m model) sidebar(w, h int, th theme, st styles) []string {
 		set = m.sprites["small"]
 	}
 	mood := m.mc.frame(now)
-	if cols, rows := set.size(mood); rows > 0 && h >= rows+12 {
+	if cols, rows := set.size(mood); rows > 0 && h >= rows+13+max(1, len(m.runningList())) {
 		var art string
 		if p, on := m.transition(); on {
 			scan := mixHex(th.accent, "#FFFFFF", 0.6)
@@ -281,6 +324,18 @@ func (m model) sidebar(w, h int, th theme, st styles) []string {
 		kv("cost", st.text.Render(fmt.Sprintf("$%.4f", m.totCost))),
 	)
 
+	// processes that are running now (started by Relay or by you): Ollama, llama.cpp, LM Studio, ...
+	if m.status != nil {
+		lines = append(lines, sep, " "+st.gray.Render("processes"))
+		run := m.runningList()
+		if len(run) == 0 {
+			lines = append(lines, " "+st.dim.Render("Nothing running :)"))
+		}
+		for _, r := range run {
+			lines = append(lines, " "+st.accent.Render(r.dot)+" "+st.text.Render(r.name)+" "+st.dim.Render(r.note))
+		}
+	}
+
 	if len(lines) > h {
 		lines = lines[:h]
 	}
@@ -314,11 +369,6 @@ func (m model) header(st styles) string {
 func (m model) footer(th theme, st styles) []string {
 	w := m.width - 2
 	box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1).Width(w)
-	if m.approval != nil {
-		text := fmt.Sprintf("⚠ %s: %s   [y] once · [a] always · [n] no", m.approval.Tool, shorten(m.approval.Desc, max(10, w-50)))
-		box = box.BorderForeground(lipgloss.Color(colRed))
-		return strings.Split(box.Render(st.text.Render(shorten(text, max(10, w-4)))), "\n")
-	}
 	in := m.input
 	in.Prompt = "❯ "
 	in.PromptStyle = st.accentBold
@@ -330,11 +380,19 @@ func (m model) footer(th theme, st styles) []string {
 	if m.streaming {
 		border = th.soft
 	}
+	if m.approval != nil {
+		border = colRed
+		in.Placeholder = "Choose an action in the list above"
+		in.SetValue("")
+	}
 	box = box.BorderForeground(lipgloss.Color(border))
 	return strings.Split(box.Render(in.View()), "\n")
 }
 
 func (m model) hint(st styles) string {
+	if m.approval != nil {
+		return " " + st.red.Render("⚠") + " " + st.gray.Render("waiting for your decision") + st.dim.Render("  ↑↓ select · enter confirm · y once · a always · n deny")
+	}
 	if m.streaming {
 		return " " + st.accent.Render(spin[m.frame%len(spin)]) + " " + st.gray.Render("working…") + st.dim.Render("  esc to stop")
 	}
@@ -363,8 +421,10 @@ func (m model) View() string {
 
 	// the model list covers the bottom of the feed (not the side panel)
 	var pick []string
-	if m.pickerOpen() {
-		pick = m.pickerLines(mainW-1, bodyH, st)
+	if m.approval != nil {
+		pick = m.approvalLines(mainW-1, bodyH, st)
+	} else {
+		pick = m.overlayLines(mainW-1, bodyH, st) // sessions, running processes, models
 	}
 
 	var side []string

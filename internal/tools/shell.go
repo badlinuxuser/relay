@@ -32,7 +32,9 @@ func (t *runShell) Spec() provider.ToolSpec {
 }
 func (t *runShell) NeedsApproval() bool { return true }
 func (t *runShell) Describe(a json.RawMessage) string {
-	var v struct{ Command string `json:"command"` }
+	var v struct {
+		Command string `json:"command"`
+	}
 	_ = parse(a, &v)
 	return "$ " + v.Command
 }
@@ -104,12 +106,16 @@ func (t *webFetch) Spec() provider.ToolSpec {
 }
 func (t *webFetch) NeedsApproval() bool { return false }
 func (t *webFetch) Describe(a json.RawMessage) string {
-	var v struct{ URL string `json:"url"` }
+	var v struct {
+		URL string `json:"url"`
+	}
 	_ = parse(a, &v)
 	return "fetch " + v.URL
 }
 func (t *webFetch) Run(ctx context.Context, a json.RawMessage) (string, error) {
-	var v struct{ URL string `json:"url"` }
+	var v struct {
+		URL string `json:"url"`
+	}
 	if err := parse(a, &v); err != nil {
 		return "", err
 	}

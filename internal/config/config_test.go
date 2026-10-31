@@ -28,7 +28,7 @@ func TestExampleConfigLoads(t *testing.T) {
 			t.Errorf("ollama-cloud: %+v", p)
 		}
 	}
-	for _, name := range []string{"ollama-cloud", "grok", "deepseek"} {
+	for _, name := range []string{"ollama-cloud", "grok", "deepseek", "lmstudio"} {
 		if count[name] != 1 {
 			t.Errorf("%s must appear once in the example, found %d", name, count[name])
 		}
@@ -176,6 +176,10 @@ models = []
 	if !ok || d.BaseURL != "https://api.deepseek.com" || !d.IsOfficial() {
 		t.Errorf("deepseek: %+v ok=%v", d, ok)
 	}
+	lm, ok := c.ProviderByName("lmstudio")
+	if !ok || lm.BaseURL != "http://127.0.0.1:1234/v1" || !lm.IsLocal() || lm.NeedsKey() || lm.IsOfficial() {
+		t.Errorf("lmstudio: %+v ok=%v", lm, ok)
+	}
 	// a provider the user already has is not duplicated or changed
 	c2, _ := Load(write(t, `
 [[providers]]
@@ -219,5 +223,43 @@ func TestOfficialProvidersComeFirst(t *testing.T) {
 	want := "anthropic gemini grok openai deepseek ollama openrouter llamacpp ollama-cloud"
 	if strings.Join(got, " ") != want {
 		t.Errorf("order:\n got  %s\n want %s", strings.Join(got, " "), want)
+	}
+}
+
+// Every config gets /ollama and /llamacpp commands, also an old one without [[processes]].
+func TestOldConfigGetsOllamaAndLlamacppProcesses(t *testing.T) {
+	c, err := Load(write(t, `
+[[providers]]
+name = "ollama"
+kind = "openai"
+base_url = "http://127.0.0.1:11434/v1"
+
+[modes.small]
+models = []
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]Process{}
+	for _, p := range c.Processes {
+		got[p.Name] = p
+	}
+	if got["ollama"].Command != "ollama" || got["llamacpp"].Command != "llama-server" {
+		t.Fatalf("processes: %+v", c.Processes)
+	}
+	if got["llamacpp"].ReadyURL == "" {
+		t.Error("llamacpp needs a ready_url so Relay sees it is running")
+	}
+	// the example config defines both once
+	c, err = Load(write(t, ExampleTOML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := map[string]int{}
+	for _, p := range c.Processes {
+		n[p.Name]++
+	}
+	if n["ollama"] != 1 || n["llamacpp"] != 1 {
+		t.Errorf("example processes: %v", n)
 	}
 }

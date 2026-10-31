@@ -34,11 +34,17 @@ Interface flags:
 `
 
 func main() {
-	args := os.Args[1:]
+	restore := setupConsole() // Windows: UTF-8 console, so box lines and Cyrillic are not garbled
+	code := run(os.Args[1:])
+	restore()
+	os.Exit(code)
+}
+
+func run(args []string) int {
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
-		os.Exit(dispatch(args[0], args[1:]))
+		return dispatch(args[0], args[1:])
 	}
-	os.Exit(runTUI(args))
+	return runTUI(args)
 }
 
 func dispatch(cmd string, args []string) int {

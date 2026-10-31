@@ -251,22 +251,32 @@ func TestPickerNeverShowsProviderErrors(t *testing.T) {
 	}
 }
 
-func TestSidebarHasNoKeysOrProcesses(t *testing.T) {
+func TestSidebarShowsOnlyRunningProcesses(t *testing.T) {
 	m := testModel()
 	m.status = &proto.StatusResp{
-		Processes: []proto.ProcInfo{{Name: "ollama", State: "ready"}},
+		Processes: []proto.ProcInfo{{Name: "ollama", State: "ready", External: true}, {Name: "llamacpp", State: "stopped"}},
 		Providers: []proto.ProviderInfo{{Name: "gemini", NeedsKey: true, Keys: 1, KeysAvailable: 1}},
+		Servers:   []proto.ServerInfo{{Name: "ollama", Models: 6}, {Name: "lmstudio", Models: 1}},
 	}
 	out := m.View()
-	for _, gone := range []string{"processes", "/keys: add", "ollama  ready", "gemini  1/1"} {
+	for _, want := range []string{"processes", "ollama 6 models", "lmstudio 1 model"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the side panel lacks %q", want)
+		}
+	}
+	for _, gone := range []string{"llamacpp", "Nothing running", "/keys: add", "gemini  1/1"} {
 		if strings.Contains(out, gone) {
 			t.Errorf("the side panel must not show %q", gone)
 		}
 	}
-	for _, kept := range []string{"mode", "model", "agent", "folder", "tokens", "cost"} {
-		if !strings.Contains(out, kept) {
-			t.Errorf("the side panel lost %q", kept)
-		}
+	m.status = &proto.StatusResp{Processes: []proto.ProcInfo{{Name: "ollama", State: "stopped"}}}
+	out = m.View()
+	if !strings.Contains(out, "processes") || !strings.Contains(out, "Nothing running :)") {
+		t.Errorf("empty list text missing:\n%s", out)
+	}
+	m.status.Processes[0].State = "starting"
+	if !strings.Contains(m.View(), "ollama starting") {
+		t.Error("a starting process is listed")
 	}
 }
 

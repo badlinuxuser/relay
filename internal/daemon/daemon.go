@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -20,6 +21,7 @@ import (
 
 	"relay/internal/config"
 	"relay/internal/proto"
+	"relay/internal/runner"
 	"relay/internal/server"
 )
 
@@ -81,7 +83,7 @@ func Run(args []string) int {
 	srv.StartMCP()
 	for _, p := range cfg.Processes {
 		if p.AutoStart {
-			if err := srv.Procs().Start(p.Name); err != nil {
+			if err := srv.Procs().Start(p.Name, nil); err != nil && !errors.Is(err, runner.ErrAlready) {
 				log.Printf("autostart %s: %v", p.Name, err)
 			}
 		}

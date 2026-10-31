@@ -32,7 +32,9 @@ func (t *readFile) Spec() provider.ToolSpec {
 }
 func (t *readFile) NeedsApproval() bool { return false }
 func (t *readFile) Describe(a json.RawMessage) string {
-	var v struct{ Path string `json:"path"` }
+	var v struct {
+		Path string `json:"path"`
+	}
 	_ = parse(a, &v)
 	return "read " + v.Path
 }
@@ -102,7 +104,9 @@ func (t *listDir) Spec() provider.ToolSpec {
 }
 func (t *listDir) NeedsApproval() bool { return false }
 func (t *listDir) Describe(a json.RawMessage) string {
-	var v struct{ Path string `json:"path"` }
+	var v struct {
+		Path string `json:"path"`
+	}
 	_ = parse(a, &v)
 	if v.Path == "" {
 		v.Path = "."
@@ -110,7 +114,9 @@ func (t *listDir) Describe(a json.RawMessage) string {
 	return "list " + v.Path
 }
 func (t *listDir) Run(ctx context.Context, a json.RawMessage) (string, error) {
-	var v struct{ Path string `json:"path"` }
+	var v struct {
+		Path string `json:"path"`
+	}
 	if err := parse(a, &v); err != nil {
 		return "", err
 	}
@@ -156,7 +162,9 @@ func (t *grep) Spec() provider.ToolSpec {
 }
 func (t *grep) NeedsApproval() bool { return false }
 func (t *grep) Describe(a json.RawMessage) string {
-	var v struct{ Pattern string `json:"pattern"` }
+	var v struct {
+		Pattern string `json:"pattern"`
+	}
 	_ = parse(a, &v)
 	return "grep " + v.Pattern
 }
@@ -289,7 +297,9 @@ func (t *editFile) Spec() provider.ToolSpec {
 }
 func (t *editFile) NeedsApproval() bool { return true }
 func (t *editFile) Describe(a json.RawMessage) string {
-	var v struct{ Path string `json:"path"` }
+	var v struct {
+		Path string `json:"path"`
+	}
 	_ = parse(a, &v)
 	return "edit " + v.Path
 }

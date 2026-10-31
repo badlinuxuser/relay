@@ -32,7 +32,7 @@ the backend does everything, so any other client can be written against the same
   mascot (maximum: rainbow). Switch with `ctrl+t`.
 - **Routing:** the mode's model chain with fallback on limits and errors; several keys per provider with
   automatic rotation; token and cost tracking.
-- **Launcher:** start and stop local servers (`/start ollama`) with a readiness check.
+- **Launcher:** `/ollama` and `/llamacpp <model.gguf>` start local servers with a readiness check; `/stop` shows the running ones as buttons. The side panel lists what is running.
 - **Coding agent:** a "model → tool → result" loop: read, search, write and edit files, shell, web, and tools of
   MCP servers. Files are limited to the working folder; dangerous actions ask for confirmation.
 - **Sessions:** history is saved to disk; change model or mode in the middle of a conversation; system prompt presets.
@@ -83,7 +83,9 @@ Local servers (Ollama, llama.cpp) need no key. A key saved for `ollama` also unl
 ### Local models
 
 Install Ollama, pull a model (`ollama pull granite4.1:3b`) and, if Ollama is not already running, type
-`/start ollama`. The installed models show up in `/models` as `ollama/<name>`.
+`/ollama`. The installed models show up in `/models` as `ollama/<name>`. For llama.cpp: `/llamacpp path/to/model.gguf`.
+
+On Windows Relay switches the console to UTF-8 while it runs. Ollama started by its tray app is stopped from the tray icon (right-click, Quit Ollama): Relay never stops servers it did not start.
 
 ## Choosing a model: `/models`
 
@@ -127,9 +129,10 @@ Data files: Linux `~/.config/relay/`, Windows `%AppData%\relay\` (`config.toml`,
 | `esc` | stop the running request (closes the model list when it is open) |
 | `pgup` / `pgdn`, mouse wheel | scroll |
 | `ctrl+c` | quit |
+| mouse click | choose a row in any list: models, sessions, running servers, agent approval |
 
 Commands: `/help`, `/keys`, `/models`, `/mode` (or `/small` `/medium` `/hard` `/max`), `/agent`, `/preset`,
-`/compare`, `/new`, `/sessions`, `/load`, `/start`, `/stop`, `/clear`, `/quit`. Details are in `/help`.
+`/compare`, `/new`, `/sessions` (clickable list), `/load`, `/ollama`, `/llamacpp`, `/stop` (clickable list), `/clear`, `/quit`. Details are in `/help`.
 
 ## Mascot
 
@@ -195,4 +198,4 @@ assets/sheets      source sprite sheets
 
 ## Status
 
-Version 0.5. Notes, decisions and the plan are in [PROJECT.md](PROJECT.md) (in Russian).
+Version 0.6. Notes, decisions and the plan are in [PROJECT.md](PROJECT.md) (in Russian).

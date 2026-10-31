@@ -47,6 +47,13 @@ name = "llamacpp"
 kind = "openai"
 base_url = "http://127.0.0.1:8080/v1"
 
+# LM Studio: start its local server in the app (Developer tab) or with `lms server start`.
+# The default address is below; no key needed.
+[[providers]]
+name = "lmstudio"
+kind = "openai"
+base_url = "http://127.0.0.1:1234/v1"
+
 [[providers]]
 name = "anthropic"
 kind = "anthropic"
@@ -163,7 +170,9 @@ models = ["opus", "gpt", "sonnet", "gemini-flash"]
 max_steps = 40
 
 # ---------------------------------------------------------- local processes
-# Launcher: start and stop local servers from the UI (/start, /stop).
+# Local servers that Relay can start and stop: /ollama and /llamacpp start them,
+# /stop shows the running ones (click or enter to stop). Any process defined here
+# also gets a command of its own: name = "comfy" gives /comfy.
 # If the server is already running (for example the system Ollama service),
 # Relay attaches to it and does not start a second copy.
 
@@ -174,11 +183,14 @@ args = ["serve"]
 ready_url = "http://127.0.0.1:11434/api/tags"
 autostart = false
 
-# [[processes]]
-# name = "llamacpp"
-# command = "llama-server"
-# args = ["-m", "/models/model.gguf", "--port", "8080"]
-# ready_url = "http://127.0.0.1:8080/health"
+# llama.cpp needs a model: either type /llamacpp <path to model.gguf>,
+# or put it here: args = ["-m", "/models/model.gguf", "--port", "8080"]
+[[processes]]
+name = "llamacpp"
+command = "llama-server"
+args = ["--port", "8080"]
+ready_url = "http://127.0.0.1:8080/health"
+autostart = false
 
 # -------------------------------------------------------------- MCP servers
 # MCP tools become available to the agent (every call asks for confirmation).
