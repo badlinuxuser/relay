@@ -259,7 +259,7 @@ func TestSidebarShowsOnlyRunningProcesses(t *testing.T) {
 		Servers:   []proto.ServerInfo{{Name: "ollama", Models: 6}, {Name: "lmstudio", Models: 1}},
 	}
 	out := m.View()
-	for _, want := range []string{"processes", "ollama 6 models", "lmstudio 1 model"} {
+	for _, want := range []string{"processes", "ollama 6 local models", "lmstudio 1 local model"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the side panel lacks %q", want)
 		}

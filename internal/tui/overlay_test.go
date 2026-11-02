@@ -222,7 +222,7 @@ func TestMascotFitsWithProcessesBlock(t *testing.T) {
 	m.width, m.height = 160, 38
 	m.status = &proto.StatusResp{Servers: []proto.ServerInfo{{Name: "ollama", Models: 6}}}
 	out := m.View()
-	if !strings.Contains(out, "processes") || !strings.Contains(out, "ollama 6 models") {
+	if !strings.Contains(out, "processes") || !strings.Contains(out, "ollama 6 local models") {
 		t.Error("processes block cut off")
 	}
 	if !strings.Contains(out, "▀") {

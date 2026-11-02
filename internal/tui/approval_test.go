@@ -99,7 +99,7 @@ func TestSidebarListsRunningServers(t *testing.T) {
 	m.width, m.height = 120, 40
 	m.status = &proto.StatusResp{Servers: []proto.ServerInfo{{Name: "ollama", Models: 6}, {Name: "lmstudio", Models: 1}}}
 	out := m.View()
-	for _, want := range []string{"processes", "● ollama 6 models", "● lmstudio 1 model"} {
+	for _, want := range []string{"processes", "● ollama 6 local models", "● lmstudio 1 local model"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("view lacks %q", want)
 		}

@@ -53,6 +53,7 @@ type anEvent struct {
 	Delta struct {
 		Type        string `json:"type"`
 		Text        string `json:"text"`
+		Thinking    string `json:"thinking"`
 		PartialJSON string `json:"partial_json"`
 	} `json:"delta"`
 	Usage struct {
@@ -212,6 +213,12 @@ func (c *Anthropic) once(ctx context.Context, key string, body []byte, emit func
 			case "text_delta":
 				if ev.Delta.Text != "" {
 					if err := emit(Event{Kind: EvText, Text: ev.Delta.Text}); err != nil {
+						return err
+					}
+				}
+			case "thinking_delta":
+				if ev.Delta.Thinking != "" {
+					if err := emit(Event{Kind: EvThinking, Text: ev.Delta.Thinking}); err != nil {
 						return err
 					}
 				}

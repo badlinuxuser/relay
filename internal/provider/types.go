@@ -13,6 +13,9 @@ type ToolCall struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 	Args string `json:"args"`
+	// Extra is provider-specific data that must go back with the call as it came
+	// (Gemini's thought_signature lives here).
+	Extra json.RawMessage `json:"extra,omitempty"`
 }
 
 // Message это сообщение диалога во внутреннем формате.
@@ -52,6 +55,7 @@ const (
 	EvUsage                     // Usage
 	EvModel                     // Text = id модели, начавшей ответ
 	EvNotice                    // Text, Tag
+	EvThinking                  // Text = a piece of the model's reasoning (not part of the answer)
 )
 
 type Event struct {
@@ -68,7 +72,9 @@ type Error struct {
 	Provider    string
 	Status      int
 	Msg         string
-	RateLimited bool // 429, исчерпана квота или баланс
+	RateLimited bool // 429, исчерпана квота
+	Billing     bool // no credit / balance / plan does not include the model (402, "credit balance")
+	Auth        bool // the key is wrong or has no access (401, 403)
 	Retryable   bool // имеет смысл попробовать другой ключ или модель
 	NoKey       bool // для провайдера не задан ни один ключ
 }

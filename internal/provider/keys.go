@@ -11,7 +11,10 @@ import (
 	"time"
 )
 
-const keyCooldown = 2 * time.Minute
+const (
+	keyCooldown     = 2 * time.Minute  // after a rate limit
+	billingCooldown = 10 * time.Minute // no credit: it will not fix itself in a minute
+)
 
 // Source поставляет сохранённые ключи провайдера (хранилище ключей).
 type Source interface {
@@ -108,11 +111,16 @@ func (k *Keys) Get() (string, bool) {
 // chats, such as listing models.
 func (k *Keys) All() []string { return k.list() }
 
-func (k *Keys) Cooldown(key string) {
+func (k *Keys) Cooldown(key string) { k.restFor(key, keyCooldown) }
+
+func (k *Keys) restFor(key string, d time.Duration) {
 	k.mu.Lock()
-	k.until[key] = time.Now().Add(keyCooldown)
+	k.until[key] = time.Now().Add(d)
 	k.mu.Unlock()
 }
+
+// Exhausted: the provider has keys, but none can be used right now.
+func (k *Keys) Exhausted() bool { return k.Count() > 0 && k.Available() == 0 }
 
 // DoWithKeys выполняет attempt с ключом; при лимите переключается на следующий.
 func DoWithKeys(k *Keys, name string, emit func(Event) error, attempt func(key string) error) error {
@@ -125,16 +133,20 @@ func DoWithKeys(k *Keys, name string, emit func(Event) error, attempt func(key s
 					Msg: "no API key for " + name + ". Add one: run `relay keys`"}
 			}
 			return &Error{Provider: name, RateLimited: true, Retryable: true,
-				Msg: "all API keys are rate limited"}
+				Msg: "no key can be used right now (rate limit or no credit on every key); try later or add another key"}
 		}
 		err := attempt(key)
 		var pe *Error
-		if err != nil && errors.As(err, &pe) && pe.RateLimited {
-			k.Cooldown(key)
+		if err != nil && errors.As(err, &pe) && (pe.RateLimited || pe.Billing) {
+			if pe.Billing {
+				k.restFor(key, billingCooldown)
+			} else {
+				k.Cooldown(key)
+			}
 			tried++
 			if tried < k.Count() {
 				_ = emit(Event{Kind: EvNotice, Tag: "key_switch",
-					Text: fmt.Sprintf("%s: a key hit its limit, switching to the next one", name)})
+					Text: fmt.Sprintf("%s: a key cannot be used, switching to the next one", name)})
 				continue
 			}
 		}
@@ -149,10 +161,12 @@ func httpError(name string, resp *http.Response) *Error {
 	low := strings.ToLower(msg)
 	e := &Error{Provider: name, Status: resp.StatusCode,
 		Msg: fmt.Sprintf("HTTP %d: %s", resp.StatusCode, msg)}
-	e.RateLimited = resp.StatusCode == 429 || resp.StatusCode == 402 ||
-		strings.Contains(low, "rate limit") || strings.Contains(low, "quota") ||
-		strings.Contains(low, "credit balance") || strings.Contains(low, "insufficient")
-	e.Retryable = e.RateLimited || resp.StatusCode >= 500 ||
-		resp.StatusCode == 401 || resp.StatusCode == 403 || resp.StatusCode == 404
+	e.Billing = resp.StatusCode == 402 || strings.Contains(low, "credit balance") ||
+		strings.Contains(low, "insufficient") || strings.Contains(low, "billing") ||
+		strings.Contains(low, "not included in your") || strings.Contains(low, "requires more credits")
+	e.RateLimited = !e.Billing && (resp.StatusCode == 429 ||
+		strings.Contains(low, "rate limit") || strings.Contains(low, "quota"))
+	e.Auth = resp.StatusCode == 401 || resp.StatusCode == 403
+	e.Retryable = e.RateLimited || e.Billing || e.Auth || resp.StatusCode >= 500 || resp.StatusCode == 404
 	return e
 }

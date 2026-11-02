@@ -81,11 +81,9 @@ func Run(args []string) int {
 
 	srv := server.New(cfg, home, token)
 	srv.StartMCP()
-	for _, p := range cfg.Processes {
-		if p.AutoStart {
-			if err := srv.Procs().Start(p.Name, nil); err != nil && !errors.Is(err, runner.ErrAlready) {
-				log.Printf("autostart %s: %v", p.Name, err)
-			}
+	for _, name := range srv.Autostart() {
+		if err := srv.Procs().Start(name, srv.StartArgs(name)); err != nil && !errors.Is(err, runner.ErrAlready) {
+			log.Printf("autostart %s: %v", name, err)
 		}
 	}
 

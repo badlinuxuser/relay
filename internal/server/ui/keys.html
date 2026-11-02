@@ -146,6 +146,10 @@ footer{margin-top:26px;color:var(--dim);font-size:13px}
     });
     if(ul.children.length) c.appendChild(ul);
 
+    if(!p.needs_key && !p.key_optional){
+      c.appendChild(el('p','hintline','A server on this computer: it needs no API key.'));
+      return c;
+    }
     var f = el('form'); 
     var key = el('input','key'); key.type='password'; key.placeholder='paste your key'; key.autocomplete='off'; key.spellcheck=false;
     var lbl = el('input','lbl'); lbl.type='text'; lbl.placeholder='label (optional)';

@@ -19,6 +19,7 @@ import (
 
 	"relay/internal/config"
 	"relay/internal/proto"
+	"relay/internal/settings"
 )
 
 type Client struct {
@@ -284,6 +285,24 @@ func (c *Client) Process(name, action string, args ...string) (already bool, err
 		return false, err
 	}
 	return r.Already, nil
+}
+
+type settingsView struct {
+	Settings settings.Settings `json:"settings"`
+}
+
+// AppSettings returns the user's preferences (the /settings page edits the same ones).
+func (c *Client) AppSettings() (settings.Settings, error) {
+	var v settingsView
+	err := c.do("GET", "/api/settings", nil, &v)
+	return v.Settings, err
+}
+
+// SaveAppSettings stores the preferences and returns what the backend kept.
+func (c *Client) SaveAppSettings(s settings.Settings) (settings.Settings, error) {
+	var v settingsView
+	err := c.do("POST", "/api/settings", s, &v)
+	return v.Settings, err
 }
 
 // Shutdown просит бэкенд завершиться (останавливает и управляемые процессы).

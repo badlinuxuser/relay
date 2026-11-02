@@ -33,8 +33,9 @@ func NewOpenAI(name, baseURL string, keys *Keys, headers map[string]string) *Ope
 func (c *OpenAI) Name() string { return c.name }
 
 type oaToolCall struct {
-	ID       string `json:"id"`
-	Type     string `json:"type"`
+	ID       string          `json:"id"`
+	Type     string          `json:"type"`
+	Extra    json.RawMessage `json:"extra_content,omitempty"` // Gemini: thought_signature
 	Function struct {
 		Name      string `json:"name"`
 		Arguments string `json:"arguments"`
@@ -50,11 +51,15 @@ type oaMsg struct {
 
 type oaChunk struct {
 	Choices []struct {
-		Delta struct {
+		FinishReason string `json:"finish_reason"`
+		Delta        struct {
 			Content   string `json:"content"`
+			Reasoning string `json:"reasoning_content"` // DeepSeek, Qwen, Ollama
+			Thinking  string `json:"reasoning"`         // OpenRouter, some Ollama versions
 			ToolCalls []struct {
-				Index    int    `json:"index"`
-				ID       string `json:"id"`
+				Index    int             `json:"index"`
+				ID       string          `json:"id"`
+				Extra    json.RawMessage `json:"extra_content"`
 				Function struct {
 					Name      string `json:"name"`
 					Arguments string `json:"arguments"`
@@ -82,6 +87,7 @@ func (c *OpenAI) buildBody(req Request) ([]byte, error) {
 			for _, tc := range m.ToolCalls {
 				var o oaToolCall
 				o.ID = tc.ID
+				o.Extra = tc.Extra
 				o.Type = "function"
 				o.Function.Name = tc.Name
 				o.Function.Arguments = tc.Args
@@ -167,6 +173,21 @@ func (c *OpenAI) once(ctx context.Context, key string, body []byte, emit func(Ev
 	calls := map[int]*ToolCall{}
 	var order []int
 	var usage Usage
+	var sp splitter
+	var finish string
+	done := false
+	sawAnything := false
+	send := func(text, think string) error {
+		if think != "" {
+			if err := emit(Event{Kind: EvThinking, Text: think}); err != nil {
+				return err
+			}
+		}
+		if text != "" {
+			return emit(Event{Kind: EvText, Text: text})
+		}
+		return nil
+	}
 	for sc.Scan() {
 		line := sc.Text()
 		if !strings.HasPrefix(line, "data:") {
@@ -177,6 +198,7 @@ func (c *OpenAI) once(ctx context.Context, key string, body []byte, emit func(Ev
 			continue
 		}
 		if data == "[DONE]" {
+			done = true
 			break
 		}
 		var ch oaChunk
@@ -190,12 +212,23 @@ func (c *OpenAI) once(ctx context.Context, key string, body []byte, emit func(Ev
 			usage = Usage{In: ch.Usage.PromptTokens, Out: ch.Usage.CompletionTokens}
 		}
 		for _, choice := range ch.Choices {
-			if choice.Delta.Content != "" {
-				if err := emit(Event{Kind: EvText, Text: choice.Delta.Content}); err != nil {
+			if choice.FinishReason != "" {
+				finish = choice.FinishReason
+			}
+			d := choice.Delta
+			sawAnything = true
+			if r := d.Reasoning + d.Thinking; r != "" {
+				if err := emit(Event{Kind: EvThinking, Text: r}); err != nil {
 					return err
 				}
 			}
-			for _, tc := range choice.Delta.ToolCalls {
+			if d.Content != "" {
+				text, think := sp.feed(d.Content)
+				if err := send(text, think); err != nil {
+					return err
+				}
+			}
+			for _, tc := range d.ToolCalls {
 				cur, ok := calls[tc.Index]
 				if !ok {
 					cur = &ToolCall{}
@@ -208,6 +241,9 @@ func (c *OpenAI) once(ctx context.Context, key string, body []byte, emit func(Ev
 				if tc.Function.Name != "" {
 					cur.Name = tc.Function.Name
 				}
+				if len(tc.Extra) > 0 && string(tc.Extra) != "null" {
+					cur.Extra = tc.Extra
+				}
 				cur.Args += tc.Function.Arguments
 			}
 		}
@@ -216,7 +252,20 @@ func (c *OpenAI) once(ctx context.Context, key string, body []byte, emit func(Ev
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		return &Error{Provider: c.name, Msg: err.Error()}
+		return &Error{Provider: c.name, Msg: "the connection broke while the answer was coming: " + err.Error()}
+	}
+	if err := send(sp.flush()); err != nil {
+		return err
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	// The stream ended without [DONE] and without a finish reason: the answer is cut off.
+	if !done && finish == "" && sawAnything {
+		_ = emit(Event{Kind: EvNotice, Tag: "info", Text: c.name + ": the answer may be incomplete (the connection closed early)"})
+	}
+	if finish == "length" {
+		_ = emit(Event{Kind: EvNotice, Tag: "info", Text: c.name + ": the answer was cut by the model's token limit"})
 	}
 
 	sort.Ints(order)

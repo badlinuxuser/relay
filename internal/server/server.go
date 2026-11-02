@@ -28,6 +28,7 @@ import (
 	"relay/internal/router"
 	"relay/internal/runner"
 	"relay/internal/session"
+	"relay/internal/settings"
 	"relay/internal/tools"
 	"relay/internal/usage"
 )
@@ -40,6 +41,7 @@ type Server struct {
 	cat    *catalog.Catalog
 	usage  *usage.Tracker
 	store  *session.Store
+	set    *settings.Store
 	procs  *runner.Manager
 	agent  *agent.Agent
 
@@ -70,6 +72,7 @@ func New(cfg *config.Config, home, token string) *Server {
 		cat:       cat,
 		usage:     tr,
 		store:     session.NewStore(filepath.Join(home, "sessions")),
+		set:       settings.Open(home),
 		procs:     runner.NewManager(cfg.Processes),
 		approvals: map[string]chan string{},
 		Done:      make(chan struct{}),
@@ -126,6 +129,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/status", s.handleStatus)
 	mux.HandleFunc("GET /api/models", s.handleModels)
 	mux.HandleFunc("GET /api/sessions", s.handleSessions)
+	mux.HandleFunc("GET /api/session-list", s.handleSessionList)
+	mux.HandleFunc("POST /api/sessions/prune", s.handlePruneSessions)
+	mux.HandleFunc("DELETE /api/sessions/{id}", s.handleDeleteSession)
+	mux.HandleFunc("GET /api/settings", s.handleGetSettings)
+	mux.HandleFunc("POST /api/settings", s.handleSetSettings)
 	mux.HandleFunc("POST /api/sessions", s.handleCreateSession)
 	mux.HandleFunc("GET /api/sessions/{id}", s.handleGetSession)
 	mux.HandleFunc("POST /api/sessions/{id}/settings", s.handleSettings)
@@ -142,6 +150,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/keys/{provider}/{id}", s.handleDeleteKey)
 	mux.HandleFunc("GET /ui/keys", s.handleKeysPage)
 	mux.HandleFunc("GET /ui/help", s.handleHelpPage)
+	mux.HandleFunc("GET /ui/settings", s.handleSettingsPage)
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/ui/keys", http.StatusFound)
 	})
@@ -265,7 +274,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	st := proto.StatusResp{
 		Version:     proto.Version,
 		Workspace:   s.workspace(""),
-		DefaultMode: s.cfg.DefaultMode,
+		DefaultMode: s.defaultMode(),
+		Settings:    s.set.Get(),
 		Processes:   s.procs.Status(),
 		Usage:       map[string]proto.UsageEntry{},
 	}
@@ -334,7 +344,7 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 	_ = readJSON(r, &req)
 	mode := req.Mode
 	if mode == "" {
-		mode = s.cfg.DefaultMode
+		mode = s.defaultMode()
 	}
 	if _, ok := s.cfg.Modes[mode]; !ok {
 		httpErr(w, 400, fmt.Sprintf("mode %q is not configured", mode))
@@ -419,7 +429,7 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 	approve := func(ctx context.Context, ev proto.Event) string {
 		return s.waitApproval(ctx, out, ev)
 	}
-	_ = s.agent.Run(r.Context(), sess, req.Text, out.send, approve)
+	_ = s.agent.Run(r.Context(), sess, req.Text, s.set.Get().ShowThoughts, out.send, approve)
 	_ = s.store.Save(sess)
 	out.send(proto.Event{Type: "done"})
 }
@@ -492,6 +502,7 @@ func (s *Server) handleCompare(w http.ResponseWriter, r *http.Request) {
 	}
 	msgs = append(msgs, provider.Message{Role: "user", Content: req.Text})
 
+	think := s.set.Get().ShowThoughts
 	var wg sync.WaitGroup
 	for i, id := range req.Models {
 		wg.Add(1)
@@ -504,6 +515,10 @@ func (s *Server) handleCompare(w http.ResponseWriter, r *http.Request) {
 						out.send(proto.Event{Type: "model", Model: ev.Text, Slot: slot})
 					case provider.EvText:
 						out.send(proto.Event{Type: "text", Text: ev.Text, Slot: slot})
+					case provider.EvThinking:
+						if think {
+							out.send(proto.Event{Type: "thinking", Text: ev.Text, Slot: slot})
+						}
 					case provider.EvNotice:
 						out.send(proto.Event{Type: "notice", Kind: ev.Tag, Text: ev.Text, Slot: slot})
 					case provider.EvUsage:
@@ -540,7 +555,11 @@ func (s *Server) handleProcess(w http.ResponseWriter, r *http.Request) {
 	case "start":
 		var req proto.ProcessReq
 		_ = readJSON(r, &req) // the body is optional
-		err = s.procs.Start(name, req.Args)
+		args := req.Args
+		if len(args) == 0 { // /llamacpp with no path: use the one saved on the settings page
+			args = strings.Fields(s.set.Get().ProcessArgs[name])
+		}
+		err = s.procs.Start(name, args)
 		if errors.Is(err, runner.ErrAlready) {
 			already, err = true, nil
 		}
@@ -555,4 +574,36 @@ func (s *Server) handleProcess(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, proto.ProcessResp{Processes: s.procs.Status(), Already: already})
+}
+
+// defaultMode is the mode new sessions start in: the one chosen on the settings page, else config.toml's.
+func (s *Server) defaultMode() string {
+	if m := s.set.Get().DefaultMode; m != "" {
+		if _, ok := s.cfg.Modes[m]; ok {
+			return m
+		}
+	}
+	return s.cfg.DefaultMode
+}
+
+// Autostart lists the processes to start with the backend: config.toml's autostart,
+// overridden per process by the settings page.
+func (s *Server) Autostart() []string {
+	st := s.set.Get()
+	var out []string
+	for _, p := range s.cfg.Processes {
+		on := p.AutoStart
+		if v, ok := st.Autostart[p.Name]; ok {
+			on = v
+		}
+		if on {
+			out = append(out, p.Name)
+		}
+	}
+	return out
+}
+
+// StartArgs are the arguments saved for a process on the settings page.
+func (s *Server) StartArgs(name string) []string {
+	return strings.Fields(s.set.Get().ProcessArgs[name])
 }

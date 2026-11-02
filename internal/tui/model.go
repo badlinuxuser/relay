@@ -23,6 +23,7 @@ const (
 	eUser entryKind = iota
 	eAssistant
 	eTool
+	eThought
 	eNotice
 	eError
 )
@@ -77,6 +78,10 @@ type model struct {
 
 	appSel int // selected line of the approval list (see approval.go)
 
+	openThink int         // index of the thoughts block being filled, -1 = none
+	pend      []pendPiece // text waiting to be typed out (stream.go)
+	mouseOn   bool        // mouse reporting is switched on
+
 	ov          overlay         // list opened by /sessions or /stop (overlay.go)
 	statusBurst int             // ticks left of fast status polling after a start
 	failSeen    map[string]bool // failed processes that were already reported
@@ -94,16 +99,18 @@ func New(spawn, keep bool) tea.Model {
 	ti.Focus()
 	cwd, _ := os.Getwd()
 	return model{
-		spawn:    spawn,
-		keep:     keep,
-		mode:     "small",
-		cwd:      cwd,
-		input:    ti,
-		openAsst: -1,
-		slots:    map[int]int{},
-		mc:       newMascot(),
-		sprites:  loadSprites(),
-		entries:  []entry{{kind: eNotice, text: "Connecting to the backend…"}},
+		spawn:     spawn,
+		keep:      keep,
+		mode:      "small",
+		cwd:       cwd,
+		input:     ti,
+		openAsst:  -1,
+		openThink: -1,
+		mouseOn:   true,
+		slots:     map[int]int{},
+		mc:        newMascot(),
+		sprites:   loadSprites(),
+		entries:   []entry{{kind: eNotice, text: "Connecting to the backend…"}},
 	}
 }
 
@@ -211,6 +218,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.st != nil {
 			m.status = msg.st
 			m.reportFailed(msg.st)
+			c := m.noteSettingsChange(msg.st)
+			m.statusBusy = false
+			return m, c
 		}
 		m.statusBusy = false
 		return m, nil
@@ -256,11 +266,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.handleEvent(proto.Event(msg))
 		return m, waitEvent(m.events)
 
+	case typeMsg:
+		m.drain()
+		if m.streaming || len(m.pend) > 0 {
+			return m, typeTick()
+		}
+		return m, nil
+
 	case streamEndMsg:
 		m.streaming = false
 		m.cancel = nil
 		m.approval = nil
-		m.openAsst = -1
+		// text still waiting in the queue keeps being typed out; openAsst is closed when it is empty
+		if len(m.pend) == 0 {
+			m.openAsst, m.openThink = -1, -1
+		}
 		if !m.runErr {
 			m.mc.base = "calm"
 			m.mc.react("joy", 3*time.Second, "")
@@ -297,7 +317,7 @@ func (m model) quit() (tea.Model, tea.Cmd) {
 	if m.cancel != nil {
 		m.cancel()
 	}
-	if m.cl != nil && m.cl.Spawned && !m.keep {
+	if m.cl != nil && m.cl.Spawned && !m.keep && !m.appSettings().KeepBackend {
 		m.cl.Shutdown()
 	}
 	return m, tea.Quit
@@ -380,7 +400,8 @@ func (m *model) beginStream(run func(ctx context.Context, emit func(proto.Event)
 	ctx, cancel := context.WithCancel(context.Background())
 	ch := make(chan proto.Event, 256)
 	m.cancel, m.events, m.streaming = cancel, ch, true
-	m.openAsst, m.slots, m.runErr = -1, map[int]int{}, false
+	m.flushPending()
+	m.openAsst, m.openThink, m.slots, m.runErr = -1, -1, map[int]int{}, false
 	m.scroll = 0
 	go func() {
 		err := run(ctx, func(ev proto.Event) { ch <- ev })
@@ -389,7 +410,7 @@ func (m *model) beginStream(run func(ctx context.Context, emit func(proto.Event)
 		}
 		close(ch)
 	}()
-	return waitEvent(ch)
+	return tea.Batch(waitEvent(ch), typeTick())
 }
 
 func (m model) send(text string) (tea.Model, tea.Cmd) {
@@ -410,6 +431,10 @@ func (m model) send(text string) (tea.Model, tea.Cmd) {
 }
 
 func (m *model) handleEvent(ev proto.Event) {
+	if ev.Type != "text" && ev.Type != "thinking" && ev.Type != "usage" {
+		m.flushPending() // keep the order: what was said before a tool call is on screen before it
+		m.openThink = -1
+	}
 	switch ev.Type {
 	case "model":
 		m.curModel = ev.Model
@@ -418,18 +443,15 @@ func (m *model) handleEvent(ev proto.Event) {
 			m.slots[ev.Slot] = len(m.entries) - 1
 		}
 
-	case "text":
-		if ev.Slot > 0 {
-			if i, ok := m.slots[ev.Slot]; ok {
+	case "text", "thinking":
+		if ev.Slot > 0 { // compare mode: each model has its own block, no queue
+			if i, ok := m.slots[ev.Slot]; ok && ev.Type == "text" {
 				m.entries[i].text += ev.Text
 			}
 			return
 		}
-		if m.openAsst < 0 || m.openAsst >= len(m.entries) {
-			m.entries = append(m.entries, entry{kind: eAssistant, model: m.curModel})
-			m.openAsst = len(m.entries) - 1
-		}
-		m.entries[m.openAsst].text += ev.Text
+		m.queue(ev.Type == "thinking", ev.Text)
+		return
 
 	case "notice":
 		m.addNotice(ev.Text)

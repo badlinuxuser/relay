@@ -61,7 +61,7 @@ func providerErrKind(err error) string {
 }
 
 // Run выполняет один пользовательский запрос (в режиме агента это несколько шагов).
-func (a *Agent) Run(ctx context.Context, sess *session.Session, text string, emit func(proto.Event), approve Approve) error {
+func (a *Agent) Run(ctx context.Context, sess *session.Session, text string, showThoughts bool, emit func(proto.Event), approve Approve) error {
 	sess.Messages = append(sess.Messages, provider.Message{Role: "user", Content: text})
 	if sess.Title == "" || sess.Title == "New session" {
 		t := strings.Join(strings.Fields(text), " ")
@@ -115,6 +115,10 @@ func (a *Agent) Run(ctx context.Context, sess *session.Session, text string, emi
 			case provider.EvText:
 				content.WriteString(ev.Text)
 				emit(proto.Event{Type: "text", Text: ev.Text})
+			case provider.EvThinking:
+				if showThoughts {
+					emit(proto.Event{Type: "thinking", Text: ev.Text})
+				}
 			case provider.EvToolCall:
 				calls = append(calls, *ev.Call)
 			case provider.EvNotice:
@@ -132,9 +136,11 @@ func (a *Agent) Run(ctx context.Context, sess *session.Session, text string, emi
 			return err
 		}
 
-		sess.Messages = append(sess.Messages, provider.Message{
-			Role: "assistant", Content: content.String(), ToolCalls: calls,
-		})
+		if content.Len() > 0 || len(calls) > 0 { // an empty assistant message would break some providers
+			sess.Messages = append(sess.Messages, provider.Message{
+				Role: "assistant", Content: content.String(), ToolCalls: calls,
+			})
+		}
 		if len(calls) == 0 {
 			return nil
 		}

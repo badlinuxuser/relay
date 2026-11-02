@@ -17,7 +17,9 @@ const (
 
 var spin = []string{"·", "✢", "✳", "✶", "✻", "✽", "✻", "✶", "✳", "✢"}
 
-func (m model) showSidebar() bool { return m.width >= 104 }
+func (m model) showSidebar() bool {
+	return m.width >= 104 && m.appSettings().Sidebar != "hidden"
+}
 
 // transition возвращает прогресс анимации смены режима (0..1) и признак «идёт».
 func (m model) transition() (float64, bool) {
@@ -189,8 +191,15 @@ func renderEntry(e entry, w int, st styles) []string {
 }
 
 func (m model) transcript(w int, st styles) []string {
+	if tw := m.appSettings().TextWidth; tw > 0 && tw < w {
+		w = tw // "text width" on the settings page
+	}
 	var lines []string
-	for _, e := range m.entries {
+	for i, e := range m.entries {
+		if e.kind == eThought {
+			lines = append(lines, renderThought(e, w, st, i != m.openThink)...)
+			continue
+		}
 		lines = append(lines, renderEntry(e, w, st)...)
 	}
 	return lines
@@ -235,11 +244,11 @@ func (m model) runningList() []runRow {
 	for _, sv := range m.status.Servers {
 		models[sv.Name] = sv.Models
 	}
-	count := func(n int) string {
+	count := func(n int) string { // the servers listed here run on this computer
 		if n == 1 {
-			return "1 model"
+			return "1 local model"
 		}
-		return fmt.Sprintf("%d models", n)
+		return fmt.Sprintf("%d local models", n)
 	}
 	for _, p := range procsRunning(m.status) {
 		seen[p.Name] = true
@@ -281,7 +290,7 @@ func (m model) sidebar(w, h int, th theme, st styles) []string {
 		set = m.sprites["small"]
 	}
 	mood := m.mc.frame(now)
-	if cols, rows := set.size(mood); rows > 0 && h >= rows+13+max(1, len(m.runningList())) {
+	if cols, rows := set.size(mood); m.appSettings().Mascot && rows > 0 && h >= rows+13+max(1, len(m.runningList())) {
 		var art string
 		if p, on := m.transition(); on {
 			scan := mixHex(th.accent, "#FFFFFF", 0.6)

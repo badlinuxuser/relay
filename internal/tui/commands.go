@@ -12,6 +12,7 @@ import (
 	"relay/internal/browser"
 	"relay/internal/client"
 	"relay/internal/proto"
+	"relay/internal/settings"
 )
 
 // helpText is shown only when the help page cannot be opened in a browser.
@@ -19,6 +20,7 @@ const helpText = `Relay help is a web page: run /help to open it, or open <backe
 Quick reference: /models pick a model · /mode small|medium|hard|maximum · /agent on|off · /keys API keys
 /preset <name>|none · /compare <model> <model> <text> · /new · /sessions · /load <id> · /clear · /quit
 Servers: /ollama · /llamacpp <model.gguf> · /stop (pick what to stop)
+Settings: /settings (page) · /thoughts on|off · /mouse on|off · /copy (last answer to the clipboard)
 Keys: ctrl+t mode · ctrl+a agent · ctrl+n new session · esc stop · pgup/pgdn scroll · ctrl+c quit`
 
 func statusCmd(cl *client.Client) tea.Cmd {
@@ -192,6 +194,53 @@ func (m model) command(line string) (tea.Model, tea.Cmd) {
 			m.addNotice("Opened the help page in your browser: " + url)
 		}
 		return m, nil
+
+	case "/settings":
+		if !needConn() {
+			return m, nil
+		}
+		url := m.cl.Base + "/ui/settings#token=" + m.cl.Token
+		m.mc.react("noticed", 2*time.Second, "")
+		if err := browser.Open(url); err != nil {
+			m.addNotice("Could not open the browser. Open it manually: " + url)
+		} else {
+			m.addNotice("Opened the settings page in your browser. Changes apply within a few seconds.")
+		}
+		return m, nil
+
+	case "/thoughts":
+		if !needConn() {
+			return m, nil
+		}
+		on := onOff(args, m.appSettings().ShowThoughts)
+		if on {
+			m.addNotice("Thoughts: on (shown dimmed above the answer)")
+		} else {
+			m.addNotice("Thoughts: off (they are not sent at all)")
+		}
+		return m, saveSettingsCmd(m.cl, func(s *settings.Settings) { s.ShowThoughts = on })
+
+	case "/mouse":
+		if !needConn() {
+			return m, nil
+		}
+		on := onOff(args, m.mouseOn)
+		if on {
+			m.addNotice("Mouse: on (clicks and wheel work; hold shift to select text)")
+		} else {
+			m.addNotice("Mouse: off. Select and copy text as usual; scroll with pgup/pgdn. /mouse on brings it back.")
+		}
+		c := m.applyMouse(on)
+		return m, tea.Batch(c, saveSettingsCmd(m.cl, func(s *settings.Settings) { s.Mouse = on }))
+
+	case "/copy":
+		text := m.lastAnswer()
+		if text == "" {
+			m.addNotice("Nothing to copy yet")
+			return m, nil
+		}
+		m.addNotice(fmt.Sprintf("Copied the last answer (%d characters) to the clipboard", runeLen(text)))
+		return m, copyCmd(text)
 
 	case "/quit", "/exit", "/q":
 		return m.quit()

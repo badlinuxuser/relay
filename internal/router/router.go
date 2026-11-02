@@ -84,6 +84,13 @@ func (r *Router) keyless(m config.Model) bool {
 	return k != nil && k.NeedsKey() && k.Count() == 0
 }
 
+// resting: every key of the provider is on pause (no credit, rate limit). Asking again
+// now would only fail again, so the fallback chain leaves such a provider out.
+func (r *Router) resting(m config.Model) bool {
+	k := r.keys[m.Provider]
+	return k != nil && k.NeedsKey() && k.Exhausted()
+}
+
 // Resolve строит цепочку моделей: явно выбранная первой, затем модели режима.
 // Если нужны инструменты, модели без поддержки инструментов пропускаются.
 // Модели провайдеров, для которых не добавлен ключ, пропускаются тоже (если
@@ -125,6 +132,9 @@ func (r *Router) Resolve(mode, model string, needTools bool, h Hint) (chain []st
 		if r.keyless(m) {
 			skipped = append(skipped, id)
 			continue
+		}
+		if r.resting(m) {
+			continue // failed a moment ago with no credit or a limit: do not try again at once
 		}
 		if snap.Missing(m.Provider, m.Name) {
 			// The model from the config is not installed (or does not exist). If it
@@ -173,9 +183,26 @@ func estimateIn(msgs []provider.Message) int {
 // ничего не выдала (иначе ответ пришлось бы склеивать из двух моделей).
 // Возвращает id модели, давшей ответ. Расход отправляется событием EvUsage.
 func (r *Router) Stream(ctx context.Context, chain []string, req provider.Request, emit func(provider.Event) error) (string, error) {
+	type failure struct{ id, why string }
+	var fails []failure
 	var lastErr error = errors.New("no models to try")
+	badProv := map[string]bool{} // providers that cannot help in this request (no key, no credit, bad key)
+	allLimited := true
+
+	next := func(from int) string {
+		for j := from; j < len(chain); j++ {
+			if m, ok := r.cfg.ModelByID(chain[j]); ok && !badProv[m.Provider] {
+				return chain[j]
+			}
+		}
+		return ""
+	}
+
 	for i, id := range chain {
 		m, _ := r.cfg.ModelByID(id)
+		if badProv[m.Provider] {
+			continue
+		}
 		cl := r.clients[m.Provider]
 		if cl == nil {
 			lastErr = fmt.Errorf("provider %q is not available", m.Provider)
@@ -194,6 +221,8 @@ func (r *Router) Stream(ctx context.Context, chain []string, req provider.Reques
 			switch ev.Kind {
 			case provider.EvText:
 				emitted = true
+				outChars += len(ev.Text)
+			case provider.EvThinking:
 				outChars += len(ev.Text)
 			case provider.EvToolCall:
 				emitted = true
@@ -215,12 +244,28 @@ func (r *Router) Stream(ctx context.Context, chain []string, req provider.Reques
 			}
 			cost := (float64(u.In)*m.PriceIn + float64(u.Out)*m.PriceOut) / 1e6
 			r.usage.Add(id, u.In, u.Out, cost)
+			if !emitted {
+				_ = emit(provider.Event{Kind: provider.EvNotice, Tag: "info",
+					Text: id + " sent no answer (only its reasoning, or nothing). Try again or pick another model with /models"})
+			}
 			return id, emit(provider.Event{Kind: provider.EvUsage, Usage: u, Cost: cost, Text: id})
 		}
 		lastErr = err
 		var pe *provider.Error
-		if emitted || ctx.Err() != nil || !errors.As(err, &pe) || !pe.Retryable || i == len(chain)-1 {
+		if emitted || ctx.Err() != nil || !errors.As(err, &pe) || !pe.Retryable {
 			return id, err
+		}
+		fails = append(fails, failure{id, shorten(pe.Msg, 90)})
+		if !pe.RateLimited {
+			allLimited = false
+		}
+		// the same provider will fail the same way for its other models
+		if pe.NoKey || pe.Billing || pe.Auth || pe.RateLimited {
+			badProv[m.Provider] = true
+		}
+		nx := next(i + 1)
+		if nx == "" {
+			break
 		}
 		tag := "fallback"
 		switch {
@@ -229,8 +274,21 @@ func (r *Router) Stream(ctx context.Context, chain []string, req provider.Reques
 		case pe.NoKey:
 			tag = "no_key"
 		}
+		why := shorten(pe.Msg, 80)
+		if pe.Billing {
+			why = "no credit or the plan does not include it: " + why
+		}
 		_ = emit(provider.Event{Kind: provider.EvNotice, Tag: tag,
-			Text: fmt.Sprintf("%s unavailable (%s), falling back to %s", id, shorten(pe.Msg, 80), chain[i+1])})
+			Text: fmt.Sprintf("%s unavailable (%s), falling back to %s", id, why, nx)})
+	}
+	if len(fails) > 1 {
+		parts := make([]string, 0, len(fails))
+		for _, f := range fails {
+			parts = append(parts, f.id+": "+f.why)
+		}
+		return "", &provider.Error{Msg: "none of the models could answer. " + strings.Join(parts, " | ") +
+			". Check /keys, or pick a working model with /models",
+			RateLimited: allLimited}
 	}
 	return "", lastErr
 }

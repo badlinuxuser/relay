@@ -6,9 +6,10 @@ import (
 	"time"
 
 	"relay/internal/provider"
+	"relay/internal/settings"
 )
 
-const Version = "0.6.0"
+const Version = "0.7.0"
 
 // Event это одно событие потока выполнения (SSE: "data: <json>").
 //
@@ -16,6 +17,7 @@ const Version = "0.6.0"
 //
 //	model        начал отвечать модель Model
 //	text         фрагмент ответа в Text
+//	thinking     фрагмент рассуждений модели в Text (не часть ответа; приходит, только если включено в настройках)
 //	notice       служебное сообщение (Kind: fallback | rate_limit | key_switch | info)
 //	tool_call    агент вызывает инструмент Tool (Args, Desc)
 //	approval     нужно подтверждение действия; CallID это id для POST /api/approvals/{id}
@@ -146,6 +148,8 @@ type ProviderKeys struct {
 	Env       []EnvKey   `json:"env,omitempty"`
 	Total     int        `json:"total"`
 	Available int        `json:"available"`
+	// KeyOptional: the provider works without a key, but a key unlocks more (Ollama: cloud models).
+	KeyOptional bool `json:"key_optional,omitempty"`
 }
 
 type KeysResp struct {
@@ -212,7 +216,17 @@ type StatusResp struct {
 	Providers   []ProviderInfo        `json:"providers"`
 	Processes   []ProcInfo            `json:"processes"`
 	Servers     []ServerInfo          `json:"servers"` // local servers that are running now
+	Settings    settings.Settings     `json:"settings"`
 	Usage       map[string]UsageEntry `json:"usage"`
 	Presets     []string              `json:"presets"`
 	MCP         []string              `json:"mcp"`
+}
+
+// SessionsResp is the answer of GET /api/sessions/manage: sessions with their size, for the /settings page.
+type SessionRow struct {
+	ID       string    `json:"id"`
+	Title    string    `json:"title"`
+	Mode     string    `json:"mode"`
+	Updated  time.Time `json:"updated"`
+	Messages int       `json:"messages"`
 }

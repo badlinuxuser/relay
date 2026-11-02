@@ -268,6 +268,10 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/dir"]</code><
 
 <section id="panel">
 <h2>Side panel, mouse, Windows</h2>
+<h3>Settings page: /settings</h3>
+<p><code>/settings</code> opens a page where you can turn the model's thoughts on or off (they are shown dimmed, apart from the answer; when off they are not sent at all), choose the typing speed, hide the side panel or the mascot, limit the text width, switch the mouse off, set the default mode, autostart and saved arguments of local servers (for llama.cpp: the model file), and delete saved sessions. Shortcuts: <code>/thoughts on|off</code>, <code>/mouse on|off</code>.</p>
+<h3>Copying text</h3>
+<p><code>/copy</code> puts the last answer on the clipboard. To select text by hand, hold <kbd>shift</kbd> while dragging, or switch the mouse off with <code>/mouse off</code> (then scroll with <kbd>pgup</kbd>/<kbd>pgdn</kbd>).</p>
 <h3>The side panel: processes</h3>
 <p>The <b>processes</b> block lists the local servers that are running right now (Ollama, llama.cpp, LM Studio, ...), also ones you started yourself. When there are none it says <code>Nothing running :)</code>.</p>
 <h3>Mouse</h3>

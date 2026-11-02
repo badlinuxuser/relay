@@ -96,10 +96,35 @@ func (s *Store) Save(sess *Session) error {
 }
 
 type Summary struct {
-	ID      string
-	Title   string
-	Mode    string
-	Updated time.Time
+	ID       string
+	Title    string
+	Mode     string
+	Updated  time.Time
+	Messages int
+}
+
+// Delete removes a session from memory and disk. It refuses while the session is answering.
+func (s *Store) Delete(id string) error {
+	if strings.ContainsAny(id, `/\.`) || id == "" {
+		return fmt.Errorf("bad session id")
+	}
+	s.mu.Lock()
+	sess := s.cache[id]
+	s.mu.Unlock()
+	if sess != nil {
+		if !sess.Run.TryLock() {
+			return fmt.Errorf("the session is answering right now; stop it first")
+		}
+		defer sess.Run.Unlock()
+	}
+	s.mu.Lock()
+	delete(s.cache, id)
+	s.mu.Unlock()
+	err := os.Remove(filepath.Join(s.dir, id+".json"))
+	if os.IsNotExist(err) {
+		return fmt.Errorf("session %q not found", id)
+	}
+	return err
 }
 
 // List возвращает сессии с диска, новые первыми.
@@ -118,7 +143,7 @@ func (s *Store) List() []Summary {
 		if err != nil {
 			continue
 		}
-		out = append(out, Summary{ID: sess.ID, Title: sess.Title, Mode: sess.Mode, Updated: sess.Updated})
+		out = append(out, Summary{ID: sess.ID, Title: sess.Title, Mode: sess.Mode, Updated: sess.Updated, Messages: len(sess.Messages)})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Updated.After(out[j].Updated) })
 	return out

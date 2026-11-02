@@ -35,6 +35,11 @@ func (s *Server) providerKeys() []proto.ProviderKeys {
 			Name: p.Name, Kind: p.Kind, NeedsKey: needs, Total: total, Available: avail,
 			Stored: []proto.KeyEntry{},
 		}
+		for _, q := range s.cfg.Providers {
+			if q.KeyFrom == p.Name {
+				pk.KeyOptional = true // e.g. Ollama: no key for local models, a key for the cloud ones
+			}
+		}
 		for _, m := range s.keys.List(p.Name) {
 			pk.Stored = append(pk.Stored, proto.KeyEntry{ID: m.ID, Label: m.Label, Hint: m.Hint})
 		}
