@@ -89,7 +89,8 @@ func (s *Server) handleSetSettings(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleSessionList(w http.ResponseWriter, r *http.Request) {
 	out := []proto.SessionRow{}
 	for _, sm := range s.store.List() {
-		out = append(out, proto.SessionRow{ID: sm.ID, Title: sm.Title, Mode: sm.Mode, Updated: sm.Updated, Messages: sm.Messages})
+		out = append(out, proto.SessionRow{ID: sm.ID, Title: sm.Title, Mode: sm.Mode, Updated: sm.Updated, Messages: sm.Messages,
+			TokensIn: sm.TokensIn, TokensOut: sm.TokensOut, Cost: sm.Cost})
 	}
 	writeJSON(w, 200, out)
 }

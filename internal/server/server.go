@@ -261,6 +261,7 @@ func sessionInfo(sess *session.Session, withMessages bool) proto.SessionInfo {
 	si := proto.SessionInfo{
 		ID: sess.ID, Title: sess.Title, Mode: sess.Mode, Model: sess.Model,
 		Preset: sess.Preset, Agent: sess.Agent, Workspace: sess.Workspace, Updated: sess.Updated,
+		TokensIn: sess.TokensIn, TokensOut: sess.TokensOut, Cost: sess.Cost, Context: sess.LastIn,
 	}
 	if withMessages {
 		si.Messages = sess.Messages
@@ -334,7 +335,8 @@ func (s *Server) workspace(requested string) string {
 func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	out := []proto.SessionInfo{}
 	for _, sm := range s.store.List() {
-		out = append(out, proto.SessionInfo{ID: sm.ID, Title: sm.Title, Mode: sm.Mode, Updated: sm.Updated})
+		out = append(out, proto.SessionInfo{ID: sm.ID, Title: sm.Title, Mode: sm.Mode, Updated: sm.Updated,
+			TokensIn: sm.TokensIn, TokensOut: sm.TokensOut, Cost: sm.Cost})
 	}
 	writeJSON(w, 200, out)
 }

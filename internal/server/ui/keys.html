@@ -36,10 +36,23 @@ input:focus{outline:none;border-color:var(--accent)}
 input.key{flex:1 1 280px}
 input.lbl{flex:0 1 150px}
 a{color:var(--accent)}
+h3.group{margin:22px 0 10px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);font-weight:600}
+h3.group:first-child{margin-top:0}
 .hintline{margin:10px 0 0;font-size:13px;color:var(--dim)}
 #toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--card);border:1px solid var(--soft);color:var(--accent);padding:9px 16px;border-radius:99px;opacity:0;transition:opacity .2s;pointer-events:none}
 #toast.show{opacity:1}
 #toast.err{border-color:var(--red);color:var(--red)}
+.launch{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
+.launch h3{margin:0 0 8px;font-size:14px;color:var(--dim);font-weight:600}
+.lrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0}
+.lrow .lab{color:var(--dim);min-width:84px}
+.lrow input.arg{flex:1 1 260px}
+.sw{position:relative;width:44px;height:24px;flex:none}
+.sw input{opacity:0;width:100%;height:100%;margin:0;position:absolute;cursor:pointer}
+.sw i{position:absolute;inset:0;border-radius:99px;background:#1c2b22;border:1px solid var(--line);transition:.15s;pointer-events:none}
+.sw i:before{content:"";position:absolute;left:3px;top:3px;width:16px;height:16px;border-radius:50%;background:var(--dim);transition:.15s}
+.sw input:checked+i{background:#1c3326;border-color:var(--soft)}
+.sw input:checked+i:before{left:23px;background:var(--accent)}
 footer{margin-top:26px;color:var(--dim);font-size:13px}
 </style>
 </head>
@@ -54,7 +67,7 @@ footer{margin-top:26px;color:var(--dim);font-size:13px}
   </header>
   <div class="banner" id="banner"></div>
   <div id="list"></div>
-  <footer>Need help? <a href="/ui/help">Open the Relay help</a>. Keys from environment variables (if set in the config) are listed separately and cannot be edited here. You can close this tab when you are done.</footer>
+  <footer>Need help? <a href="/ui/help">Open the Relay help</a>. You can close this tab when you are done.</footer>
 </main>
 <div id="toast"></div>
 <script>
@@ -129,35 +142,60 @@ footer{margin-top:26px;color:var(--dim);font-size:13px}
     return api('GET','/api/models'+(refresh?'?refresh=1':'')).then(function(r){ fillModels(r); return r; });
   }
 
+  var appSettings = null, procs = {};
+  function saveApp(msg){
+    return api('POST','/api/settings',appSettings).then(function(v){ appSettings=v.settings; toast(msg||'Saved'); }).catch(function(e){ fail(e); });
+  }
+  // Launcher controls of a local server that Relay can start (Ollama, llama.cpp): autostart, arguments, start and stop.
+  function launcher(c, p){
+    var pr = procs[p.name]; if(!pr || !appSettings) return;
+    var box = el('div','launch'); box.appendChild(el('h3',null,'Launcher · '+pr.command));
+    var r1 = el('div','lrow'); r1.appendChild(el('span','lab','autostart'));
+    var sw = el('label','sw'), cb = el('input'); cb.type='checkbox'; cb.checked=!!pr.autostart;
+    cb.onchange=function(){ appSettings.autostart[p.name]=cb.checked; pr.autostart=cb.checked; saveApp('Saved. Applies the next time the backend starts.'); };
+    sw.appendChild(cb); sw.appendChild(el('i')); r1.appendChild(sw); box.appendChild(r1);
+    var r2 = el('div','lrow'); r2.appendChild(el('span','lab', p.name==='llamacpp' ? 'model' : 'arguments'));
+    var arg = el('input','arg'); arg.type='text'; arg.spellcheck=false;
+    arg.placeholder = p.name==='llamacpp' ? '-m /path/to/model.gguf  (or -hf org/repo)' : 'extra arguments (optional)';
+    arg.value = (appSettings.process_args||{})[p.name] || '';
+    arg.onchange=function(){ appSettings.process_args[p.name]=arg.value.trim(); saveApp(); };
+    r2.appendChild(arg); box.appendChild(r2);
+    var r3 = el('div','lrow');
+    var st = el('button',null,'Start'); st.type='button';
+    st.onclick=function(){ api('POST','/api/processes/'+encodeURIComponent(p.name)+'/start').then(function(r){ toast(r.already?p.name+' is already running':'Starting '+p.name+'…'); }).catch(function(e){ toast(e.message,true); }); };
+    var sp = el('button','del','Stop'); sp.type='button';
+    sp.onclick=function(){ api('POST','/api/processes/'+encodeURIComponent(p.name)+'/stop').then(function(){ toast('Stopped '+p.name); }).catch(function(e){ toast(e.message,true); }); };
+    r3.appendChild(st); r3.appendChild(sp); box.appendChild(r3);
+    box.appendChild(el('p','hintline','Arguments are used when the server is started without any: from the interface with /'+p.name+', or by autostart.'));
+    c.appendChild(box);
+  }
+
   function card(p){
     var c = el('section','card');
     var h = el('h2'); h.appendChild(document.createTextNode(p.name)); h.appendChild(el('span','kind',p.kind)); h.appendChild(badge(p));
     var mb = el('span','badge',''); mb.style.display='none'; badges[p.name]=mb; h.appendChild(mb); c.appendChild(h);
     var ul = el('ul','keys');
     p.stored.forEach(function(k){
-      var li = el('li'); li.appendChild(el('span','hint',k.hint)); li.appendChild(el('span','label',k.label||''));
+      var li = el('li'); li.appendChild(el('span','hint',k.hint)); li.appendChild(el('span','label',''));
       var d = el('button','del','delete'); d.type='button';
       d.onclick=function(){ if(!confirm('Delete key '+k.hint+' ('+p.name+')?')) return;
         api('DELETE','/api/keys/'+encodeURIComponent(p.name)+'/'+encodeURIComponent(k.id)).then(function(){toast('Key deleted');load();}).catch(fail); };
       li.appendChild(d); ul.appendChild(li);
     });
-    (p.env||[]).forEach(function(e){
-      var li = el('li'); li.appendChild(el('span','env','variable '+e.name+': '+(e.set?'set':'not set'))); ul.appendChild(li);
-    });
     if(ul.children.length) c.appendChild(ul);
 
     if(!p.needs_key && !p.key_optional){
       c.appendChild(el('p','hintline','A server on this computer: it needs no API key.'));
+      launcher(c, p);
       return c;
     }
     var f = el('form'); 
     var key = el('input','key'); key.type='password'; key.placeholder='paste your key'; key.autocomplete='off'; key.spellcheck=false;
-    var lbl = el('input','lbl'); lbl.type='text'; lbl.placeholder='label (optional)';
     var b = el('button',null,'Add'); b.type='submit';
-    f.appendChild(key); f.appendChild(lbl); f.appendChild(b);
+    f.appendChild(key); f.appendChild(b);
     f.onsubmit=function(ev){ ev.preventDefault(); if(!key.value.trim()) return;
-      api('POST','/api/keys',{provider:p.name,key:key.value,label:lbl.value}).then(function(){
-        key.value=''; lbl.value=''; toast('Key saved. Checking models…'); load();
+      api('POST','/api/keys',{provider:p.name,key:key.value}).then(function(){
+        key.value=''; toast('Key saved. Checking models…'); load();
         // ask the provider what the key gives access to: this also checks that the key works
         return loadModels(true).then(function(r){
           var m = modelsText(r, p.name);
@@ -165,6 +203,7 @@ footer{margin-top:26px;color:var(--dim);font-size:13px}
         });
       }).catch(fail); };
     c.appendChild(f);
+    launcher(c, p);
     if(NOTES[p.name]){ c.appendChild(el('p','hintline',NOTES[p.name])); }
     if(LINKS[p.name]){ var hl = el('p','hintline'); hl.appendChild(document.createTextNode('Get a key: ')); var a=el('a',null,LINKS[p.name][1]); a.href=LINKS[p.name][0]; a.target='_blank'; a.rel='noopener noreferrer'; hl.appendChild(a); c.appendChild(hl); }
     return c;
@@ -174,11 +213,15 @@ footer{margin-top:26px;color:var(--dim);font-size:13px}
 
   function load(){
     if(!token){ banner('No access token. Open this page with the “relay keys” command or /keys in the interface.'); return; }
-    api('GET','/api/keys').then(function(r){
+    api('GET','/api/settings').then(function(v){ appSettings=v.settings; procs={}; (v.processes||[]).forEach(function(x){ procs[x.name]=x; }); }).catch(function(){ appSettings=null; }).then(function(){ return api('GET','/api/keys'); }).then(function(r){
       banner('');
       var list = document.getElementById('list'); list.textContent='';
       badges = {};
-      r.providers.forEach(function(p){ list.appendChild(card(p)); });
+      var TITLES = {official:'Official providers', external:'Other services', local:'On this computer'}, lastGroup = '';
+      r.providers.forEach(function(p){
+        if(p.group && p.group!==lastGroup){ lastGroup=p.group; list.appendChild(el('h3','group',TITLES[p.group]||p.group)); }
+        list.appendChild(card(p));
+      });
       loadModels(false).catch(function(){}); // how many models each provider has (does not block the page)
     }).catch(fail);
   }

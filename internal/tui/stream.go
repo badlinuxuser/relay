@@ -1,9 +1,7 @@
 package tui
 
 import (
-	"encoding/base64"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -180,15 +178,6 @@ func (m model) lastAnswer() string {
 	return ""
 }
 
-// copyCmd puts text on the clipboard with the OSC 52 escape sequence, which most modern
-// terminals (Windows Terminal, iTerm2, kitty, WezTerm, alacritty, tmux with set-clipboard) accept.
-func copyCmd(text string) tea.Cmd {
-	return func() tea.Msg {
-		fmt.Fprintf(os.Stdout, "\x1b]52;c;%s\x07", base64.StdEncoding.EncodeToString([]byte(text)))
-		return nil
-	}
-}
-
 // applyMouse switches mouse reporting to match the setting.
 func (m *model) applyMouse(on bool) tea.Cmd {
 	if on == m.mouseOn {
@@ -202,8 +191,69 @@ func (m *model) applyMouse(on bool) tea.Cmd {
 }
 
 func (m *model) noteSettingsChange(st *proto.StatusResp) tea.Cmd {
-	if st == nil || st.Settings.StreamSpeed == "" {
+	if st == nil || st.Settings.StreamSpeed == "" || m.selecting {
 		return nil
 	}
 	return m.applyMouse(st.Settings.Mouse)
+}
+
+// scrollKey scrolls the chat for the keys that mean "scroll" and reports whether it was one.
+// Several alternatives exist because terminals differ: some keep PageUp / PageDown for themselves.
+// ctrl+u, ctrl+d, home and end scroll only while the input line is empty (otherwise they edit it).
+func (m *model) scrollKey(key string) bool {
+	page := max(3, m.bodyHeight()/2)
+	empty := m.input.Value() == ""
+	switch key {
+	case "pgup":
+		m.scroll = min(m.scroll+page, m.maxScroll())
+	case "pgdown":
+		m.scroll = max(0, m.scroll-page)
+	case "shift+up", "alt+up", "ctrl+up":
+		m.scroll = min(m.scroll+3, m.maxScroll())
+	case "shift+down", "alt+down", "ctrl+down":
+		m.scroll = max(0, m.scroll-3)
+	case "ctrl+u":
+		if !empty {
+			return false
+		}
+		m.scroll = min(m.scroll+page, m.maxScroll())
+	case "ctrl+d":
+		if !empty {
+			return false
+		}
+		m.scroll = max(0, m.scroll-page)
+	case "home":
+		if !empty {
+			return false
+		}
+		m.scroll = m.maxScroll()
+	case "end":
+		if !empty {
+			return false
+		}
+		m.scroll = 0
+	default:
+		return false
+	}
+	return true
+}
+
+// now is the time the screen is drawn for: frozen in select mode, so the picture does not change.
+func (m model) now() time.Time {
+	if m.selecting {
+		return m.frozenAt
+	}
+	return time.Now()
+}
+
+// enterSelect freezes the screen and lets the terminal have the mouse, so a text selection
+// is kept: animations, the blinking cursor and clicks would otherwise make the terminal drop it.
+func (m *model) enterSelect() tea.Cmd {
+	m.selecting, m.frozenAt = true, time.Now()
+	return m.applyMouse(false)
+}
+
+func (m *model) leaveSelect() tea.Cmd {
+	m.selecting = false
+	return m.applyMouse(m.appSettings().Mouse)
 }

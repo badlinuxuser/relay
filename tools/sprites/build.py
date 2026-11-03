@@ -1,19 +1,18 @@
-#!/usr/bin/env python3
-"""Конвертер спрайт-листов маскота Relay в пиксельные кадры для TUI.
+"""Converts the mascot sprite sheets into pixel frames for the TUI.
 
-Вход:  assets/sheets/{green,purple,red}.png (1254x1254, одинаковая раскладка)
-Выход: internal/tui/sprites/{small,medium,hard,maximum}.json
-       assets/sprites/preview_<theme>.png  (увеличенное превью для проверки)
+Input:  assets/sheets/{green,purple,red}.png (1254x1254, the same layout)
+Output: internal/tui/sprites/{small,medium,hard,maximum}.json
+        assets/sprites/preview_<theme>.png  (enlarged preview for checking)
 
-Кадр это сетка пикселей W x H (H чётная). В терминале два пикселя по вертикали
-рисуются одной ячейкой символом "▀" (верх = цвет текста, низ = цвет фона), поэтому
-пиксели квадратные и чёткие. Прозрачные пиксели ('.') показывают фон карточки.
+A frame is a grid of W x H pixels (H is even). In the terminal two vertical pixels are drawn
+as one cell with the character "▀" (top = text colour, bottom = background colour), so the
+pixels are square and sharp. Transparent pixels ('.') show the background.
 
-Темы:  small = зелёный, medium = фиолетовый, hard = красный,
-       maximum = радужный (зелёный лист; акцентные цвета палитры помечены в "accent",
-       а оттенок им подставляет рантайм и плавно вращает).
+Themes: small = green, medium = purple, hard = red,
+        maximum = rainbow (the green sheet; the accent colours of the palette are marked in "accent",
+        and the runtime fills in the hue and rotates it smoothly).
 
-Зависимости: Pillow, numpy, scipy не нужен.   Запуск: python3 tools/sprites/build.py
+Needs: Pillow, numpy (scipy is not needed).   Run: python3 tools/sprites/build.py
 """
 import colorsys
 import json
@@ -29,7 +28,7 @@ SHEETS = os.path.join(ROOT, "assets", "sheets")
 OUT = os.path.join(ROOT, "internal", "tui", "sprites")
 PREVIEW = os.path.join(ROOT, "assets", "sprites")
 
-# центры эмоций по x в листе; окно кропа одинаковое для всех кадров
+# x centres of the emotions in the sheet; the crop window is the same for every frame
 EMOTIONS = {
     "calm": 140,
     "joy": 358,
@@ -37,29 +36,28 @@ EMOTIONS = {
     "noticed": 852,
     "tired": 1085,
 }
-CROP = (-90, 676, 112, 838)      # (dx0, y0, dx1, y1) относительно центра эмоции
+CROP = (-90, 676, 112, 838)      # (dx0, y0, dx1, y1) relative to the emotion centre
 SWATCH_Y = 92
 SWATCH_X = [908, 961, 1014, 1066, 1118, 1171]
 
-OUT_W = 44                       # ширина кадра в пикселях (= в ячейках терминала)
-N_COLORS = 30                    # размер палитры темы
-BG_TOL = 11                      # допуск цвета фона листа при заливке от краёв
+OUT_W = 44                       # frame width in pixels (= terminal cells)
+N_COLORS = 30                    # size of the theme palette
+BG_TOL = 11                      # background colour tolerance of the sheet for the edge flood fill
 CHARS = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 THEMES = {"small": "green", "medium": "purple", "hard": "red", "maximum": "green"}
 
 
 def sheet_bg(im):
-    """Цвет фона листа: медиана по тихим участкам у левого края."""
+    """Background colour of the sheet: the median over quiet areas at the left edge."""
     a = np.asarray(im).astype(int)
     patch = np.concatenate([a[700:760, 10:30].reshape(-1, 3), a[860:900, 400:420].reshape(-1, 3)])
     return np.median(patch, axis=0)
 
 
 def background_mask(arr, bg):
-    """True для пикселей фона: заливка от краёв по цвету, близкому к фону.
-    Чёрные внутренние области (капюшон, одежда) заливкой не затрагиваются,
-    пока они отделены от краёв более светлыми пикселями."""
+    """True for background pixels: a flood fill from the edges over colours close to the background.
+    Dark inner areas (hood, clothes) are not touched while lighter pixels separate them from the edges."""
     h, w, _ = arr.shape
     near = np.abs(arr - bg).max(axis=2) <= BG_TOL
     seen = np.zeros((h, w), dtype=bool)
@@ -109,14 +107,14 @@ def build_theme(sheet_name, rainbow):
     for name, cx in EMOTIONS.items():
         frames[name] = crop_frame(im, cx, bg)
 
-    # единая палитра темы по непрозрачным пикселям всех кадров
+    # one theme palette from the opaque pixels of all frames
     px = np.concatenate([s[~t] for s, t in frames.values()])
     strip = Image.new("RGB", (len(px), 1))
     strip.putdata([tuple(int(round(v)) for v in p) for p in px])
     q = strip.quantize(colors=N_COLORS, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE)
     pal_flat = q.getpalette()[: N_COLORS * 3]
 
-    # привязка цвета каждого пикселя к ближайшему элементу палитры
+    # map every pixel colour to the nearest palette entry
     pal = np.array(pal_flat, dtype=float).reshape(-1, 3)
     used, palette = {}, []
 

@@ -1,74 +1,98 @@
-# Протокол бэкенда Relay
+# Relay backend protocol
 
-Транспорт: HTTP/1.1 + JSON, потоковые ответы через Server-Sent Events (`data: <json>\n\n`).
-Адрес и токен: `<home>/daemon.json` (`{"addr":"127.0.0.1:8787","token":"...","pid":123}`).
-Каждый запрос к `/api/*` и `/v1/*` (кроме `/api/health`) требует заголовок `Authorization: Bearer <token>`.
-`<home>`: `$RELAY_HOME`, иначе `<UserConfigDir>/relay`.
+Transport: HTTP/1.1 + JSON; streaming answers use Server-Sent Events (`data: <json>\n\n`).
+Address and token: `<home>/daemon.json` (`{"addr":"127.0.0.1:8787","token":"...","pid":123}`).
+Every request to `/api/*` and `/v1/*` (except `/api/health`) needs the header `Authorization: Bearer <token>`.
+`<home>` is `$RELAY_HOME`, otherwise `<UserConfigDir>/relay`.
 
-Ошибки: статус 4xx/5xx и тело `{"error":{"message":"..."}}`.
+Errors: a 4xx/5xx status and the body `{"error":{"message":"..."}}`.
 
-## Эндпоинты
+## Endpoints
 
-| Метод и путь | Описание |
+| Method and path | Description |
 |---|---|
-| `GET /api/health` | без авторизации: `{"ok":true,"version":"0.5.0"}`; клиент перезапускает бэкенд другой версии |
-| `GET /api/status` | режимы (`effective`: цепочка, которая реально используется), модели, провайдеры (число ключей и доступных), процессы, расход, пресеты, MCP |
-| `GET /api/models` | все модели для выбора: найденные у провайдеров (`ollama/…`, `ollama-cloud/…`, `gemini/…`), официальные провайдеры первыми; провайдеры без доступа ничего не дают (модели из конфига показываются только при `discover = "none"`); `providers` с числом найденных, `local`, `skipped` («no key») и `error`. `?refresh=1` опрашивает провайдеров заново; добавление и удаление ключа сбрасывает кэш (60 с) само |
-| `GET /api/sessions` | список сессий (без сообщений) |
-| `POST /api/sessions` | создать: `{"mode":"small","workspace":"/path"}` |
-| `GET /api/sessions/{id}` | сессия с сообщениями |
-| `POST /api/sessions/{id}/settings` | `{"mode","model","preset","agent"}`, пропущенные поля не меняются |
-| `POST /api/sessions/{id}/messages` | `{"text":"..."}` → поток событий SSE |
-| `POST /api/approvals/{id}` | `{"decision":"allow\|always\|deny"}` (id из события `approval`) |
-| `POST /api/compare` | `{"text","models":["a","b"],"preset"}` → поток событий с полем `slot` |
-| `POST /api/processes/{name}/{start\|stop}` | управление локальными процессами; в теле start можно передать `{"args":[...]}` (добавятся к args из конфига), ответ `{"processes":[...],"already":bool}` |
-| `GET /api/keys` | провайдеры и ключи: `stored` (id, label, hint = последние 4 символа), `env`, `total`, `available`, `needs_key` |
-| `POST /api/keys` | добавить ключ: `{"provider","key","label"}`; полный ключ назад не возвращается |
-| `DELETE /api/keys/{provider}/{id}` | удалить сохранённый ключ |
-| `GET /ui/help` | страница справки (HTML на английском, без авторизации); открывается командой `/help` |
-| `GET /ui/keys` | страница управления ключами (HTML, без авторизации; токен берёт из `#token=...` в URL) |
-| `POST /api/shutdown` | остановить бэкенд |
-| `GET /v1/models`, `POST /v1/chat/completions` | OpenAI-совместимый шлюз |
+| `GET /api/health` | no authorization: `{"ok":true,"version":"0.7.0"}`; a client restarts a backend of another version |
+| `GET /api/status` | modes (`effective`: the chain that is really used), models, providers (number of keys and how many are usable), processes, local servers that answer now (`servers`), usage, presets, MCP, and the user's `settings` |
+| `GET /api/models` | every model to choose from: the ones the providers report (`ollama/…`, `ollama-cloud/…`, `gemini/…`), official providers first; a provider without access adds nothing (models from the config show only with `discover = "none"`); `providers` has the number found, `local`, `skipped` ("no key") and `error`. `?refresh=1` asks the providers again; adding or deleting a key clears the 60 s cache by itself |
+| `GET /api/sessions` | list of sessions (no messages), with `tokens_in`, `tokens_out`, `cost` |
+| `POST /api/sessions` | create: `{"mode":"small","workspace":"/path"}` (without `mode` the default mode of the settings is used) |
+| `GET /api/sessions/{id}` | a session with its messages and its own `tokens_in`, `tokens_out`, `cost` (USD) |
+| `DELETE /api/sessions/{id}` | delete a session (refused while it is answering) |
+| `POST /api/sessions/prune` | `{"which":"empty"\|"all"}` → `{"deleted":n,"skipped":n}` |
+| `GET /api/session-list` | sessions for the settings page: id, title, mode, updated, number of messages, tokens, cost |
+| `POST /api/sessions/{id}/settings` | `{"mode","model","preset","agent"}`; omitted fields do not change |
+| `POST /api/sessions/{id}/messages` | `{"text":"..."}` → a stream of SSE events |
+| `POST /api/approvals/{id}` | `{"decision":"allow\|always\|deny"}` (id from the `approval` event) |
+| `POST /api/compare` | `{"text","models":["a","b"],"preset"}` → a stream of events with a `slot` field |
+| `POST /api/processes/{name}/{start\|stop}` | manage local processes; the body of start may carry `{"args":[...]}` (added to the args of the config; without it the arguments saved in the settings are used); the answer is `{"processes":[...],"already":bool}` |
+| `GET /api/settings` | `{"settings":{...},"modes":[...],"processes":[...]}` |
+| `POST /api/settings` | change the settings; fields that are omitted keep their value; the answer is the same as for GET |
+| `GET /api/keys` | providers and keys: `group` (`official`, `external`, `local`; sorted in this order), `stored` (id, hint = last 4 characters), `total`, `available`, `needs_key`, `key_optional` |
+| `POST /api/keys` | add a key: `{"provider","key"}`; the full key is never returned |
+| `DELETE /api/keys/{provider}/{id}` | delete a stored key |
+| `GET /ui/help` | the help page (English HTML, no authorization); opened by `/help` |
+| `GET /ui/keys` | the API keys page (HTML, no authorization; it takes the token from `#token=...` in the URL) |
+| `GET /ui/settings` | the settings page (HTML, same way as the keys page); opened by `/settings` |
+| `POST /api/shutdown` | stop the backend |
+| `GET /v1/models`, `POST /v1/chat/completions` | OpenAI-compatible gateway |
 
-Одновременно в сессии выполняется один запрос (иначе 409).
-Отмена: закрыть HTTP-соединение потока, выполнение остановится.
+One request runs in a session at a time (otherwise 409).
+Cancel: close the HTTP connection of the stream and the run stops.
 
-## События потока
+## Settings
 
-Поле `type`; остальные поля зависят от типа (пустые не передаются).
+`settings.json` in `<home>`; edited on `/ui/settings` or with `POST /api/settings`.
 
-| type | Поля | Смысл |
+| Field | Values | Meaning |
 |---|---|---|
-| `model` | `model` | модель начала отвечать |
-| `text` | `text` | фрагмент ответа |
-| `notice` | `text`, `kind` | служебное: `fallback`, `rate_limit`, `key_switch`, `no_key`, `info` |
-| `tool_call` | `tool`, `call_id`, `args`, `desc` | агент вызывает инструмент |
-| `approval` | `tool`, `call_id`, `args`, `desc` | ждёт решения; `call_id` это id для `/api/approvals/{id}` |
-| `tool_result` | `tool`, `result`, `is_error` | результат инструмента |
-| `usage` | `model`, `in`, `out`, `cost` | расход (USD по ценам из конфигурации) |
-| `error` | `text`, `kind` | `rate_limit`, `no_key` (нет ключа провайдера), `provider`, `internal` |
-| `done` | | выполнение завершено |
+| `show_thoughts` | bool | send the model's reasoning as `thinking` events. When false they are not sent at all |
+| `stream_speed` | `instant`, `fast`, `normal`, `slow` | how fast the interface types out the answer (the backend always streams at network speed) |
+| `sidebar` | `auto`, `hidden` | the side panel of the terminal interface |
+| `mascot` | bool | draw the mascot |
+| `text_width` | 0 or 40–240 | wrap the chat at this many columns (0 = full width) |
+| `mouse` | bool | the interface captures the mouse; off means text can be selected freely |
+| `default_mode` | mode name or "" | the mode of new sessions |
+| `autostart` | `{name: bool}` | start the process with the backend (overrides `autostart` of config.toml) |
+| `process_args` | `{name: "args"}` | arguments used when a process is started without any |
+| `keep_backend` | bool | do not stop the backend when the interface quits |
 
-В `/api/compare` события дополнительно содержат `slot` (1, 2, ...), номер модели в запросе.
+## Stream events
 
-## Пример
+The field `type`; the other fields depend on it (empty ones are not sent).
+
+| type | Fields | Meaning |
+|---|---|---|
+| `model` | `model` | the model started answering |
+| `text` | `text` | a piece of the answer |
+| `thinking` | `text` | a piece of the model's reasoning (not part of the answer); only when `show_thoughts` is on |
+| `notice` | `text`, `kind` | service message: `fallback`, `rate_limit`, `key_switch`, `no_key`, `info` |
+| `tool_call` | `tool`, `call_id`, `args`, `desc` | the agent calls a tool |
+| `approval` | `tool`, `call_id`, `args`, `desc` | waits for a decision; `call_id` is the id for `/api/approvals/{id}` |
+| `tool_result` | `tool`, `result`, `is_error` | the result of a tool |
+| `usage` | `model`, `in`, `out`, `cost` | usage (USD at the prices of the configuration); also added to the totals of the session |
+| `error` | `text`, `kind` | `rate_limit`, `no_key` (the provider has no key), `provider`, `internal` |
+| `done` | | the run is finished |
+
+In `/api/compare` the events also carry `slot` (1, 2, ...), the number of the model in the request.
+
+## Example
 
 ```bash
 TOKEN=$(cat ~/.config/relay/token)
 SID=$(curl -s -X POST localhost:8787/api/sessions -H "Authorization: Bearer $TOKEN" \
         -d '{"mode":"medium"}' | jq -r .id)
 curl -N -X POST localhost:8787/api/sessions/$SID/messages \
-     -H "Authorization: Bearer $TOKEN" -d '{"text":"Привет"}'
+     -H "Authorization: Bearer $TOKEN" -d '{"text":"Hello"}'
 ```
 
-## Шлюз OpenAI
+## OpenAI gateway
 
-Совместим по формату с `/v1/chat/completions` и `/v1/models`: потоковый и обычный режимы,
-`usage` в ответе. `model`: `relay-small|medium|hard|maximum`, `auto` или id модели.
-Не поддерживается: `tools` и `function_calling` (запросы с ними обрабатываются как обычный чат).
+Compatible in format with `/v1/chat/completions` and `/v1/models`: streaming and plain modes,
+`usage` in the answer. `model`: `relay-small|medium|hard|maximum`, `auto`, or a model id.
+Not supported: `tools` and `function_calling` (requests with them are handled as plain chat).
 
-## Защита
+## Protection
 
-- При прослушивании loopback сервер отвечает только на Host `127.0.0.1`, `localhost`, `::1` (DNS rebinding).
-- Страница `/ui/keys` статическая и не содержит секретов; CSP запрещает внешние ресурсы.
-- Ключи хранятся в `<home>/keys.json` (0600); API отдаёт только последние 4 символа.
+- While listening on loopback the server answers only to the Host `127.0.0.1`, `localhost`, `::1` (DNS rebinding).
+- The pages `/ui/keys`, `/ui/settings` and `/ui/help` are static and contain no secrets; the CSP forbids outside resources.
+- Keys are stored in `<home>/keys.json` (0600); the API returns only the last 4 characters.

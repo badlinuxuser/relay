@@ -219,7 +219,7 @@ func TestOfficialProvidersFirstInAPIs(t *testing.T) {
 	for _, p := range kr.Providers {
 		names = append(names, p.Name)
 	}
-	if got := strings.Join(names, " "); got != "grok anthropic ollama openrouter" {
+	if got := strings.Join(names, " "); got != "grok anthropic openrouter ollama" {
 		t.Errorf("keys page order: %s", got)
 	}
 }

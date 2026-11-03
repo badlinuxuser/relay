@@ -60,6 +60,13 @@ type SessionInfo struct {
 	Workspace string             `json:"workspace"`
 	Updated   time.Time          `json:"updated"`
 	Messages  []provider.Message `json:"messages,omitempty"`
+	// Spent in this session.
+	TokensIn  int     `json:"tokens_in"`
+	TokensOut int     `json:"tokens_out"`
+	Cost      float64 `json:"cost"`
+	// Context is the prompt size of the newest request: what the conversation weighs now.
+	// TokensIn adds up the prompts of all requests, and every request sends the whole history again.
+	Context int `json:"context"`
 }
 
 type CreateSessionReq struct {
@@ -150,6 +157,8 @@ type ProviderKeys struct {
 	Available int        `json:"available"`
 	// KeyOptional: the provider works without a key, but a key unlocks more (Ollama: cloud models).
 	KeyOptional bool `json:"key_optional,omitempty"`
+	// Group: official | external | local (the keys page lists them in this order).
+	Group string `json:"group,omitempty"`
 }
 
 type KeysResp struct {
@@ -224,9 +233,12 @@ type StatusResp struct {
 
 // SessionsResp is the answer of GET /api/sessions/manage: sessions with their size, for the /settings page.
 type SessionRow struct {
-	ID       string    `json:"id"`
-	Title    string    `json:"title"`
-	Mode     string    `json:"mode"`
-	Updated  time.Time `json:"updated"`
-	Messages int       `json:"messages"`
+	ID        string    `json:"id"`
+	Title     string    `json:"title"`
+	Mode      string    `json:"mode"`
+	Updated   time.Time `json:"updated"`
+	Messages  int       `json:"messages"`
+	TokensIn  int       `json:"tokens_in"`
+	TokensOut int       `json:"tokens_out"`
+	Cost      float64   `json:"cost"`
 }

@@ -20,8 +20,8 @@ const helpText = `Relay help is a web page: run /help to open it, or open <backe
 Quick reference: /models pick a model · /mode small|medium|hard|maximum · /agent on|off · /keys API keys
 /preset <name>|none · /compare <model> <model> <text> · /new · /sessions · /load <id> · /clear · /quit
 Servers: /ollama · /llamacpp <model.gguf> · /stop (pick what to stop)
-Settings: /settings (page) · /thoughts on|off · /mouse on|off · /copy (last answer to the clipboard)
-Keys: ctrl+t mode · ctrl+a agent · ctrl+n new session · esc stop · pgup/pgdn scroll · ctrl+c quit`
+Settings: /settings (page) · /thoughts on|off · /mouse on|off · f2 or /select (select and copy text) · /copy (last answer)
+Keys: ctrl+t mode · ctrl+a agent · ctrl+n new session · esc stop · pgup/pgdn or shift+↑↓ or mouse wheel scroll · ctrl+c quit`
 
 func statusCmd(cl *client.Client) tea.Cmd {
 	return func() tea.Msg {
@@ -226,12 +226,16 @@ func (m model) command(line string) (tea.Model, tea.Cmd) {
 		}
 		on := onOff(args, m.mouseOn)
 		if on {
-			m.addNotice("Mouse: on (clicks and wheel work; hold shift to select text)")
+			m.addNotice("Mouse: on (clicks and wheel work). To select text press f2 or type /select.")
 		} else {
-			m.addNotice("Mouse: off. Select and copy text as usual; scroll with pgup/pgdn. /mouse on brings it back.")
+			m.addNotice("Mouse: off. Select and copy text as usual; scroll with pgup/pgdn or shift+↑/↓. /mouse on brings it back.")
 		}
 		c := m.applyMouse(on)
 		return m, tea.Batch(c, saveSettingsCmd(m.cl, func(s *settings.Settings) { s.Mouse = on }))
+
+	case "/select":
+		c := m.enterSelect()
+		return m, c
 
 	case "/copy":
 		text := m.lastAnswer()
@@ -240,7 +244,7 @@ func (m model) command(line string) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.addNotice(fmt.Sprintf("Copied the last answer (%d characters) to the clipboard", runeLen(text)))
-		return m, copyCmd(text)
+		return m, clipboardCmd(text)
 
 	case "/quit", "/exit", "/q":
 		return m.quit()

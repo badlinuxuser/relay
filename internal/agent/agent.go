@@ -124,6 +124,10 @@ func (a *Agent) Run(ctx context.Context, sess *session.Session, text string, sho
 			case provider.EvNotice:
 				emit(proto.Event{Type: "notice", Kind: ev.Tag, Text: ev.Text})
 			case provider.EvUsage:
+				sess.TokensIn += ev.Usage.In
+				sess.LastIn = ev.Usage.In
+				sess.TokensOut += ev.Usage.Out
+				sess.Cost += ev.Cost
 				emit(proto.Event{Type: "usage", Model: ev.Text, In: ev.Usage.In, Out: ev.Usage.Out, Cost: ev.Cost})
 			}
 			return ctx.Err()

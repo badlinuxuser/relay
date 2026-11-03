@@ -1,160 +1,154 @@
-# PROJECT.md: заметки по проекту Relay (для Claude)
+# PROJECT.md: notes on the Relay project (for Claude)
 
-Этот файл читаю в начале каждой сессии работы над репозиторием. Здесь цели, принятые решения,
-карта кода, статус и план. Пользовательская документация: `README.md`, `docs/PROTOCOL.md`.
+I read this file at the start of every working session on the repository. It holds the goals, the decisions
+taken, the map of the code, the status and the plan. User documentation: `README.md`, `docs/PROTOCOL.md`.
 
-## Что строим
+## What we are building
 
-Relay это лаунчер и роутер нейросетей для терминала (Linux и Windows):
-локальные модели и API в одном интерфейсе, агенты для написания кода, OpenAI-совместимый шлюз,
-маскот с эмоциями. Автор проекта говорит по-русски, но интерфейс (TUI, CLI, страница ключей), пример конфига и README на английском: это продукт для обычных пользователей. Заметки в этом файле остаются на русском.
+Relay is a launcher and router for AI models in the terminal (Linux and Windows): local models and APIs in one
+interface, coding agents, an OpenAI-compatible gateway, a mascot with emotions. The author speaks Russian, but
+the product is for ordinary users, so the interface (TUI, CLI, the web pages), the example config and all
+documentation are in English.
 
-Слоган: «Быстрее. Ближе. Вместе.»
+Tagline: "Faster. Closer. Together."
 
-## Принятые решения (и почему)
+## Decisions taken (and why)
 
-| Решение | Причина |
+| Decision | Reason |
 |---|---|
-| Бэкенд и интерфейс это два процесса, но один исполняемый файл `relay` | Пользователь просил разделение (любой клиент подключается к тому же API) и «полностью в CLI»: бэкенд это подкоманда `relay daemon`, интерфейс запускает её в фоне сам (отвязанный процесс) |
-| Всё на Go | Один статический бинарник, кросс-сборка под Windows и Linux без рантайма. Python отвергнут пользователем |
-| `relay install` сам добавляет в PATH | Пользователь хотел запуск командой `relay` после сборки: Linux `~/.local/bin` + строка в rc-файле шелла, Windows пользовательский PATH через PowerShell |
-| Ключи в `keys.json` (0600), ввод через страницу на localhost | Env-переменные неудобны (непонятны названия, не переживают сессии). Страница `relay keys`; токен в `#fragment`, API с Bearer, проверка Host. Env остаётся необязательным (`api_key_env`) |
-| Версия бэкенда проверяется при подключении | После обновления бинарника старый фоновый бэкенд останавливается и стартует новый |
-| Транспорт HTTP + SSE на `127.0.0.1` с токеном | Работает одинаково на Windows и Linux, легко отлаживать `curl`; токен нужен, потому что у агента есть shell |
-| Один адаптер `openai` на все OpenAI-совместимые серверы | Ollama, llama.cpp, LM Studio, vLLM, OpenAI, OpenRouter, Gemini говорят на `/chat/completions`; плюс отдельный `anthropic` |
-| Минимум зависимостей | Бэкенд: stdlib + `BurntSushi/toml`. TUI: bubbletea, lipgloss, bubbles. Код писался без компилятора, поэтому чем меньше чужих API, тем меньше риск |
-| Конфиг TOML, ключи только как имена env-переменных | Секреты не лежат в файле; `api_key_env` это список для ротации |
-| Сессии: JSON-файл на сессию | Проще SQLite, не нужна cgo/внешняя зависимость; хватает для v0.1 |
-| Спрайты: чёткие пиксели 44x36, полублоки `▀` на карточке | Брайль-ячейки (v0.1) в терминале выглядели мутным пятном, эмоций не было видно. Полублоки дают квадратные точные пиксели. Фон под маскотом равен фону темы (карточку убрали в v0.3: выглядела плохо). Прозрачность через заливку от краёв листа |
-| Радуга для maximum считается в рантайме | Акцентные цвета палитры (зелёные) перекрашиваются по формуле hue = f(x, y, t) |
+| Backend and interface are two processes but one executable, `relay` | The user asked for the split (any client can use the same API) and for "fully in the CLI": the backend is the subcommand `relay daemon`, the interface starts it in the background by itself (a detached process) |
+| Everything in Go | One static binary, cross-builds for Windows and Linux without a runtime. Python was rejected by the user |
+| `relay install` adds itself to PATH | The user wanted to run `relay` after building: Linux `~/.local/bin` + a line in the shell's rc file, Windows user PATH through PowerShell |
+| Keys in `keys.json` (0600), entered on a page on localhost | Environment variables are awkward (unclear names, they do not survive sessions). Page `relay keys`; token in the `#fragment`, API with Bearer, Host check. Env stays optional (`api_key_env`) |
+| The backend version is checked on connect | After the binary is updated the old background backend is stopped and a new one starts |
+| Transport HTTP + SSE on `127.0.0.1` with a token | Works the same on Windows and Linux, easy to debug with `curl`; the token is needed because the agent has a shell |
+| One `openai` adapter for all OpenAI-compatible servers | Ollama, llama.cpp, LM Studio, vLLM, OpenAI, OpenRouter, Gemini speak `/chat/completions`; plus a separate `anthropic` |
+| Few dependencies | Backend: stdlib + `BurntSushi/toml`. TUI: bubbletea, lipgloss, bubbles |
+| Config is TOML, keys are only names of env variables | Secrets do not sit in the file; `api_key_env` is a list for rotation |
+| Sessions: one JSON file per session | Simpler than SQLite, no cgo or outside dependency. Tokens and cost are kept in the session file |
+| Sprites: sharp 44x36 pixels, half blocks `▀` | Braille cells looked like a blur and the emotions were not visible. Half blocks give exact square pixels. The background under the mascot equals the theme background. Transparency by flood fill from the edges of the sheet |
+| The rainbow for maximum is computed at runtime | The accent colours of the palette (green) are recoloured by hue = f(x, y, t) |
+| Relay finds the models itself (`internal/catalog`), ids are `provider/model` | A list in the config goes stale and the user wants to see what really exists: what is installed in Ollama, Ollama cloud by key, the Gemini list. `Config.ModelByID` understands any `provider/model` of a configured provider, so router, gateway and sessions work unchanged |
+| `ollama-cloud` is a separate provider with `key_from = "ollama"` | Ollama cloud is another address (`ollama.com`) with the same key; there is one key card. For old `config.toml` files the provider is added implicitly (`addImplicitProviders`), because the file is never rewritten. The same for the processes `ollama` and `llamacpp` (`addImplicitProcesses`) |
+| The Ollama and Gemini lists are treated as complete (`Authoritative`) | A model that is not in the list is skipped in the mode chain; an uninstalled local model is replaced by 2 installed ones. If the list cannot be fetched nothing is hidden |
+| Provider errors are shown only on the keys page | The terminal stays calm; a provider without access adds nothing to the model list |
+| Reasoning is split from the answer in the provider layer (`provider/thinking.go`) | Models write it in different ways (`<thought>` tags in the text, `reasoning_content`, `reasoning`, Anthropic `thinking_delta`). The backend turns all of them into `thinking` events, and does not send them at all when the setting is off |
+| Gemini `thought_signature` is kept with the tool call (`ToolCall.Extra`) | Without it Gemini answers HTTP 400 on the next agent step |
+| The answer is typed out by the interface from a queue (`tui/stream.go`) | Networks deliver text in lumps; the queue makes it flow at the speed from the settings, and keeps the order against tool calls |
+| Preferences live in `settings.json`, not in `config.toml` | `config.toml` is hand-edited and never rewritten; the settings page changes preferences at runtime and they apply within seconds |
 
-| Модели находит сам Relay (`internal/catalog`), id `provider/model` | Список в конфиге устаревает, а пользователь хочет видеть то, что реально есть: установленное в Ollama, облако Ollama по ключу, список Gemini. `Config.ModelByID` понимает любой `provider/model` настроенного провайдера, поэтому роутер, шлюз и сессии работают без изменений |
-| `ollama-cloud`: отдельный провайдер с `key_from = "ollama"` | Облако Ollama это другой адрес (`ollama.com`) с тем же ключом; карточка ключей одна. Для старых `config.toml` провайдер добавляется неявно (`addImplicitProviders`), т.к. файл не перезаписывается |
-| Список Ollama и Gemini считается полным (`Authoritative`) | Модель, которой в списке нет, пропускается в цепочке режима; вместо не установленной локальной подставляются 2 установленные. Если список получить не удалось, ничего не скрывается |
+## Modes and themes
 
-## Режимы и темы
-
-| Режим | Лист спрайтов | Цвет интерфейса | Фон |
+| Mode | Sprite sheet | Interface colour | Background |
 |---|---|---|---|
-| small | `assets/sheets/green.png` | зелёный `#67DD5D` | `#0C1510` |
-| medium | `assets/sheets/purple.png` | фиолетовый `#A07CFF` | `#110E1F` |
-| hard | `assets/sheets/red.png` | красный `#FF4D6A` | `#180C11` |
-| maximum | green.png + радуга | hue плывёт по времени | `#0F1014` |
+| small | `assets/sheets/green.png` | green `#67DD5D` | `#0C1510` |
+| medium | `assets/sheets/purple.png` | purple `#A07CFF` | `#110E1F` |
+| hard | `assets/sheets/red.png` | red `#FF4D6A` | `#180C11` |
+| maximum | green.png + rainbow | the hue drifts with time | `#0F1014` |
 
-Соответствие «режим = цвет листа» выбрал я (green легче всего, red тяжелее всего); автор не уточнял,
-можно поменять в `THEMES` (`tools/sprites/build.py`) и `themeFor` (`internal/tui/theme.go`).
-Режим также задаёт цепочку моделей и `max_steps` агента (`[modes.*]` в конфиге).
+The "mode = sheet colour" pairing was my choice (green is the lightest, red the heaviest); the author did not
+specify it, so it can be changed in `THEMES` (`tools/sprites/build.py`) and `themeFor` (`internal/tui/theme.go`).
+A mode also sets the model chain and the agent's `max_steps` (`[modes.*]` in the config).
 
-## Эмоции маскота
+## Mascot emotions
 
-Кадры: `calm`, `joy`, `surprise`, `noticed` («выдела» в листе, понимаю как «заметила»), `tired` (с «Zz»).
-Кадры действий (бег, прыжок, связь, призыв) из листов в v0.2 больше не извлекаются (были неиспользуемыми и
-слишком высокими); при необходимости вернуть в `tools/sprites/build.py`.
+Frames: `calm`, `joy`, `surprise`, `noticed`, `tired` (with "Zz"). The action frames (run, jump, link, summon)
+are not extracted from the sheets any more (unused and too tall); bring them back in `tools/sprites/build.py` if needed.
 
-Смена режима анимируется (`internal/tui/view.go`: `transition`, `currentTheme`; `sprites.go`: `renderSprite`):
-14 тиков по 120 мс, цвета темы плавно смешиваются (`blendTheme`), маскот перекрашивается волной слева направо
-с яркой линией-разделителем между старым и новым листом.
-Логика в `internal/tui/mascot.go`, события маппятся в `internal/tui/model.go` (`handleEvent`):
+A mode change is animated (`internal/tui/view.go`: `transition`, `currentTheme`; `sprites.go`: `renderSprite`):
+14 ticks of 120 ms, the theme colours blend smoothly (`blendTheme`), the mascot is repainted by a wave from left to
+right with a bright line between the old and the new sheet. The logic is in `internal/tui/mascot.go`; events are
+mapped in `internal/tui/model.go` (`handleEvent`):
 
-| Событие | Эмоция |
+| Event | Emotion |
 |---|---|
-| старт, смена режима, успех запроса | joy |
-| `tool_call`, `notice key_switch`, переключение агента | noticed |
-| ошибка, `approval`, ошибочный `tool_result`, `notice fallback`, пробуждение | surprise |
-| `notice rate_limit` (8 c), `error rate_limit` (постоянно до первого успеха), простой > 2 мин | tired |
-| `notice no_key`, `error no_key` | surprise + реплика «Нет ключа: /keys» |
+| start, mode change, a successful request | joy |
+| `tool_call`, `notice key_switch`, agent toggle | noticed |
+| error, `approval`, a failed `tool_result`, `notice fallback`, waking up | surprise |
+| `notice rate_limit` (8 s), `error rate_limit` (until the first success), idle > 2 min | tired |
+| `notice no_key`, `error no_key` | surprise + the line "No key: /keys" |
 
-## Карта кода
+## Map of the code
 
-- `cmd/relay`: единый CLI. `main.go` (диспетчер подкоманд; без подкоманды TUI, флаги `--no-spawn`, `--keep`), `cli.go` (keys, status, stop, config), `install.go` (install/uninstall, PATH).
-- `internal/catalog`: поиск моделей у провайдеров (Ollama `/api/tags`, Gemini `/v1beta/models`, `/v1/models`), кэш 60 с, `Snapshot.Missing/Pick/Fallback` для роутера.
-- `internal/daemon`: запуск бэкенда (`relay daemon`): токен, `daemon.json`, корректная остановка.
-- `internal/keystore`: хранилище ключей (`keys.json`), реализует `provider.Source`.
-- `internal/browser`: открытие URL в браузере.
-- `internal/proto`: все DTO и события протокола (единый источник правды для клиента и сервера).
-- `internal/config`: загрузка TOML, валидация, `example.toml` (встроен, создаётся при первом запуске).
-- `internal/provider`: `Client` (`Stream` с callback), `Keys` (ключи из хранилища и env, ротация, пауза при лимите), `OpenAI`, `Anthropic`, классификация ошибок (`RateLimited`, `NoKey`).
-- `internal/router`: `Resolve` (цепочка моделей по режиму и подсказке), `Stream` (фолбэк только пока модель ничего не выдала), учёт расхода.
-- `internal/agent`: цикл шагов, подтверждения, ограничение вывода инструментов.
-- `internal/tools`: `read_file`, `list_dir`, `grep`, `write_file`, `edit_file`, `run_shell`, `web_fetch`, адаптер MCP. Пути ограничены workspace (симлинки не разрешаются, это пробел).
-- `internal/mcp`: клиент MCP по stdio (initialize, tools/list, tools/call).
-- `internal/runner`: лаунчер процессов, ready-проба по URL, остановка (Interrupt, затем Kill).
-- `internal/session`: хранилище сессий, `Run` mutex (один запрос на сессию), `AutoTools` («always» на сессию).
-- `internal/server`: роуты (Go 1.22 ServeMux с методами), SSE, подтверждения, compare, шлюз `/v1`, API ключей и страница `ui/keys.html` (embed), проверка Host.
-- `internal/client`: HTTP-клиент, автозапуск бэкенда (`os.Executable() daemon`, отвязанный процесс: `proc_unix.go`, `proc_windows.go`), проверка версии, SSE.
-- `internal/tui`: `model.go` (состояние и Update), `commands.go` (слэш-команды), `view.go` (лента, боковая панель, ввод), `sprites.go` (пиксели → полублоки, радуга, волна перехода), `theme.go` (темы, смешивание), `mascot.go`.
-- `tools/sprites/build.py`: листы PNG → `internal/tui/sprites/*.json` + превью в `assets/sprites/`.
+- `cmd/relay`: the single CLI. `main.go` (subcommand dispatch; without a subcommand the TUI, flags `--no-spawn`, `--keep`), `cli.go` (keys, status, stop, config), `install.go` (install/uninstall, PATH), `console_windows.go` / `console_other.go` (UTF-8 console on Windows).
+- `internal/catalog`: finds the models of providers (Ollama `/api/tags`, Gemini `/v1beta/models`, `/v1/models`), 60 s cache, `Snapshot.Missing/Pick/Fallback` for the router, `Running` (local servers that answer).
+- `internal/daemon`: backend start (`relay daemon`): token, `daemon.json`, clean shutdown, autostart of processes.
+- `internal/keystore`: key storage (`keys.json`), implements `provider.Source`.
+- `internal/settings`: preferences (`settings.json`).
+- `internal/browser`: opens URLs in the browser.
+- `internal/proto`: all DTOs and events of the protocol (the single source of truth for client and server).
+- `internal/config`: TOML loading, validation, `example.toml` (embedded, created on first run).
+- `internal/provider`: `Client` (`Stream` with a callback), `Keys` (keys from the store and env, rotation, rest after a limit or missing credit), `OpenAI`, `Anthropic`, `thinking.go` (splits reasoning from text), classification of errors (`RateLimited`, `Billing`, `Auth`, `NoKey`).
+- `internal/router`: `Resolve` (model chain by mode and hint, skips providers without keys or credit), `Stream` (fallback only while a model has produced nothing), usage accounting.
+- `internal/agent`: the step loop, approvals, limit on tool output, per-session token and cost accounting.
+- `internal/tools`: `read_file`, `list_dir`, `grep`, `write_file`, `edit_file`, `run_shell`, `web_fetch`, MCP adapter. Paths are limited to the workspace (symlinks are not resolved: a known gap).
+- `internal/mcp`: MCP client over stdio (initialize, tools/list, tools/call).
+- `internal/runner`: process launcher, URL ready probe, stop (Interrupt, then Kill), attaches to servers that already run.
+- `internal/session`: session storage (messages, tokens, cost), `Run` mutex (one request per session), `AutoTools` ("always" for the session), delete.
+- `internal/server`: routes (Go 1.22 ServeMux with methods), SSE, approvals, compare, the `/v1` gateway, the keys API and page `ui/keys.html`, the help page `ui/help.html`, the settings API and page `ui/settings.html`, Host check.
+- `internal/client`: HTTP client, backend autostart (`os.Executable() daemon`, a detached process: `proc_unix.go`, `proc_windows.go`), version check, SSE.
+- `internal/tui`: `model.go` (state and Update), `commands.go` (slash commands), `view.go` (feed, side panel, input), `overlay.go` (lists above the input: sessions, running processes, clicks), `picker.go` (model list), `approval.go` (agent questions), `stream.go` (typing queue, thoughts, scroll keys, /copy, mouse, select mode), `sprites.go` (pixels → half blocks, rainbow, transition wave), `theme.go` (themes, blending), `mascot.go`.
+- `tools/sprites/build.py`: PNG sheets → `internal/tui/sprites/*.json` + previews in `assets/sprites/`.
 
-## Соглашения
+## Conventions
 
-- Go 1.22+, `go vet` должен быть чистым. Пакеты без циклов: `proto` знает только `provider`.
-- Бубль-ти: модель значение, методы-мутаторы с pointer receiver вызывать отдельным оператором
-  **до** `return m, ...` (порядок вычисления `m` и вызова в одном return не определён).
-- Цвета только через `theme.go`; фон красится в `paintLine` (после каждого `\x1b[0m` фон включается заново).
-- Новые события протокола: добавить в `proto.Event`, в таблицу `docs/PROTOCOL.md`, в `handleEvent`.
+- Go 1.22+, `go vet` must be clean. No import cycles: `proto` knows only `provider` and `settings`.
+- Bubble Tea: the model is a value; call mutators with a pointer receiver as a separate statement
+  **before** `return m, ...` (the order of evaluating `m` and the call inside one return is not defined).
+- Colours only through `theme.go`; the background is painted in `paintLine` (after every `\x1b[0m` the background is switched on again).
+- New protocol events: add them to `proto.Event`, to the table in `docs/PROTOCOL.md`, and to `handleEvent`.
+- New settings: add to `settings.Settings` (with a default and cleaning), to the table in `docs/PROTOCOL.md`, to `ui/settings.html`, and use them in the interface.
+- All documentation, UI texts and examples are in English.
 
-## Статус (v0.7)
+## Status
 
-v0.7: мысли моделей (`<thought>`, `reasoning_content`, thinking) отделены от ответа (событие `thinking`), показываются
-приглушённым блоком; включаются/выключаются в настройках (выключено — не передаются вообще); ответ печатается плавно
-с выбираемой скоростью; `/settings` открывает страницу (`settings.json`: мысли, скорость, боковая панель, маскот, ширина
-текста, мышь, режим по умолчанию, автозапуск и аргументы процессов, удаление сессий); `/thoughts`, `/mouse`, `/copy`
-(OSC 52); thought_signature Gemini сохраняется (агент больше не падает с HTTP 400); провайдеры без баланса пропускаются
-в цепочке фолбэка; на странице ключей нет поля ключа для локальных серверов; в панели «N local models».
+**v0.7 (later changes).** Select mode (`f2`, `/select`; a terminal cannot report Shift alone, and in-app drag-copy was tried and dropped): the screen is frozen (no ticks, no cursor blink, animations drawn as of the freeze moment) and the mouse goes back to the terminal, so a selection is not dropped; the settings page bug where every second change was lost (the controls held a stale settings object) is fixed; launcher settings of Ollama and llama.cpp (autostart, arguments, start/stop) moved to their cards on the keys page; sessions are a separate tab of the settings page; the interface polls status every ~2.4 s.
 
-## Статус (v0.6)
+**v0.7.** Reasoning of models is split from the answer (`thinking` events, dimmed block in the feed, can be turned
+off: then it is not sent at all); the answer is typed out smoothly at a chosen speed; `/settings` opens a page
+(`settings.json`: thoughts, speed, side panel, mascot, text width, mouse, default mode, autostart and arguments of
+processes, session deletion); `/thoughts`, `/mouse`, `/copy` (OSC 52); extra scroll keys (shift+↑↓, alt+↑↓, ctrl+u/d,
+home/end) with a "scrolled up" hint; tokens and cost are stored per session; Gemini `thought_signature` is kept (no
+more HTTP 400 in agent mode); providers without credit are skipped in the fallback chain and the final error lists
+every attempt; no key field on the keys page for local servers; the side panel says "N local models".
 
-v0.6: блок `processes` на боковой панели (только запущенные процессы и локальные серверы, иначе «Nothing running :)»);
-списки над полем ввода кликаются мышью: модели, сессии (`/sessions`), запущенные процессы (`/stop`), подтверждение
-действий агента (Allow once / Always / Deny; клавиши y/a/n, ↑↓ enter); `/start` убран, вместо него `/ollama` и
-`/llamacpp <model.gguf>` (llama-server без модели не запускается, понятная ошибка); быстрый опрос статуса после
-запуска и сообщение, если процесс упал; на Windows консоль переключается на UTF-8, подсказка про остановку Ollama
-без systemctl (значок в трее). Версия протокола 0.6.0.
+**v0.6.** `processes` block in the side panel (only what runs, otherwise "Nothing running :)"); lists above the input
+can be clicked: models, sessions (`/sessions`), running processes (`/stop`), the agent's approval (Allow once /
+Always / Deny; keys y/a/n, ↑↓ enter); `/start` removed in favour of `/ollama` and `/llamacpp <model.gguf>`;
+quick status polling after a start and a message when a process dies; UTF-8 console on Windows; a hint for stopping
+Ollama without systemctl (tray icon).
 
-## Статус (v0.5)
+**v0.5.** Providers Grok (xAI) and DeepSeek; official providers first (`Provider.IsOfficial`, by host); provider
+errors only on the keys page; `/help` opens `/ui/help`; README in English; filter for mouse-report fragments in the input.
 
-v0.5: провайдеры Grok (xAI) и DeepSeek (для старых конфигов добавляются неявно); официальные провайдеры
-(`Provider.IsOfficial`, по хосту) идут первыми в пикере и на странице ключей (`Config.OrderedProviders`);
-ошибки провайдеров показываются только на странице ключей (в TUI их нет), провайдер без доступа ничего не
-добавляет в список, недоступный локальный сервер помечен «not running»; из боковой панели убраны блоки keys и
-processes; `/help` открывает страницу `/ui/help` (`internal/server/ui/help.html`, английский); README на
-английском; фильтр обрывков mouse-репортов в строке ввода (`mouseJunk` в `tui/model.go`).
-Проверка: `go vet` и тесты на заглушках сторонних библиотек (в среде разработки нет доступа к proxy.golang.org),
-полная сборка с настоящими bubbletea/lipgloss у автора.
+**v0.4.** `/model` became `/models` with a picker (`internal/tui/picker.go`); `internal/catalog` finds Ollama (local
+and cloud), Gemini, Anthropic and OpenAI-compatible models; `GET /api/models`; the keys page shows the number of
+models and checks the key.
 
-## Статус (v0.4)
+**v0.1–v0.2.** First build and the author's feedback: sharp mascot, mode-change animation, keys through a page and a
+store, one CLI with PATH installation, aliases `/small` `/medium` `/hard` `/max`.
 
-v0.4: `/model` переименована в `/models` и получила список-пикер (`internal/tui/picker.go`); `internal/catalog`
-находит модели Ollama (локальные и облако), Gemini, Anthropic, OpenAI-совместимых; `GET /api/models`; страница ключей
-показывает число моделей и проверяет ключ. Тесты: catalog, config, router, server, tui (httptest-заглушки провайдеров).
-Не проверено на реальных Ollama и Gemini (среда без доступа к ним): формат ответов `/api/tags`, `/v1beta/models`
-взят из документации.
+Verification note: the development environment has no access to proxy.golang.org, so `go vet` and the tests run
+against stubs of the third-party libraries (bubbletea, lipgloss, bubbles, toml); the full build with the real
+libraries happens on the author's machine. Provider answer formats (`/api/tags`, `/v1beta/models`, reasoning fields)
+come from documentation and the author's screenshots, not from live services.
 
-## Статус (v0.2)
+## First steps of the next session
 
-v0.1 собралась и запустилась у автора (скриншот: тема, лента, боковая панель, фолбэк с локальной модели
-на облачную, подсказки). По его отзыву сделано в v0.2: чёткий маскот, анимация смены режима, ключи через
-страницу и хранилище, единый CLI с установкой в PATH, алиасы `/small` `/medium` `/hard` `/max`.
+1. `go mod tidy && go vet ./... && go build ./...`, fix compile errors (if the author sent the output, start from it).
+2. `relay install`, then `relay keys` and `relay` (`/settings`, `/models`, a chat with a thinking model).
+3. Check `pgup` / `shift+↑` scrolling and text selection (`/mouse off`) in the author's terminal (GNOME Console).
+4. Windows: `relay install` (PowerShell, PATH), background start (`detach`), `rundll32` for the browser, UTF-8 console.
 
-**Код v0.2 снова написан без компилятора** (в среде разработки нет Go): сделана статическая проверка
-импортов и скобок, JS страницы проверен `node --check`. Первые шаги следующей сессии:
+## Known gaps and ideas (plan)
 
-1. `go mod tidy && go vet ./... && go build ./...`, исправить ошибки компиляции (если автор прислал вывод, начать с него).
-2. `relay install`, затем `relay keys`: страница открывается, ключ сохраняется, `relay status` показывает его.
-3. Проверить анимацию смены режима (`ctrl+t`) и чёткость маскота в терминале 120x40; подобрать `OUT_W`/`CROP` в `tools/sprites/build.py`, если мелко.
-4. Windows: `relay install` (PowerShell, PATH), фоновый запуск (`detach`), `rundll32` для браузера.
-
-## Известные пробелы и идеи (план)
-
-- Тесты: адаптеры провайдеров на фейковом SSE-сервере, `Resolve`/`Stream` фолбэк, `resolve` путей в tools, парсинг SSE клиента.
-- Управление контекстом: обрезка длинной истории и подсчёт токенов (сейчас только оценка `len/4` для расхода).
-- Шлюз: проброс `tools`/`tool_calls`; `/v1/embeddings`.
-- Агент: параллельные инструменты, отмена shell по `esc` во время выполнения, diff-превью правок перед подтверждением,
-  мультиагентность (планировщик на сильной модели, исполнители на локальных), субагенты («призыв»: кадр `summon`).
-- Маскот: использовать кадры действий (`run` пока идёт ответ, `link` при подключении к провайдеру, `summon` при запуске субагента),
-  моргание, реплики по настроению.
-- Безопасность: ключи в системном keyring вместо `keys.json`, ограничения симлинков в workspace, allowlist команд.
-- Страница настроек: добавление провайдеров и моделей (сейчас только ключи; модели и режимы правятся в `config.toml`), проверка ключа кнопкой, сводка расхода.
-- Интерфейс: многострочный ввод, markdown и подсветка кода, автодополнение команд и моделей, выбор модели списком.
-- Провайдеры: Gemini и Ollama нативные API (сейчас через OpenAI-совместимость), `reasoning_content`, картинки.
-- Распространение: релизы под Linux и Windows (goreleaser), установка одной командой.
+- Tests: provider adapters against a fake SSE server, path resolution in tools, SSE parsing in the client.
+- Context management: trimming long history and counting tokens (usage is only estimated as `len/4` when a provider reports none).
+- Gateway: pass through `tools`/`tool_calls`; `/v1/embeddings`.
+- Agent: parallel tools, cancelling the shell with `esc` while it runs, a diff preview before approval, multi-agent work (a planner on a strong model, workers on local ones), subagents ("summon": frame `summon`).
+- Mascot: use the action frames (`run` while an answer is coming, `link` when connecting to a provider, `summon` for a subagent), blinking, lines by mood.
+- Security: keys in the system keyring instead of `keys.json`, symlink limits in the workspace, a command allowlist.
+- Settings page: adding providers and models (now only keys and preferences; models and modes live in `config.toml`), a button that checks a key, a usage summary.
+- Interface: multi-line input, markdown and code highlighting, completion of commands and models.
+- Providers: native Gemini and Ollama APIs (now through OpenAI compatibility), images.
+- Distribution: releases for Linux and Windows (goreleaser), one-command install.

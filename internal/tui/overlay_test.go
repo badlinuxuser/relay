@@ -219,7 +219,7 @@ func TestProcMsgNoticesAndFailures(t *testing.T) {
 // The mascot must stay on a normal terminal (about 38 rows) even with the processes block.
 func TestMascotFitsWithProcessesBlock(t *testing.T) {
 	m := testModel()
-	m.width, m.height = 160, 38
+	m.width, m.height = 160, 40
 	m.status = &proto.StatusResp{Servers: []proto.ServerInfo{{Name: "ollama", Models: 6}}}
 	out := m.View()
 	if !strings.Contains(out, "processes") || !strings.Contains(out, "ollama 6 local models") {

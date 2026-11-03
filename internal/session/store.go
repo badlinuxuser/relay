@@ -17,15 +17,21 @@ import (
 )
 
 type Session struct {
-	ID        string             `json:"id"`
-	Title     string             `json:"title"`
-	Created   time.Time          `json:"created"`
-	Updated   time.Time          `json:"updated"`
-	Mode      string             `json:"mode"`
-	Model     string             `json:"model"` // явный выбор модели, "" = по режиму
-	Preset    string             `json:"preset"`
-	Agent     bool               `json:"agent"`
-	Workspace string             `json:"workspace"`
+	ID        string    `json:"id"`
+	Title     string    `json:"title"`
+	Created   time.Time `json:"created"`
+	Updated   time.Time `json:"updated"`
+	Mode      string    `json:"mode"`
+	Model     string    `json:"model"` // явный выбор модели, "" = по режиму
+	Preset    string    `json:"preset"`
+	Agent     bool      `json:"agent"`
+	Workspace string    `json:"workspace"`
+
+	// Spent in this session (tokens and cost in USD), kept with it so they come back when it is opened again.
+	TokensIn  int                `json:"tokens_in"`
+	TokensOut int                `json:"tokens_out"`
+	Cost      float64            `json:"cost"`
+	LastIn    int                `json:"last_in"` // prompt size of the newest request: the context the conversation uses now
 	Messages  []provider.Message `json:"messages"`
 
 	// Run защищает сессию: одновременно идёт только один запрос.
@@ -96,11 +102,14 @@ func (s *Store) Save(sess *Session) error {
 }
 
 type Summary struct {
-	ID       string
-	Title    string
-	Mode     string
-	Updated  time.Time
-	Messages int
+	ID        string
+	Title     string
+	Mode      string
+	Updated   time.Time
+	Messages  int
+	TokensIn  int
+	TokensOut int
+	Cost      float64
 }
 
 // Delete removes a session from memory and disk. It refuses while the session is answering.
@@ -143,7 +152,8 @@ func (s *Store) List() []Summary {
 		if err != nil {
 			continue
 		}
-		out = append(out, Summary{ID: sess.ID, Title: sess.Title, Mode: sess.Mode, Updated: sess.Updated, Messages: len(sess.Messages)})
+		out = append(out, Summary{ID: sess.ID, Title: sess.Title, Mode: sess.Mode, Updated: sess.Updated, Messages: len(sess.Messages),
+			TokensIn: sess.TokensIn, TokensOut: sess.TokensOut, Cost: sess.Cost})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Updated.After(out[j].Updated) })
 	return out

@@ -27,11 +27,10 @@ func (m *model) approvalKey(key string) string {
 		m.appSel = (m.appSel + 1) % n
 	case "enter":
 		return approvalOptions[m.appSel].decision
-	case "pgup":
-		m.scroll = min(m.scroll+max(3, m.bodyHeight()/2), m.maxScroll())
-	case "pgdown":
-		m.scroll = max(0, m.scroll-max(3, m.bodyHeight()/2))
 	default:
+		if m.scrollKey(key) {
+			return ""
+		}
 		for _, o := range approvalOptions {
 			for _, k := range o.keys {
 				if k == key {

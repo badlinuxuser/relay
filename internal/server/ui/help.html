@@ -102,7 +102,7 @@ footer{grid-column:1/-1;color:var(--dim);font-size:13px;border-top:1px solid var
 <h2>The screen</h2>
 <ul>
   <li><b>Header</b>: current mode and whether agent mode is on.</li>
-  <li><b>Feed</b> (left): your messages, the answers (with the model that wrote them under each answer), tool calls of the agent, and notices. Scroll with <kbd>pgup</kbd> / <kbd>pgdn</kbd> or the mouse wheel.</li>
+  <li><b>Feed</b> (left): your messages, the answers (with the model that wrote them under each answer), tool calls of the agent, and notices. Scroll with <kbd>pgup</kbd> / <kbd>pgdn</kbd>, <kbd>shift</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd> or the mouse wheel.</li>
   <li><b>Input</b> (bottom): a message, or a command that starts with <code>/</code>.</li>
   <li><b>Side panel</b> (right, wide terminals only): the mascot and its mood, and the current <code>mode</code>, <code>model</code>, <code>agent</code> state, working <code>folder</code>, <code>tokens</code> (in / out) and <code>cost</code> of this session.</li>
 </ul>
@@ -143,7 +143,7 @@ footer{grid-column:1/-1;color:var(--dim);font-size:13px;border-top:1px solid var
 <tr><td><kbd>ctrl</kbd>+<kbd>a</kbd></td><td>Agent mode on / off.</td></tr>
 <tr><td><kbd>ctrl</kbd>+<kbd>n</kbd></td><td>New session.</td></tr>
 <tr><td><kbd>esc</kbd></td><td>Stop the answer that is being written. When the model list is open, it closes the list instead.</td></tr>
-<tr><td><kbd>pgup</kbd> <kbd>pgdn</kbd>, mouse wheel</td><td>Scroll the feed.</td></tr>
+<tr><td><kbd>pgup</kbd> <kbd>pgdn</kbd>, <kbd>shift</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd>, <kbd>alt</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd>, mouse wheel</td><td>Scroll the feed. If your terminal keeps <kbd>pgup</kbd> for itself, use the others. While the input line is empty <kbd>ctrl</kbd>+<kbd>u</kbd> / <kbd>ctrl</kbd>+<kbd>d</kbd> scroll by half a page and <kbd>home</kbd> / <kbd>end</kbd> jump to the top / bottom.</td></tr>
 <tr><td><kbd>ctrl</kbd>+<kbd>c</kbd></td><td>Quit.</td></tr>
 </table></div>
 <h3>Inside the model list</h3>
@@ -202,7 +202,7 @@ footer{grid-column:1/-1;color:var(--dim);font-size:13px;border-top:1px solid var
 
 <section id="keys">
 <h2>API keys</h2>
-<p><code>/keys</code> (or <code>relay keys</code> in a terminal) opens the keys page on your own computer. For each provider you can add one or several keys, give them labels, and delete them. After a key is saved the page asks the provider which models the key opens and shows the number, or the provider's error if the key is wrong.</p>
+<p><code>/keys</code> (or <code>relay keys</code> in a terminal) opens the keys page on your own computer. For each provider you can add one or several keys and delete them. After a key is saved the page asks the provider which models the key opens and shows the number, or the provider's error if the key is wrong.</p>
 <div class="tablewrap"><table>
 <tr><th>Provider</th><th>Get a key</th><th>Notes</th></tr>
 <tr><td>anthropic</td><td><a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer">console.anthropic.com</a></td><td>Claude models.</td></tr>
@@ -217,7 +217,7 @@ footer{grid-column:1/-1;color:var(--dim);font-size:13px;border-top:1px solid var
 <h3>Several keys for one provider</h3>
 <p>Add as many as you like. While one works, Relay keeps using it. When a key hits its rate limit or runs out of credit, Relay switches to the next key (you see a notice), and the tired key rests for two minutes. When all keys are used up, it moves on to the next model of the mode.</p>
 <h3>Where keys are stored</h3>
-<p>In <code>keys.json</code> in the Relay folder, readable only by you. They never leave your computer except in requests to the provider they belong to. The page shows only the last four characters. Environment variables also work if you list them in the config (<code>api_key_env = ["MY_VAR"]</code>), but you do not need them.</p>
+<p>In <code>keys.json</code> in the Relay folder, readable only by you. They never leave your computer except in requests to the provider they belong to. The page shows only the last four characters.</p>
 </section>
 
 <section id="local">
@@ -269,9 +269,9 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/dir"]</code><
 <section id="panel">
 <h2>Side panel, mouse, Windows</h2>
 <h3>Settings page: /settings</h3>
-<p><code>/settings</code> opens a page where you can turn the model's thoughts on or off (they are shown dimmed, apart from the answer; when off they are not sent at all), choose the typing speed, hide the side panel or the mascot, limit the text width, switch the mouse off, set the default mode, autostart and saved arguments of local servers (for llama.cpp: the model file), and delete saved sessions. Shortcuts: <code>/thoughts on|off</code>, <code>/mouse on|off</code>.</p>
+<p><code>/settings</code> opens a page where you can turn the model's thoughts on or off (they are shown dimmed, apart from the answer; when off they are not sent at all), choose the typing speed, hide the side panel or the mascot, limit the text width, switch the mouse off, set the default mode, and on the <b>Sessions</b> tab see and delete saved sessions. Autostart, the model file of llama.cpp and start/stop buttons for Ollama and llama.cpp are on the keys page (<code>/keys</code>), on their own cards. Shortcuts: <code>/thoughts on|off</code>, <code>/mouse on|off</code>.</p>
 <h3>Copying text</h3>
-<p><code>/copy</code> puts the last answer on the clipboard. To select text by hand, hold <kbd>shift</kbd> while dragging, or switch the mouse off with <code>/mouse off</code> (then scroll with <kbd>pgup</kbd>/<kbd>pgdn</kbd>).</p>
+<p>Press <kbd>f2</kbd> (or type <code>/select</code>) for <b>select mode</b>: the screen stops changing and the mouse goes back to the terminal, so you can select and copy as in any terminal. Press any key to leave. (A terminal cannot tell an application that <kbd>shift</kbd> alone is pressed, so it cannot be the trigger.) <code>/copy</code> puts the last answer on the clipboard without selecting. <code>/mouse off</code> turns the mouse capture off for good (then scroll with <kbd>pgup</kbd>/<kbd>pgdn</kbd>).</p>
 <h3>The side panel: processes</h3>
 <p>The <b>processes</b> block lists the local servers that are running right now (Ollama, llama.cpp, LM Studio, ...), also ones you started yourself. When there are none it says <code>Nothing running :)</code>.</p>
 <h3>Mouse</h3>
@@ -283,7 +283,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/dir"]</code><
 
 <section id="sessions">
 <h2>Sessions &amp; presets</h2>
-<p>Every conversation is a session saved on disk. <code>/new</code> (<kbd>ctrl</kbd>+<kbd>n</kbd>) starts a fresh one in the same folder and mode. <code>/sessions</code> opens a list of the latest ones: click one to bring it back with its full history (<code>/load &lt;id&gt;</code> does the same by id). You can change the mode, model and preset in the middle of a conversation; the next message uses the new settings.</p>
+<p>Every conversation is a session saved on disk. <code>/new</code> (<kbd>ctrl</kbd>+<kbd>n</kbd>) starts a fresh one in the same folder and mode. <code>/sessions</code> opens a list of the latest ones (each with its tokens and cost; the side panel shows the totals of the session that is open): click one to bring it back with its full history (<code>/load &lt;id&gt;</code> does the same by id). You can change the mode, model and preset in the middle of a conversation; the next message uses the new settings.</p>
 <p>A <b>preset</b> is a system prompt. <code>/preset coder</code> makes the model a careful software engineer, <code>/preset concise</code> asks for short answers, <code>/preset none</code> removes it. Add your own with <code>[[presets]]</code> in the config.</p>
 </section>
 
@@ -385,7 +385,7 @@ curl http://127.0.0.1:8787/v1/chat/completions \
 <h3>The side panel or the mascot is not shown</h3>
 <p>The side panel needs a terminal at least 104 columns wide. The mascot also needs enough height.</p>
 <h3>Odd characters like <code>[&lt;64;101;29M</code> in the input</h3>
-<p>That is a mouse wheel report that a busy terminal split in two. Relay removes it automatically. If your terminal keeps doing this, scroll with <kbd>pgup</kbd> / <kbd>pgdn</kbd> instead.</p>
+<p>That is a mouse wheel report that a busy terminal split in two. Relay removes it automatically. If your terminal keeps doing this, scroll with <kbd>pgup</kbd> / <kbd>pgdn</kbd> or <kbd>shift</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd> instead.</p>
 </section>
 
 <section id="safety">

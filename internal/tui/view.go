@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"math"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
@@ -283,14 +282,14 @@ func shortLeft(s string, n int) string {
 
 func (m model) sidebar(w, h int, th theme, st styles) []string {
 	var lines []string
-	now := time.Now()
+	now := m.now()
 
 	set := m.sprites[m.mode]
 	if set == nil {
 		set = m.sprites["small"]
 	}
 	mood := m.mc.frame(now)
-	if cols, rows := set.size(mood); m.appSettings().Mascot && rows > 0 && h >= rows+13+max(1, len(m.runningList())) {
+	if cols, rows := set.size(mood); m.appSettings().Mascot && rows > 0 && h >= rows+14+max(1, len(m.runningList())) {
 		var art string
 		if p, on := m.transition(); on {
 			scan := mixHex(th.accent, "#FFFFFF", 0.6)
@@ -329,7 +328,8 @@ func (m model) sidebar(w, h int, th theme, st styles) []string {
 		kv("model", st.text.Render(shorten(m.modelLabel(), w-11))),
 		kv("agent", st.text.Render(agent)),
 		kv("folder", st.text.Render(shortLeft(shortPath(m.cwd), w-11))),
-		kv("tokens", st.text.Render(fmt.Sprintf("%d / %d", m.totIn, m.totOut))),
+		kv("tokens", st.text.Render(humanTokens(m.totIn)+" / "+humanTokens(m.totOut))),
+		kv("context", st.text.Render(humanTokens(m.ctxTokens))),
 		kv("cost", st.text.Render(fmt.Sprintf("$%.4f", m.totCost))),
 	)
 
@@ -369,7 +369,7 @@ func (m model) header(st styles) string {
 		s += st.dim.Render("  connecting…")
 	}
 	if !m.showSidebar() {
-		label, _ := m.mc.caption(time.Now())
+		label, _ := m.mc.caption(m.now())
 		s += "  " + st.dim.Render("· "+label)
 	}
 	return s
@@ -378,34 +378,33 @@ func (m model) header(st styles) string {
 func (m model) footer(th theme, st styles) []string {
 	w := m.width - 2
 	box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1).Width(w)
-	in := m.input
-	in.Prompt = "❯ "
-	in.PromptStyle = st.accentBold
-	in.TextStyle = st.text
-	in.PlaceholderStyle = st.dim
-	in.Cursor.Style = lipgloss.NewStyle().Foreground(lipgloss.Color(th.accent))
-	in.Width = max(5, w-7)
 	border := th.accent
 	if m.streaming {
 		border = th.soft
 	}
 	if m.approval != nil {
 		border = colRed
-		in.Placeholder = "Choose an action in the list above"
-		in.SetValue("")
 	}
 	box = box.BorderForeground(lipgloss.Color(border))
-	return strings.Split(box.Render(in.View()), "\n")
+	return strings.Split(box.Render(strings.Join(m.inputRows(st), "\n")), "\n")
 }
 
 func (m model) hint(st styles) string {
+	if m.selecting {
+		return " " + st.accent.Render("▌") + " " + st.gray.Render("select mode") +
+			st.dim.Render(": select with the mouse and copy as usual; any key to leave")
+	}
 	if m.approval != nil {
-		return " " + st.red.Render("⚠") + " " + st.gray.Render("waiting for your decision") + st.dim.Render("  ↑↓ select · enter confirm · y once · a always · n deny")
+		return " " + st.red.Render("⚠") + " " + st.gray.Render("waiting for your decision") + st.dim.Render("  ↑↓ choose · enter confirm")
+	}
+	if m.scroll > 0 {
+		return " " + st.soft.Render("↑") + " " + st.gray.Render(fmt.Sprintf("scrolled up %d lines", min(m.scroll, m.maxScroll()))) +
+			st.dim.Render("  end to go back down")
 	}
 	if m.streaming {
 		return " " + st.accent.Render(spin[m.frame%len(spin)]) + " " + st.gray.Render("working…") + st.dim.Render("  esc to stop")
 	}
-	return " " + st.dim.Render("enter send · ctrl+t mode · ctrl+a agent · ctrl+n new · pgup/pgdn scroll · /help")
+	return " " + st.dim.Render("enter send · ctrl+t mode · ctrl+a agent · f2 select text · /help")
 }
 
 // ---- сборка экрана -----------------------------------------------------------
@@ -421,20 +420,7 @@ func (m model) View() string {
 	bodyH := m.bodyHeight()
 	mainW := m.mainWidth()
 
-	all := m.transcript(mainW-1, st)
-	maxScroll := max(0, len(all)-bodyH)
-	scroll := min(m.scroll, maxScroll)
-	start := max(0, len(all)-bodyH-scroll)
-	end := min(len(all), start+bodyH)
-	visible := all[start:end]
-
-	// the model list covers the bottom of the feed (not the side panel)
-	var pick []string
-	if m.approval != nil {
-		pick = m.approvalLines(mainW-1, bodyH, st)
-	} else {
-		pick = m.overlayLines(mainW-1, bodyH, st) // sessions, running processes, models
-	}
+	rows := m.feedRows(mainW, bodyH, st)
 
 	var side []string
 	if m.showSidebar() {
@@ -444,13 +430,7 @@ func (m model) View() string {
 	out := make([]string, 0, m.height)
 	out = append(out, paintLine(m.header(st), m.width, bgSeq))
 	for i := 0; i < bodyH; i++ {
-		left := ""
-		if i < len(visible) {
-			left = visible[i]
-		}
-		if k := i - (bodyH - len(pick)); pick != nil && k >= 0 {
-			left = pick[k]
-		}
+		left := rows[i]
 		row := padRight(left, mainW)
 		if m.showSidebar() {
 			right := ""
@@ -466,4 +446,44 @@ func (m model) View() string {
 	}
 	out = append(out, paintLine(m.hint(st), m.width, bgSeq))
 	return strings.Join(out, "\n")
+}
+
+// humanTokens writes a token count short: 950, 12.3k, 7.66M.
+func humanTokens(n int) string {
+	switch {
+	case n >= 1_000_000:
+		return fmt.Sprintf("%.2fM", float64(n)/1e6)
+	case n >= 10_000:
+		return fmt.Sprintf("%.1fk", float64(n)/1e3)
+	}
+	return fmt.Sprintf("%d", n)
+}
+
+// feedRows is what the left column shows: the end of the conversation (or the part you scrolled to),
+// with a list (sessions, models, agent question) covering the bottom when one is open.
+// One string per screen row, not yet padded.
+func (m model) feedRows(mainW, bodyH int, st styles) []string {
+	all := m.transcript(mainW-1, st)
+	maxScroll := max(0, len(all)-bodyH)
+	scroll := min(m.scroll, maxScroll)
+	start := max(0, len(all)-bodyH-scroll)
+	end := min(len(all), start+bodyH)
+	visible := all[start:end]
+
+	var pick []string
+	if m.approval != nil {
+		pick = m.approvalLines(mainW-1, bodyH, st)
+	} else {
+		pick = m.overlayLines(mainW-1, bodyH, st) // sessions, running processes, models
+	}
+	rows := make([]string, bodyH)
+	for i := range rows {
+		if i < len(visible) {
+			rows[i] = visible[i]
+		}
+		if k := i - (bodyH - len(pick)); pick != nil && k >= 0 {
+			rows[i] = pick[k]
+		}
+	}
+	return rows
 }

@@ -61,6 +61,9 @@ input.num{width:92px}
 .sess .ti{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sess .meta{color:var(--dim);font-size:12px;white-space:nowrap}
 .btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.tabs{display:flex;gap:8px;margin:0 0 16px}
+.tabs button{border-color:var(--line);color:var(--dim)}
+.tabs button.on{border-color:var(--soft);color:var(--accent);background:#1c3326}
 </style>
 </head>
 <body>
@@ -72,6 +75,7 @@ input.num{width:92px}
     </div>
   </header>
   <div class="banner" id="banner"></div>
+  <nav class="tabs"><button type="button" id="tab-general">General</button><button type="button" id="tab-sessions">Sessions</button></nav>
   <div id="root"></div>
   <footer>Need help? <a href="/ui/help">Open the Relay help</a>. API keys live on <a href="#" id="keyslink">their own page</a>. You can close this tab when you are done.</footer>
 </main>
@@ -95,8 +99,10 @@ input.num{width:92px}
   function fail(e){ if(e.status===401){ banner('No access. Open this page with /settings in the interface.'); } else { toast(e.message,true); } }
 
   var view = null;
+  // The controls hold on to view.settings, so it must stay the same object: copy the answer into it.
+  function adopt(v){ Object.keys(view.settings).forEach(function(k){ delete view.settings[k]; }); Object.assign(view.settings, v.settings); view.modes=v.modes; view.processes=v.processes; }
   function save(msg){
-    return api('POST','/api/settings',view.settings).then(function(v){ view=v; toast(msg||'Saved'); }).catch(function(e){ fail(e); load(); });
+    return api('POST','/api/settings',view.settings).then(function(v){ adopt(v); toast(msg||'Saved'); }).catch(function(e){ fail(e); load(); });
   }
 
   function card(title, note){ var c=el('section','card'); c.appendChild(el('h2',null,title)); if(note) c.appendChild(el('p','hintline',note)); return c; }
@@ -121,7 +127,7 @@ input.num{width:92px}
       list.forEach(function(s){
         var r=el('div','sess');
         r.appendChild(el('span','ti',s.title||'(empty)'));
-        r.appendChild(el('span','meta',s.mode+' · '+s.messages+' msg · '+new Date(s.updated).toLocaleString()));
+        r.appendChild(el('span','meta',s.mode+' · '+s.messages+' msg · '+(s.tokens_in+s.tokens_out)+' tok · $'+(s.cost||0).toFixed(4)+' · '+new Date(s.updated).toLocaleString()));
         var d=el('button','del','delete'); d.type='button';
         d.onclick=function(){ api('DELETE','/api/sessions/'+encodeURIComponent(s.id)).then(function(){ toast('Session deleted'); refresh(); }).catch(fail); };
         r.appendChild(d); box.appendChild(r);
@@ -138,9 +144,17 @@ input.num{width:92px}
     refresh();
   }
 
+  var tab = (location.hash==='#sessions') ? 'sessions' : 'general';
+  function setTab(t){ tab=t; history.replaceState(null,'',location.pathname+(t==='sessions'?'#sessions':'')); if(view) render(); }
+  document.getElementById('tab-general').onclick=function(){ setTab('general'); };
+  document.getElementById('tab-sessions').onclick=function(){ setTab('sessions'); };
+
   function render(){
     var root=document.getElementById('root'); root.textContent='';
+    document.getElementById('tab-general').className = tab==='general'?'on':'';
+    document.getElementById('tab-sessions').className = tab==='sessions'?'on':'';
     var s=view.settings;
+    if(tab==='sessions'){ var sc=card('Sessions','Every conversation is saved with its tokens and cost. Delete the ones you do not need; a session that is answering right now cannot be deleted.'); sessions(sc); root.appendChild(sc); return; }
 
     var c=card('Chat');
     row(c,'Show the model\u2019s thoughts','Reasoning is shown dimmed and set apart from the answer. When off, it is not sent to the interface at all.',
@@ -156,7 +170,7 @@ input.num{width:92px}
       toggle(function(){return s.mascot;}, function(v){s.mascot=v;}));
     var n=el('input','num'); n.type='number'; n.min=0; n.max=240; n.value=s.text_width; n.onchange=function(){ s.text_width=parseInt(n.value||'0',10)||0; save(); };
     row(c,'Text width','Wrap the chat at this many columns (40 to 240). 0 uses the whole width.', n);
-    row(c,'Mouse in the interface','On: click the lists and scroll with the wheel. Off: select and copy text with the mouse as in any terminal (scroll with pgup/pgdn). With it on, hold shift while dragging to select.',
+    row(c,'Mouse in the interface','On: click the lists and scroll with the wheel. Off: select and copy text with the mouse as in any terminal (scroll with pgup/pgdn or shift+up/down). With it on, press f2 (or type /select) to freeze the screen, then select text with the mouse.',
       toggle(function(){return s.mouse;}, function(v){s.mouse=v;}));
     root.appendChild(c);
 
@@ -165,23 +179,9 @@ input.num{width:92px}
       select([['','From config.toml']].concat(view.modes.map(function(m){return [m,m];})), function(){return s.default_mode||'';}, function(v){s.default_mode=v;}));
     row(c,'Keep the backend running','Do not stop the background service when the interface quits.',
       toggle(function(){return s.keep_backend;}, function(v){s.keep_backend=v;}));
-    view.processes.forEach(function(p){
-      var box=el('div','row'), t=el('div','t'); t.appendChild(el('b',null,p.name)); t.appendChild(el('span',null,p.command));
-      box.appendChild(t);
-      var arg=el('input','arg'); arg.type='text'; arg.spellcheck=false;
-      arg.placeholder = p.name==='llamacpp' ? 'arguments, e.g. -m /path/to/model.gguf' : 'extra arguments (optional)';
-      arg.value=p.args||''; arg.onchange=function(){ s.process_args[p.name]=arg.value.trim(); save('Saved'); };
-      box.appendChild(arg);
-      var lab=el('span','meta','autostart'); lab.style.color='var(--dim)'; box.appendChild(lab);
-      box.appendChild(toggle(function(){return p.autostart;}, function(v){s.autostart[p.name]=v; p.autostart=v;}));
-      c.appendChild(box);
-    });
-    c.appendChild(el('p','hintline','Arguments are used when a server is started without any (for llama.cpp this is where its model file goes). Autostart applies the next time the backend starts.'));
+    c.appendChild(el('p','hintline','Ollama and llama.cpp (autostart, the model file, start and stop) are set on the keys page, on their own cards.'));
     root.appendChild(c);
 
-    c=card('Sessions','Every conversation is saved. Delete the ones you do not need; a session that is answering right now cannot be deleted.');
-    sessions(c);
-    root.appendChild(c);
   }
 
   function load(){

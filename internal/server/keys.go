@@ -3,9 +3,10 @@ package server
 import (
 	_ "embed"
 	"net/http"
-	"os"
+	"sort"
 	"strings"
 
+	"relay/internal/config"
 	"relay/internal/proto"
 )
 
@@ -24,16 +25,37 @@ func (s *Server) handleKeysPage(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(keysHTML)
 }
 
+// keyGroup sorts the cards of the keys page: the model makers' own APIs first, then other
+// services (OpenRouter, Ollama cloud, ...), then servers on this computer.
+func keyGroup(p config.Provider) (rank int, name string) {
+	switch {
+	case p.IsOfficial():
+		return 0, "official"
+	case p.IsLocal():
+		return 2, "local"
+	}
+	return 1, "external"
+}
+
 func (s *Server) providerKeys() []proto.ProviderKeys {
-	out := make([]proto.ProviderKeys, 0, len(s.cfg.Providers))
+	list := make([]config.Provider, 0, len(s.cfg.Providers))
 	for _, p := range s.cfg.OrderedProviders() {
-		if p.KeyFrom != "" {
-			continue // uses the keys of another provider, which has its own card
+		if p.KeyFrom == "" { // a provider that uses the keys of another one has no card of its own
+			list = append(list, p)
 		}
+	}
+	sort.SliceStable(list, func(i, j int) bool {
+		ri, _ := keyGroup(list[i])
+		rj, _ := keyGroup(list[j])
+		return ri < rj
+	})
+	out := make([]proto.ProviderKeys, 0, len(list))
+	for _, p := range list {
 		total, avail, needs := s.router.KeyStats(p.Name)
+		_, group := keyGroup(p)
 		pk := proto.ProviderKeys{
 			Name: p.Name, Kind: p.Kind, NeedsKey: needs, Total: total, Available: avail,
-			Stored: []proto.KeyEntry{},
+			Stored: []proto.KeyEntry{}, Group: group,
 		}
 		for _, q := range s.cfg.Providers {
 			if q.KeyFrom == p.Name {
@@ -41,10 +63,7 @@ func (s *Server) providerKeys() []proto.ProviderKeys {
 			}
 		}
 		for _, m := range s.keys.List(p.Name) {
-			pk.Stored = append(pk.Stored, proto.KeyEntry{ID: m.ID, Label: m.Label, Hint: m.Hint})
-		}
-		for _, e := range p.APIKeyEnv {
-			pk.Env = append(pk.Env, proto.EnvKey{Name: e, Set: envSet(e)})
+			pk.Stored = append(pk.Stored, proto.KeyEntry{ID: m.ID, Hint: m.Hint})
 		}
 		out = append(out, pk)
 	}
@@ -72,13 +91,13 @@ func (s *Server) handleAddKey(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, 400, "unknown provider "+req.Provider)
 		return
 	}
-	m, err := s.keys.Add(req.Provider, req.Label, req.Key)
+	m, err := s.keys.Add(req.Provider, "", req.Key)
 	if err != nil {
 		httpErr(w, 400, err.Error())
 		return
 	}
 	s.cat.Invalidate() // a new key can unlock more models
-	writeJSON(w, 200, proto.KeyEntry{ID: m.ID, Label: m.Label, Hint: m.Hint})
+	writeJSON(w, 200, proto.KeyEntry{ID: m.ID, Hint: m.Hint})
 }
 
 func (s *Server) handleDeleteKey(w http.ResponseWriter, r *http.Request) {
@@ -89,5 +108,3 @@ func (s *Server) handleDeleteKey(w http.ResponseWriter, r *http.Request) {
 	s.cat.Invalidate()
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
-
-func envSet(name string) bool { return strings.TrimSpace(os.Getenv(name)) != "" }

@@ -271,6 +271,9 @@ func (m *model) openSessions(list []proto.SessionInfo) {
 			break
 		}
 		desc := s.Updated.Local().Format("Jan 2 15:04") + " · " + s.Mode
+		if n := s.TokensIn + s.TokensOut; n > 0 {
+			desc += fmt.Sprintf(" · %d tok · $%.4f", n, s.Cost)
+		}
 		if current {
 			desc += " · current"
 		}

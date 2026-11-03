@@ -67,6 +67,7 @@ type model struct {
 
 	curModel      string
 	totIn, totOut int
+	ctxTokens     int // prompt size of the newest request
 	totCost       float64
 
 	// model picker (/models): the full list from the backend and the picker's state
@@ -81,6 +82,12 @@ type model struct {
 	openThink int         // index of the thoughts block being filled, -1 = none
 	pend      []pendPiece // text waiting to be typed out (stream.go)
 	mouseOn   bool        // mouse reporting is switched on
+
+	hist    []string // messages sent before (up / down)
+	histPos int      // position while browsing the history, -1 = not browsing
+
+	selecting bool      // select mode: the screen is frozen so the terminal keeps a text selection
+	frozenAt  time.Time // the moment the screen was frozen (animations are drawn as of then)
 
 	ov          overlay         // list opened by /sessions or /stop (overlay.go)
 	statusBurst int             // ticks left of fast status polling after a start
@@ -106,6 +113,7 @@ func New(spawn, keep bool) tea.Model {
 		input:     ti,
 		openAsst:  -1,
 		openThink: -1,
+		histPos:   -1,
 		mouseOn:   true,
 		slots:     map[int]int{},
 		mc:        newMascot(),
@@ -178,8 +186,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tickMsg:
+		if m.selecting { // nothing may change on screen, or the terminal drops the selection
+			return m, tick()
+		}
 		m.frame++
-		every := 40
+		every := 20            // about every 2.4 s, so changes on the settings page show up quickly
 		if m.statusBurst > 0 { // a server was just started: watch it come up
 			m.statusBurst--
 			every = 8
@@ -193,6 +204,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case connectedMsg:
 		m.cl, m.status, m.sess = msg.cl, msg.status, msg.sess
 		m.mode = msg.sess.Mode
+		m.totIn, m.totOut, m.totCost, m.ctxTokens = msg.sess.TokensIn, msg.sess.TokensOut, msg.sess.Cost, msg.sess.Context
 		m.entries = []entry{{kind: eNotice, text: fmt.Sprintf("Relay %s · folder: %s", msg.status.Version, shortPath(msg.sess.Workspace))}}
 		if miss := missingKeys(msg.status); len(miss) > 0 {
 			m.addNotice("No API keys for: " + strings.Join(miss, ", ") + ". Run /keys to open a page where you can add them (keys are saved).")
@@ -250,8 +262,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.reset {
 			m.entries = entriesFromSession(msg.sess)
 			m.scroll = 0
-			m.totIn, m.totOut, m.totCost = 0, 0, 0
 		}
+		// tokens and cost belong to the session: show the ones of the session that is open
+		m.totIn, m.totOut, m.totCost, m.ctxTokens = msg.sess.TokensIn, msg.sess.TokensOut, msg.sess.Cost, msg.sess.Context
 		return m, nil
 
 	case sessionsMsg:
@@ -288,6 +301,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.MouseMsg:
+		if msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress {
+			if ok, c := m.click(msg.X, msg.Y); ok { // a row of an open list
+				return m, c
+			}
+			return m, nil
+		}
 		switch msg.Button {
 		case tea.MouseButtonWheelUp:
 			m.scroll = min(m.scroll+3, m.maxScroll())
@@ -296,11 +315,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.scroll < 0 {
 				m.scroll = 0
 			}
-		case tea.MouseButtonLeft:
-			if msg.Action == tea.MouseActionPress {
-				_, c := m.click(msg.X, msg.Y)
-				return m, c
-			}
 		}
 		return m, nil
 
@@ -308,6 +322,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleKey(msg)
 	}
 
+	if m.selecting {
+		return m, nil // cursor blinking and the like would redraw the input line
+	}
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
 	return m, cmd
@@ -334,6 +351,14 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if key == "ctrl+c" {
 		return m.quit()
 	}
+	if key == "f2" && !m.selecting {
+		c := m.enterSelect()
+		return m, c
+	}
+	if m.selecting { // any key leaves select mode
+		c := m.leaveSelect()
+		return m, c
+	}
 
 	// the agent's question or a list (sessions, running processes) takes the keys first
 	if handled, c := m.overlayKey(key); handled {
@@ -346,6 +371,22 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if handled {
 			return m, c
 		}
+	}
+
+	if m.scrollKey(key) {
+		return m, nil
+	}
+	if m.historyKey(key) {
+		return m, nil
+	}
+	if key == "tab" {
+		if done, ok := m.completeCommand(m.input.Value()); ok {
+			prev := m.input.Value()
+			m.input.SetValue(done)
+			m.input.CursorEnd()
+			return m, m.syncPicker(prev)
+		}
+		return m, nil
 	}
 
 	switch key {
@@ -364,18 +405,13 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.addNotice("Stopped")
 		}
 		return m, nil
-	case "pgup":
-		m.scroll = min(m.scroll+max(3, m.bodyHeight()/2), m.maxScroll())
-		return m, nil
-	case "pgdown":
-		m.scroll = max(0, m.scroll-max(3, m.bodyHeight()/2))
-		return m, nil
 	case "enter":
 		text := strings.TrimSpace(m.input.Value())
 		if text == "" {
 			return m, nil
 		}
 		m.input.SetValue("")
+		m.remember(text)
 		if strings.HasPrefix(text, "/") {
 			return m.command(text)
 		}
@@ -385,6 +421,9 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	prev := m.input.Value()
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
+	if m.input.Value() != prev {
+		m.histPos = -1 // the text was edited: stop browsing the history
+	}
 	if v := m.input.Value(); mouseJunk.MatchString(v) {
 		// Mouse wheel events that reached the input as text (see mouseJunk).
 		m.input.SetValue(mouseJunk.ReplaceAllString(v, ""))
@@ -496,6 +535,7 @@ func (m *model) handleEvent(ev proto.Event) {
 
 	case "usage":
 		m.totIn += ev.In
+		m.ctxTokens = ev.In
 		m.totOut += ev.Out
 		m.totCost += ev.Cost
 
@@ -582,7 +622,8 @@ func (m *model) newSession() tea.Cmd {
 	return newSessionCmd(m.cl, m.mode, m.cwd)
 }
 
-func (m model) bodyHeight() int { return max(3, m.height-5) }
+// bodyHeight is the number of rows of the feed: the screen minus the header, the input box and the hint line.
+func (m model) bodyHeight() int { return max(3, m.height-4-m.inputHeight()) }
 
 func shorten(s string, n int) string {
 	s = strings.Join(strings.Fields(s), " ")
