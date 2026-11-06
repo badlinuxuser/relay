@@ -28,6 +28,7 @@ import (
 	"relay/internal/router"
 	"relay/internal/runner"
 	"relay/internal/session"
+	"relay/internal/skills"
 	"relay/internal/settings"
 	"relay/internal/tools"
 	"relay/internal/usage"
@@ -45,8 +46,8 @@ type Server struct {
 	procs  *runner.Manager
 	agent  *agent.Agent
 
-	mcpMu      sync.Mutex
-	mcpClients []*mcp.Client
+	mcp    *mcp.Manager    // the MCP servers of mcp.json
+	skills *skills.Manager // the skills in skills/
 
 	mu        sync.Mutex
 	approvals map[string]chan string
@@ -63,8 +64,22 @@ func New(cfg *config.Config, home, token string) *Server {
 	rt := router.New(cfg, tr, ks)
 	cat := catalog.New(cfg, rt.Keys)
 	rt.SetCatalog(cat)
+	if err := config.EnsureLayout(home); err != nil {
+		log.Printf("cannot create the extension folders in %s: %v", home, err)
+	}
+	mcp.ClientVersion = proto.Version
+	legacy := map[string]mcp.ServerConfig{} // the old [[mcp]] section of config.toml keeps working
+	for _, m := range cfg.MCP {
+		if id, c, ok := mcp.LegacyServer(m.Name, m.Command, m.Args, m.Env); ok {
+			legacy[id] = c
+		} else {
+			log.Printf("mcp %q in config.toml is ignored: it needs a command and a name of letters, digits, - or _", m.Name)
+		}
+	}
 	s := &Server{
 		cfg:       cfg,
+		mcp:       mcp.NewManager(config.MCPPath(home), config.MCPTrustPath(home), legacy),
+		skills:    skills.NewManager(config.SkillsDir(home), config.SkillsState(home)),
 		token:     token,
 		keys:      ks,
 		loopback:  isLoopback(cfg.Listen),
@@ -77,7 +92,7 @@ func New(cfg *config.Config, home, token string) *Server {
 		approvals: map[string]chan string{},
 		Done:      make(chan struct{}),
 	}
-	s.agent = &agent.Agent{Cfg: cfg, Router: rt, Extra: s.mcpTools}
+	s.agent = &agent.Agent{Cfg: cfg, Router: rt, Extra: s.mcpTools, Skills: s.skills}
 	cat.Warm() // start looking for models right away: Ollama, Gemini, ...
 	return s
 }
@@ -85,39 +100,21 @@ func New(cfg *config.Config, home, token string) *Server {
 // Procs даёт доступ к менеджеру процессов (автозапуск и остановка из main).
 func (s *Server) Procs() *runner.Manager { return s.procs }
 
-// StartMCP запускает MCP-серверы из конфигурации; ошибки только логируются.
-func (s *Server) StartMCP() {
-	for _, m := range s.cfg.MCP {
-		c, err := mcp.Start(m.Name, m.Command, m.Args, m.Env)
-		if err != nil {
-			log.Printf("mcp %s: %v", m.Name, err)
-			continue
-		}
-		log.Printf("mcp %s: %d tools", m.Name, len(c.Tools()))
-		s.mcpMu.Lock()
-		s.mcpClients = append(s.mcpClients, c)
-		s.mcpMu.Unlock()
-	}
+// StartExtensions starts the MCP servers of mcp.json and the old config.toml, and begins to
+// watch mcp.json and skills/. A server that cannot start is reported in its state, not here.
+func (s *Server) StartExtensions() {
+	s.mcp.Start()
+	s.skills.Start()
 }
 
 func (s *Server) mcpTools() []tools.Tool {
-	s.mcpMu.Lock()
-	defer s.mcpMu.Unlock()
-	var out []tools.Tool
-	for _, c := range s.mcpClients {
-		out = append(out, tools.MCPTools(c)...)
-	}
-	return out
+	return tools.MCPTools(s.mcp.Tools(), s.mcp)
 }
 
-// Close останавливает MCP-серверы и управляемые процессы.
+// Close stops the MCP servers and the managed processes.
 func (s *Server) Close() {
-	s.mcpMu.Lock()
-	for _, c := range s.mcpClients {
-		c.Close()
-	}
-	s.mcpClients = nil
-	s.mcpMu.Unlock()
+	s.mcp.Close()
+	s.skills.Close()
 	s.procs.StopAll()
 }
 
@@ -145,6 +142,10 @@ func (s *Server) Handler() http.Handler {
 		writeJSON(w, 200, map[string]any{"ok": true})
 		s.once.Do(func() { close(s.Done) })
 	})
+	mux.HandleFunc("GET /api/mcp", s.handleMCPList)
+	mux.HandleFunc("POST /api/mcp/{id}/{action}", s.handleMCPAction)
+	mux.HandleFunc("GET /api/skills", s.handleSkillsList)
+	mux.HandleFunc("POST /api/skills/{name}/{action}", s.handleSkillAction)
 	mux.HandleFunc("GET /api/keys", s.handleKeys)
 	mux.HandleFunc("POST /api/keys", s.handleAddKey)
 	mux.HandleFunc("DELETE /api/keys/{provider}/{id}", s.handleDeleteKey)
@@ -313,11 +314,16 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	for _, p := range s.cfg.Presets {
 		st.Presets = append(st.Presets, p.Name)
 	}
-	s.mcpMu.Lock()
-	for _, c := range s.mcpClients {
-		st.MCP = append(st.MCP, c.Name)
+	for _, m := range s.mcp.Status() {
+		if m.State == mcp.StateConnected {
+			st.MCP = append(st.MCP, m.Name)
+		}
+		info := mcpInfo(m)
+		info.Tools = nil // the status is polled often: the tools are in GET /api/mcp
+		st.MCPServers = append(st.MCPServers, info)
 	}
-	s.mcpMu.Unlock()
+	st.MCPError = s.mcp.LoadError()
+	st.Skills = s.skillInfos()
 	writeJSON(w, 200, st)
 }
 
@@ -401,6 +407,13 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Agent != nil {
 		sess.Agent = *req.Agent
+	}
+	if req.Workspace != nil {
+		if fi, err := os.Stat(*req.Workspace); err != nil || !fi.IsDir() {
+			httpErr(w, 400, fmt.Sprintf("%q is not a folder", *req.Workspace))
+			return
+		}
+		sess.Workspace = *req.Workspace
 	}
 	_ = s.store.Save(sess)
 	writeJSON(w, 200, sessionInfo(sess, false))
@@ -559,7 +572,7 @@ func (s *Server) handleProcess(w http.ResponseWriter, r *http.Request) {
 		_ = readJSON(r, &req) // the body is optional
 		args := req.Args
 		if len(args) == 0 { // /llamacpp with no path: use the one saved on the settings page
-			args = strings.Fields(s.set.Get().ProcessArgs[name])
+			args = s.StartArgs(name)
 		}
 		err = s.procs.Start(name, args)
 		if errors.Is(err, runner.ErrAlready) {
@@ -607,5 +620,9 @@ func (s *Server) Autostart() []string {
 
 // StartArgs are the arguments saved for a process on the settings page.
 func (s *Server) StartArgs(name string) []string {
-	return strings.Fields(s.set.Get().ProcessArgs[name])
+	raw := s.set.Get().ProcessArgs[name]
+	if name == "llamacpp" {
+		return runner.ModelArgs(raw) // a path, org/repo or flags: the right flag is chosen here
+	}
+	return strings.Fields(raw)
 }

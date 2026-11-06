@@ -194,6 +194,8 @@ autostart = false
 
 # -------------------------------------------------------------- MCP servers
 # MCP tools become available to the agent (every call asks for confirmation).
+# New servers are better added with `relay mcp add ...` (they live in mcp.json, run with a
+# small environment and only after you approved the command). The entries below keep working.
 
 # [[mcp]]
 # name = "fs"

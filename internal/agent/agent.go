@@ -13,6 +13,7 @@ import (
 	"relay/internal/provider"
 	"relay/internal/router"
 	"relay/internal/session"
+	"relay/internal/skills"
 	"relay/internal/tools"
 )
 
@@ -23,6 +24,9 @@ type Agent struct {
 	Router *router.Router
 	// Extra возвращает дополнительные инструменты (MCP).
 	Extra func() []tools.Tool
+	// Skills (may be nil) supplies the installed skills in agent mode: their list goes into the
+	// system prompt and the agent loads one when it needs it.
+	Skills *skills.Manager
 }
 
 // Approve запрашивает у пользователя разрешение; возвращает allow | always | deny.
@@ -33,10 +37,13 @@ Workspace: %s
 Use the available tools to inspect and change files and to run commands. Read before you edit.
 Make small, correct changes, verify them (build/tests) when possible, and finish with a short summary of what you did.`
 
-func buildSystem(cfg *config.Config, sess *session.Session, agentMode bool) string {
+func buildSystem(cfg *config.Config, sess *session.Session, agentMode bool, skillsPrompt string) string {
 	var parts []string
 	if agentMode {
 		parts = append(parts, fmt.Sprintf(agentPrompt, sess.Workspace))
+		if skillsPrompt != "" {
+			parts = append(parts, skillsPrompt)
+		}
 	}
 	if sess.Preset != "" {
 		if p := cfg.PresetPrompt(sess.Preset); p != "" {
@@ -78,6 +85,12 @@ func (a *Agent) Run(ctx context.Context, sess *session.Session, text string, sho
 		}
 	}
 
+	if a.Skills != nil && sess.Agent {
+		for _, t := range tools.SkillTools(a.Skills) {
+			reg.Add(t)
+		}
+	}
+
 	md := a.Cfg.Modes[sess.Mode]
 	maxSteps := 1
 	if sess.Agent {
@@ -87,9 +100,14 @@ func (a *Agent) Run(ctx context.Context, sess *session.Session, text string, sho
 		}
 	}
 
+	pinned := "" // the model the user agreed to switch to during this request
 	for step := 1; step <= maxSteps; step++ {
 		msgs := make([]provider.Message, 0, len(sess.Messages)+1)
-		if sys := buildSystem(a.Cfg, sess, sess.Agent); sys != "" {
+		skillsPrompt := ""
+		if a.Skills != nil {
+			skillsPrompt = a.Skills.Prompt() // read again each step: a skill added meanwhile shows up
+		}
+		if sys := buildSystem(a.Cfg, sess, sess.Agent, skillsPrompt); sys != "" {
 			msgs = append(msgs, provider.Message{Role: "system", Content: sys})
 		}
 		msgs = append(msgs, sess.Messages...)
@@ -98,7 +116,11 @@ func (a *Agent) Run(ctx context.Context, sess *session.Session, text string, sho
 		if sess.Agent {
 			req.Tools = reg.Specs()
 		}
-		chain, _, err := a.Router.Resolve(sess.Mode, sess.Model, sess.Agent, router.Hint{
+		model := sess.Model
+		if pinned != "" {
+			model = pinned // the next steps start where the last one succeeded, not on the model that failed
+		}
+		chain, _, err := a.Router.Resolve(sess.Mode, model, sess.Agent, router.Hint{
 			Chars: len(text), Agent: sess.Agent, Code: strings.Contains(text, "```"),
 		})
 		if err != nil {
@@ -108,7 +130,18 @@ func (a *Agent) Run(ctx context.Context, sess *session.Session, text string, sho
 
 		var content strings.Builder
 		var calls []provider.ToolCall
-		used, err := a.Router.Stream(ctx, chain, req, func(ev provider.Event) error {
+		ask := func(failed, next, why string) string {
+			if sess.AutoTools["switch_model"] {
+				return "allow"
+			}
+			d := approve(ctx, proto.Event{Type: "approval", Tool: "switch_model", CallID: "switch-" + failed, Step: step,
+				Desc: fmt.Sprintf("%s failed (%s). Try %s, another model of the same provider?", failed, why, next)})
+			if d == "always" {
+				sess.AutoTools["switch_model"] = true
+			}
+			return d
+		}
+		used, err := a.Router.StreamAsk(ctx, chain, req, func(ev provider.Event) error {
 			switch ev.Kind {
 			case provider.EvModel:
 				emit(proto.Event{Type: "model", Model: ev.Text, Step: step})
@@ -131,8 +164,16 @@ func (a *Agent) Run(ctx context.Context, sess *session.Session, text string, sho
 				emit(proto.Event{Type: "usage", Model: ev.Text, In: ev.Usage.In, Out: ev.Usage.Out, Cost: ev.Cost})
 			}
 			return ctx.Err()
-		})
-		_ = used
+		}, ask)
+		if err == nil && used != "" && used != chain[0] {
+			// the switch happened: stay on the new model for the rest of this request, and
+			// (when the model was chosen explicitly) for the session
+			pinned = used
+			if sess.Model != "" && sess.Model != "auto" {
+				sess.Model = used
+				emit(proto.Event{Type: "notice", Kind: "info", Text: "Model of this session is now " + used})
+			}
+		}
 		if err != nil {
 			if ctx.Err() == nil {
 				emit(proto.Event{Type: "error", Kind: providerErrKind(err), Text: err.Error()})

@@ -179,9 +179,65 @@ func estimateIn(msgs []provider.Message) int {
 	return n/4 + 1
 }
 
-// Stream пробует модели цепочки по очереди. Фолбэк возможен только пока модель
-// ничего не выдала (иначе ответ пришлось бы склеивать из двух моделей).
-// Возвращает id модели, давшей ответ. Расход отправляется событием EvUsage.
+// attempt streams one model. emitted tells whether the model sent text or a tool call
+// before it failed: after that no other model may take over (the answer would be a mix).
+// On success it also records the usage and sends the usage event.
+func (r *Router) attempt(ctx context.Context, id string, m config.Model, req provider.Request, emit func(provider.Event) error) (emitted bool, err error) {
+	cl := r.clients[m.Provider]
+	if cl == nil {
+		return false, &provider.Error{Provider: m.Provider, Retryable: true,
+			Msg: fmt.Sprintf("provider %q is not available", m.Provider)}
+	}
+	if e := emit(provider.Event{Kind: provider.EvModel, Text: id}); e != nil {
+		return true, e
+	}
+	rq := req
+	rq.Model = m.Name
+
+	outChars := 0
+	var u provider.Usage
+	err = cl.Stream(ctx, rq, func(ev provider.Event) error {
+		switch ev.Kind {
+		case provider.EvText:
+			emitted = true
+			outChars += len(ev.Text)
+		case provider.EvThinking:
+			outChars += len(ev.Text)
+		case provider.EvToolCall:
+			emitted = true
+			if ev.Call != nil {
+				outChars += len(ev.Call.Args) + len(ev.Call.Name)
+			}
+		case provider.EvUsage:
+			u = ev.Usage
+			return nil // the router sends the usage itself, with the cost
+		}
+		return emit(ev)
+	})
+	if err != nil {
+		return emitted, err
+	}
+	if u.In == 0 {
+		u.In = estimateIn(rq.Messages)
+	}
+	if u.Out == 0 {
+		u.Out = outChars/4 + 1
+	}
+	cost := (float64(u.In)*m.PriceIn + float64(u.Out)*m.PriceOut) / 1e6
+	r.usage.Add(id, u.In, u.Out, cost)
+	if !emitted {
+		_ = emit(provider.Event{Kind: provider.EvNotice, Tag: "info",
+			Text: id + " sent no answer (only its reasoning, or nothing). Try again or pick another model with /models"})
+	}
+	if e := emit(provider.Event{Kind: provider.EvUsage, Usage: u, Cost: cost, Text: id}); e != nil {
+		return true, e
+	}
+	return emitted, nil
+}
+
+// Stream tries the models of the chain in order, silently, whatever their provider (used by
+// the gateway and by compare). A fallback is possible only while the model has sent nothing.
+// It returns the id of the model that answered. The usage is sent as an EvUsage event.
 func (r *Router) Stream(ctx context.Context, chain []string, req provider.Request, emit func(provider.Event) error) (string, error) {
 	type failure struct{ id, why string }
 	var fails []failure
@@ -203,52 +259,9 @@ func (r *Router) Stream(ctx context.Context, chain []string, req provider.Reques
 		if badProv[m.Provider] {
 			continue
 		}
-		cl := r.clients[m.Provider]
-		if cl == nil {
-			lastErr = fmt.Errorf("provider %q is not available", m.Provider)
-			continue
-		}
-		if err := emit(provider.Event{Kind: provider.EvModel, Text: id}); err != nil {
-			return id, err
-		}
-		rq := req
-		rq.Model = m.Name
-
-		emitted := false
-		outChars := 0
-		var u provider.Usage
-		err := cl.Stream(ctx, rq, func(ev provider.Event) error {
-			switch ev.Kind {
-			case provider.EvText:
-				emitted = true
-				outChars += len(ev.Text)
-			case provider.EvThinking:
-				outChars += len(ev.Text)
-			case provider.EvToolCall:
-				emitted = true
-				if ev.Call != nil {
-					outChars += len(ev.Call.Args) + len(ev.Call.Name)
-				}
-			case provider.EvUsage:
-				u = ev.Usage
-				return nil // расход отправим сами, уже со стоимостью
-			}
-			return emit(ev)
-		})
+		emitted, err := r.attempt(ctx, id, m, req, emit)
 		if err == nil {
-			if u.In == 0 {
-				u.In = estimateIn(rq.Messages)
-			}
-			if u.Out == 0 {
-				u.Out = outChars/4 + 1
-			}
-			cost := (float64(u.In)*m.PriceIn + float64(u.Out)*m.PriceOut) / 1e6
-			r.usage.Add(id, u.In, u.Out, cost)
-			if !emitted {
-				_ = emit(provider.Event{Kind: provider.EvNotice, Tag: "info",
-					Text: id + " sent no answer (only its reasoning, or nothing). Try again or pick another model with /models"})
-			}
-			return id, emit(provider.Event{Kind: provider.EvUsage, Usage: u, Cost: cost, Text: id})
+			return id, nil
 		}
 		lastErr = err
 		var pe *provider.Error
@@ -259,8 +272,10 @@ func (r *Router) Stream(ctx context.Context, chain []string, req provider.Reques
 		if !pe.RateLimited {
 			allLimited = false
 		}
-		// the same provider will fail the same way for its other models
-		if pe.NoKey || pe.Billing || pe.Auth || pe.RateLimited {
+		// the same provider will fail the same way for its other models. A limit is
+		// different: Gemini counts its quota per model, so another model may still answer.
+		prov, _ := r.cfg.ProviderByName(m.Provider)
+		if pe.NoKey || pe.Billing || pe.Auth || (pe.RateLimited && prov.DiscoverStyle() != "gemini") {
 			badProv[m.Provider] = true
 		}
 		nx := next(i + 1)
@@ -291,6 +306,166 @@ func (r *Router) Stream(ctx context.Context, chain []string, req provider.Reques
 			RateLimited: allLimited}
 	}
 	return "", lastErr
+}
+
+// Ask is called before the router moves from a model that failed to the next one of the
+// same provider. It returns "allow", "always" (do not ask again) or "deny": then the request
+// ends with the error of the model that failed.
+type Ask func(failed, next, why string) string
+
+// maxTries bounds the models tried in one request, for providers that list hundreds
+// (OpenRouter, Ollama Cloud): after this many failures the provider is reported as not working.
+const maxTries = 8
+
+type candidate struct{ id, name string }
+
+func normName(name string) string {
+	return strings.TrimSuffix(strings.ToLower(strings.TrimSpace(name)), ":latest")
+}
+
+// providerWide reports an error that every model of the provider will hit: asking the user
+// to try the other models would only repeat it.
+func (r *Router) providerWide(prov string, pe *provider.Error) bool {
+	if pe.NoKey || (pe.Auth && pe.Status == 401) {
+		return true
+	}
+	k := r.keys[prov]
+	return k != nil && k.NeedsKey() && (k.Count() == 0 || k.Available() == 0)
+}
+
+// nextOfProvider picks the model to offer after `after` failed: another model of the SAME
+// provider that was not tried yet. The models of the configuration come first (in their
+// order, starting after the failed one), then the models the provider itself lists.
+func (r *Router) nextOfProvider(prov, after string, needTools bool, tried map[string]bool, snap *catalog.Snapshot) string {
+	var all []candidate
+	seen := map[string]bool{}
+	add := func(id, name string) {
+		n := normName(name)
+		if !seen[n] {
+			seen[n] = true
+			all = append(all, candidate{id, n})
+		}
+	}
+	for _, m := range r.cfg.Models {
+		if m.Provider != prov || (needTools && !m.Tools) || snap.Missing(prov, m.Name) {
+			continue
+		}
+		add(m.ID, m.Name)
+	}
+	for _, e := range snap.Pick(prov, 1<<20) {
+		add(e.ID, e.Name)
+	}
+	order := all
+	for i, c := range all {
+		if c.name == normName(after) {
+			order = append(append([]candidate{}, all[i+1:]...), all[:i]...)
+			break
+		}
+	}
+	for _, c := range order {
+		if !tried[c.name] {
+			return c.id
+		}
+	}
+	return ""
+}
+
+// StreamAsk answers with the first model of the chain. If it fails in a way another model
+// might fix (a limit, no credit, a server error), it offers the next model of the SAME
+// provider, one after another, until one answers or the provider has none left:
+//
+//   - ask returns "allow": switch and go on; "always": switch now and from then on without asking;
+//   - "deny": the request ends with the error of the model that failed;
+//   - ask == nil: switch without asking;
+//   - no model of the provider answered: the error says so and points to /keys.
+//
+// Models of other providers are never used here: the provider the user chose is the one
+// whose models are tried.
+func (r *Router) StreamAsk(ctx context.Context, chain []string, req provider.Request, emit func(provider.Event) error, ask Ask) (string, error) {
+	if len(chain) == 0 {
+		return "", errors.New("no models to try")
+	}
+	cur := chain[0]
+	m, ok := r.cfg.ModelByID(cur)
+	if !ok {
+		return "", fmt.Errorf("unknown model %q", cur)
+	}
+	prov := m.Provider
+	needTools := len(req.Tools) > 0
+	var snap *catalog.Snapshot
+	if r.cat != nil {
+		snap = r.cat.Peek()
+	}
+
+	type failure struct{ id, why string }
+	var fails []failure
+	tried := map[string]bool{}
+	allLimited, allNoKey := true, true
+
+	for {
+		tried[normName(m.Name)] = true
+		emitted, err := r.attempt(ctx, cur, m, req, emit)
+		if err == nil {
+			return cur, nil
+		}
+		var pe *provider.Error
+		if emitted || ctx.Err() != nil || !errors.As(err, &pe) || !pe.Retryable {
+			return cur, err
+		}
+		fails = append(fails, failure{cur, shorten(pe.Msg, 90)})
+		if !pe.RateLimited {
+			allLimited = false
+		}
+		if !pe.NoKey {
+			allNoKey = false
+		}
+		if r.providerWide(prov, pe) || len(tried) >= maxTries {
+			break // the other models of this provider would fail the same way
+		}
+		nx := r.nextOfProvider(prov, m.Name, needTools, tried, snap)
+		if nx == "" {
+			break
+		}
+		why := shorten(pe.Msg, 80)
+		if pe.Billing {
+			why = "no credit or the plan does not include it: " + why
+		}
+		if ask != nil {
+			switch ask(cur, nx, why) {
+			case "deny":
+				return cur, err // the user does not want another model: show why this one failed
+			case "always":
+				ask = nil
+			}
+		}
+		tag := "fallback"
+		switch {
+		case pe.RateLimited:
+			tag = "rate_limit"
+		case pe.NoKey:
+			tag = "no_key"
+		}
+		_ = emit(provider.Event{Kind: provider.EvNotice, Tag: tag,
+			Text: fmt.Sprintf("%s unavailable (%s), trying %s from the same provider", cur, why, nx)})
+		cur = nx
+		m, _ = r.cfg.ModelByID(cur)
+	}
+
+	parts := make([]string, 0, len(fails))
+	for _, f := range fails {
+		parts = append(parts, f.id+": "+f.why)
+	}
+	p, _ := r.cfg.ProviderByName(prov)
+	return "", &provider.Error{Provider: prov, NoKey: allNoKey, RateLimited: allLimited,
+		Msg: fmt.Sprintf("none of the models of %s is working (%s). %s", prov, strings.Join(parts, " | "), advice(p.IsLocal()))}
+}
+
+// advice tells what to do when no model of a provider answers.
+func advice(local bool) string {
+	if local {
+		return "Check that the server is running (for example /ollama), or pick another model with /models."
+	}
+	return "Check your API keys with /keys, or pick another model with /models."
 }
 
 func shorten(s string, n int) string {

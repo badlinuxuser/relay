@@ -11,8 +11,8 @@ Errors: a 4xx/5xx status and the body `{"error":{"message":"..."}}`.
 
 | Method and path | Description |
 |---|---|
-| `GET /api/health` | no authorization: `{"ok":true,"version":"0.7.0"}`; a client restarts a backend of another version |
-| `GET /api/status` | modes (`effective`: the chain that is really used), models, providers (number of keys and how many are usable), processes, local servers that answer now (`servers`), usage, presets, MCP, and the user's `settings` |
+| `GET /api/health` | no authorization: `{"ok":true,"version":"0.8.0"}`; a client restarts a backend of another version |
+| `GET /api/status` | modes (`effective`: the chain that is really used), models, providers (number of keys and how many are usable), processes, local servers that answer now (`servers`), usage, presets, MCP (`mcp`: names of connected servers; `mcp_servers`: the servers without their tools; `mcp_error`), `skills` (installed, with `enabled`), and the user's `settings` |
 | `GET /api/models` | every model to choose from: the ones the providers report (`ollama/…`, `ollama-cloud/…`, `gemini/…`), official providers first; a provider without access adds nothing (models from the config show only with `discover = "none"`); `providers` has the number found, `local`, `skipped` ("no key") and `error`. `?refresh=1` asks the providers again; adding or deleting a key clears the 60 s cache by itself |
 | `GET /api/sessions` | list of sessions (no messages), with `tokens_in`, `tokens_out`, `cost` |
 | `POST /api/sessions` | create: `{"mode":"small","workspace":"/path"}` (without `mode` the default mode of the settings is used) |
@@ -20,13 +20,17 @@ Errors: a 4xx/5xx status and the body `{"error":{"message":"..."}}`.
 | `DELETE /api/sessions/{id}` | delete a session (refused while it is answering) |
 | `POST /api/sessions/prune` | `{"which":"empty"\|"all"}` → `{"deleted":n,"skipped":n}` |
 | `GET /api/session-list` | sessions for the settings page: id, title, mode, updated, number of messages, tokens, cost |
-| `POST /api/sessions/{id}/settings` | `{"mode","model","preset","agent"}`; omitted fields do not change |
+| `POST /api/sessions/{id}/settings` | `{"mode","model","preset","agent","workspace"}`; omitted fields do not change (`workspace` is the folder the agent works in; it must exist) |
 | `POST /api/sessions/{id}/messages` | `{"text":"..."}` → a stream of SSE events |
 | `POST /api/approvals/{id}` | `{"decision":"allow\|always\|deny"}` (id from the `approval` event) |
 | `POST /api/compare` | `{"text","models":["a","b"],"preset"}` → a stream of events with a `slot` field |
 | `POST /api/processes/{name}/{start\|stop}` | manage local processes; the body of start may carry `{"args":[...]}` (added to the args of the config; without it the arguments saved in the settings are used); the answer is `{"processes":[...],"already":bool}` |
 | `GET /api/settings` | `{"settings":{...},"modes":[...],"processes":[...]}` |
 | `POST /api/settings` | change the settings; fields that are omitted keep their value; the answer is the same as for GET |
+| `GET /api/mcp` | MCP servers of `mcp.json` (and the old `[[mcp]]`): `id`, `name`, `type` (`stdio`\|`http`), `target`, `source`, `state` (`configured`, `connecting`, `connected`, `auth_required`, `disconnected`, `error`), `error`, `warning`, `trusted` (stdio: the exact command was approved), `tools` (name, description, disabled); `error` of the answer is a problem in `mcp.json` that is being ignored |
+| `POST /api/mcp/{id}/{connect\|disconnect\|reconnect\|trust}` | waits for the result (up to ~90 s for a program that has to start); a failure is the error of the request; the answer is the same as for GET |
+| `GET /api/skills` | installed skills: `name`, `description`, `path`, `enabled`, license, compatibility, metadata; `problems` lists folders that are not valid skills |
+| `POST /api/skills/{name}/{enable\|disable}` | switch a skill on or off (kept in `skills.json`); the answer is the same as for GET |
 | `GET /api/keys` | providers and keys: `group` (`official`, `external`, `local`; sorted in this order), `stored` (id, hint = last 4 characters), `total`, `available`, `needs_key`, `key_optional` |
 | `POST /api/keys` | add a key: `{"provider","key"}`; the full key is never returned |
 | `DELETE /api/keys/{provider}/{id}` | delete a stored key |
@@ -67,7 +71,7 @@ The field `type`; the other fields depend on it (empty ones are not sent).
 | `thinking` | `text` | a piece of the model's reasoning (not part of the answer); only when `show_thoughts` is on |
 | `notice` | `text`, `kind` | service message: `fallback`, `rate_limit`, `key_switch`, `no_key`, `info` |
 | `tool_call` | `tool`, `call_id`, `args`, `desc` | the agent calls a tool |
-| `approval` | `tool`, `call_id`, `args`, `desc` | waits for a decision; `call_id` is the id for `/api/approvals/{id}` |
+| `approval` | `tool`, `call_id`, `args`, `desc` | waits for a decision; `call_id` is the id for `/api/approvals/{id}`. `tool` = `switch_model` asks whether Relay may move to another model after the chosen one failed (`allow` = switch and keep the new model, `always` = do not ask again in this session, `deny` = end the request with the error) |
 | `tool_result` | `tool`, `result`, `is_error` | the result of a tool |
 | `usage` | `model`, `in`, `out`, `cost` | usage (USD at the prices of the configuration); also added to the totals of the session |
 | `error` | `text`, `kind` | `rate_limit`, `no_key` (the provider has no key), `provider`, `internal` |

@@ -29,6 +29,7 @@ type Client struct {
 	Spawned bool
 
 	short  *http.Client
+	long   *http.Client // for requests that wait for a server to start (an npx package may download first)
 	stream *http.Client
 }
 
@@ -37,6 +38,7 @@ func newClient(info proto.DaemonInfo) *Client {
 		Base:   "http://" + info.Addr,
 		Token:  info.Token,
 		short:  &http.Client{Timeout: 20 * time.Second},
+		long:   &http.Client{Timeout: 150 * time.Second},
 		stream: &http.Client{},
 	}
 }
@@ -164,11 +166,15 @@ func apiError(resp *http.Response) error {
 }
 
 func (c *Client) do(method, path string, body, out any) error {
+	return c.doWith(c.short, method, path, body, out)
+}
+
+func (c *Client) doWith(hc *http.Client, method, path string, body, out any) error {
 	req, err := c.newReq(context.Background(), method, path, body)
 	if err != nil {
 		return err
 	}
-	resp, err := c.short.Do(req)
+	resp, err := hc.Do(req)
 	if err != nil {
 		return err
 	}
@@ -308,4 +314,23 @@ func (c *Client) SaveAppSettings(s settings.Settings) (settings.Settings, error)
 // Shutdown просит бэкенд завершиться (останавливает и управляемые процессы).
 func (c *Client) Shutdown() {
 	_ = c.do("POST", "/api/shutdown", nil, nil)
+}
+
+// MCP lists the MCP servers with their state and tools.
+func (c *Client) MCP() (*proto.MCPResp, error) {
+	var r proto.MCPResp
+	if err := c.do("GET", "/api/mcp", nil, &r); err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
+// MCPAction is connect, disconnect, reconnect or trust. It waits until the server answers
+// (or fails), so it can take a while.
+func (c *Client) MCPAction(id, action string) (*proto.MCPResp, error) {
+	var r proto.MCPResp
+	if err := c.doWith(c.long, "POST", "/api/mcp/"+id+"/"+action, nil, &r); err != nil {
+		return nil, err
+	}
+	return &r, nil
 }

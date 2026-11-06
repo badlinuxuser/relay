@@ -9,7 +9,7 @@ import (
 	"relay/internal/settings"
 )
 
-const Version = "0.7.0"
+const Version = "0.8.0"
 
 // Event это одно событие потока выполнения (SSE: "data: <json>").
 //
@@ -80,6 +80,8 @@ type SettingsReq struct {
 	Model  *string `json:"model,omitempty"`
 	Preset *string `json:"preset,omitempty"`
 	Agent  *bool   `json:"agent,omitempty"`
+	// Workspace: the folder the agent works in (a resumed session moves to the current one).
+	Workspace *string `json:"workspace,omitempty"`
 }
 
 type SendReq struct {
@@ -228,7 +230,63 @@ type StatusResp struct {
 	Settings    settings.Settings     `json:"settings"`
 	Usage       map[string]UsageEntry `json:"usage"`
 	Presets     []string              `json:"presets"`
-	MCP         []string              `json:"mcp"`
+	MCP         []string              `json:"mcp"` // names of the connected MCP servers
+	// The extensions (see GET /api/mcp and /api/skills for the full lists, with tools).
+	MCPServers []MCPServerInfo `json:"mcp_servers"`
+	MCPError   string          `json:"mcp_error,omitempty"` // a problem in mcp.json that is being ignored
+	Skills     []SkillInfo     `json:"skills"`
+}
+
+type MCPToolInfo struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Disabled    bool   `json:"disabled,omitempty"`
+}
+
+// MCPServerInfo describes one MCP server of mcp.json. State is one of configured,
+// connecting, connected, auth_required, disconnected, error.
+type MCPServerInfo struct {
+	ID        string        `json:"id"`
+	Name      string        `json:"name"`
+	Type      string        `json:"type"` // stdio | http
+	Target    string        `json:"target"` // the command line or the url
+	Source    string        `json:"source"` // mcp.json | config.toml
+	State     string        `json:"state"`
+	Error     string        `json:"error,omitempty"`
+	Warning   string        `json:"warning,omitempty"`
+	Trusted   bool          `json:"trusted"` // stdio: the user approved this command
+	Disabled  bool          `json:"disabled,omitempty"`
+	ToolCount int           `json:"tool_count"`
+	Tools     []MCPToolInfo `json:"tools,omitempty"`
+}
+
+// MCPResp is the answer of GET /api/mcp and POST /api/mcp/{id}/{action}.
+type MCPResp struct {
+	Servers []MCPServerInfo `json:"servers"`
+	Error   string          `json:"error,omitempty"`
+	Path    string          `json:"path"`
+}
+
+type SkillInfo struct {
+	Name          string            `json:"name"`
+	Description   string            `json:"description"`
+	License       string            `json:"license,omitempty"`
+	Compatibility string            `json:"compatibility,omitempty"`
+	Metadata      map[string]string `json:"metadata,omitempty"`
+	Path          string            `json:"path"`
+	Enabled       bool              `json:"enabled"`
+}
+
+type SkillProblem struct {
+	Dir   string `json:"dir"`
+	Error string `json:"error"`
+}
+
+// SkillsResp is the answer of GET /api/skills and POST /api/skills/{name}/{enable|disable}.
+type SkillsResp struct {
+	Skills   []SkillInfo    `json:"skills"`
+	Problems []SkillProblem `json:"problems,omitempty"`
+	Dir      string         `json:"dir"`
 }
 
 // SessionsResp is the answer of GET /api/sessions/manage: sessions with their size, for the /settings page.

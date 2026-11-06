@@ -79,9 +79,14 @@ func (k *Keys) Available() int {
 	return n
 }
 
-// Get возвращает ключ. Для локального провайдера без ключей возвращает пустую
-// строку и ok = true. Пока ключ не упёрся в лимит, используется один и тот же.
-func (k *Keys) Get() (string, bool) {
+// Get returns a key for a request that is not tied to a model (see GetFor).
+func (k *Keys) Get() (string, bool) { return k.GetFor("") }
+
+// GetFor возвращает ключ для запроса к модели. Для локального провайдера без ключей
+// возвращает пустую строку и ok = true. Пока ключ не упёрся в лимит, используется один и
+// тот же. Ключ, который отдыхает целиком (нет кредита) или только для этой модели
+// (лимит запросов), пропускается.
+func (k *Keys) GetFor(model string) (string, bool) {
 	list := k.list()
 	if len(list) == 0 {
 		return "", !k.needsKey
@@ -98,13 +103,20 @@ func (k *Keys) Get() (string, bool) {
 	now := time.Now()
 	for off := 0; off < len(list); off++ {
 		v := list[(start+off)%len(list)]
-		if !now.Before(k.until[v]) {
-			k.last = v
-			return v, true
+		if now.Before(k.until[v]) {
+			continue
 		}
+		if model != "" && now.Before(k.until[modelKey(v, model)]) {
+			continue
+		}
+		k.last = v
+		return v, true
 	}
 	return "", false
 }
+
+// modelKey names the pause of one key for one model.
+func modelKey(key, model string) string { return key + "\x00" + model }
 
 // All returns every key (saved ones first, then from environment variables),
 // including those resting after a rate limit. Used for requests that are not
@@ -112,6 +124,12 @@ func (k *Keys) Get() (string, bool) {
 func (k *Keys) All() []string { return k.list() }
 
 func (k *Keys) Cooldown(key string) { k.restFor(key, keyCooldown) }
+
+// restModel pauses a key for one model only: a rate limit is normally counted per model,
+// so the key still works for the provider's other models.
+func (k *Keys) restModel(key, model string, d time.Duration) {
+	k.restFor(modelKey(key, model), d)
+}
 
 func (k *Keys) restFor(key string, d time.Duration) {
 	k.mu.Lock()
@@ -122,11 +140,18 @@ func (k *Keys) restFor(key string, d time.Duration) {
 // Exhausted: the provider has keys, but none can be used right now.
 func (k *Keys) Exhausted() bool { return k.Count() > 0 && k.Available() == 0 }
 
-// DoWithKeys выполняет attempt с ключом; при лимите переключается на следующий.
+// DoWithKeys is DoWithKeysFor for a request that is not tied to a model.
 func DoWithKeys(k *Keys, name string, emit func(Event) error, attempt func(key string) error) error {
+	return DoWithKeysFor(k, name, "", emit, attempt)
+}
+
+// DoWithKeysFor выполняет attempt с ключом; при лимите переключается на следующий ключ.
+// Лимит запросов ставит на паузу ключ только для этой модели, нехватка кредита (и неверный
+// ключ) для всех моделей провайдера.
+func DoWithKeysFor(k *Keys, name, model string, emit func(Event) error, attempt func(key string) error) error {
 	tried := 0
 	for {
-		key, ok := k.Get()
+		key, ok := k.GetFor(model)
 		if !ok {
 			if k.Count() == 0 {
 				return &Error{Provider: name, NoKey: true, Retryable: true,
@@ -138,9 +163,12 @@ func DoWithKeys(k *Keys, name string, emit func(Event) error, attempt func(key s
 		err := attempt(key)
 		var pe *Error
 		if err != nil && errors.As(err, &pe) && (pe.RateLimited || pe.Billing) {
-			if pe.Billing {
+			switch {
+			case pe.Billing:
 				k.restFor(key, billingCooldown)
-			} else {
+			case model != "":
+				k.restModel(key, model, keyCooldown)
+			default:
 				k.Cooldown(key)
 			}
 			tried++

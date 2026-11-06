@@ -74,6 +74,21 @@ func cmdStatus() int {
 			fmt.Printf("  %-12s %s\n", p.Name, state)
 		}
 	}
+	if len(st.MCPServers) > 0 {
+		fmt.Println("\nMCP servers (relay mcp list):")
+		for _, s := range st.MCPServers {
+			fmt.Printf("  %-14s %-14s %s\n", s.ID, s.State, oneLine(s.Target, 50))
+		}
+	}
+	if len(st.Skills) > 0 {
+		on := 0
+		for _, s := range st.Skills {
+			if s.Enabled {
+				on++
+			}
+		}
+		fmt.Printf("\nSkills: %d installed, %d on (relay skill list)\n", len(st.Skills), on)
+	}
 	printUsage(st.Usage)
 	return 0
 }

@@ -27,7 +27,7 @@ var ErrAlready = errors.New("already running")
 // letting it exit with an obscure message.
 func lacksModel(c config.Process, args []string) bool {
 	base := strings.TrimSuffix(strings.ToLower(filepath.Base(strings.ReplaceAll(c.Command, "\\", "/"))), ".exe")
-	if base != "llama-server" && base != "llama-cpp-server" {
+	if !strings.Contains(base, "llama") || !strings.Contains(base, "server") {
 		return false
 	}
 	for _, a := range args {
@@ -101,14 +101,20 @@ func (p *Proc) Start(extra []string) error {
 	}
 	args := append(append([]string(nil), p.cfg.Args...), extra...)
 	if lacksModel(p.cfg, args) {
-		return fmt.Errorf("%s needs a model: type /%s <path to a .gguf file>, or add \"-m\", \"<path>\" to args of [[processes]] %s in config.toml", p.cfg.Name, p.cfg.Name, p.cfg.Name)
+		return fmt.Errorf("%s needs a model: type /%s <path to a .gguf file> or <org/repo> (Hugging Face), or add \"-m\", \"<path>\" to args of [[processes]] %s in config.toml", p.cfg.Name, p.cfg.Name, p.cfg.Name)
 	}
 	p.mu.Lock()
 	if p.state == "starting" || p.state == "ready" {
 		p.mu.Unlock()
 		return ErrAlready
 	}
-	cmd := exec.Command(p.cfg.Command, args...)
+	command, found := resolveCommand(p.cfg.Name, p.cfg.Command)
+	if !found && p.cfg.Name == "llamacpp" {
+		p.state, p.errMsg = "failed", "llama.cpp server not found"
+		p.mu.Unlock()
+		return fmt.Errorf("llama.cpp server was not found in PATH (tried %s). Install llama.cpp, or set command = \"/full/path/to/llama-server\" in [[processes]] llamacpp of config.toml", strings.Join(llamaNames[:5], ", "))
+	}
+	cmd := exec.Command(command, args...)
 	if p.cfg.Dir != "" {
 		cmd.Dir = p.cfg.Dir
 	}

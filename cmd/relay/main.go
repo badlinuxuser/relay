@@ -21,6 +21,8 @@ Usage:
   relay                     start the interface (the backend starts by itself)
   relay keys                open the API keys page in your browser
   relay status              backend status: providers, keys, processes, usage
+  relay mcp ...             MCP servers: list, add, remove, test, trust, connect (relay mcp help)
+  relay skill ...           skills: list, add, remove, info, validate (relay skill help)
   relay stop                stop the background backend
   relay daemon              run the backend in this terminal
   relay install [--dir D]   install to PATH (Linux: ~/.local/bin, Windows: %LOCALAPPDATA%\Programs\relay)
@@ -55,6 +57,10 @@ func dispatch(cmd string, args []string) int {
 		return cmdKeys()
 	case "status":
 		return cmdStatus()
+	case "mcp":
+		return cmdMCP(args)
+	case "skill", "skills":
+		return cmdSkill(args)
 	case "stop":
 		return cmdStop()
 	case "install":

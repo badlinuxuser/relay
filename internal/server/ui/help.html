@@ -246,17 +246,20 @@ footer{grid-column:1/-1;color:var(--dim);font-size:13px;border-top:1px solid var
 <tr><td><code>write_file</code></td><td>Create or overwrite a file.</td><td><b>yes</b></td></tr>
 <tr><td><code>edit_file</code></td><td>Replace part of a file.</td><td><b>yes</b></td></tr>
 <tr><td><code>run_shell</code></td><td>Run a shell command.</td><td><b>yes</b></td></tr>
-<tr><td>MCP tools</td><td>Tools of MCP servers from the config.</td><td><b>yes</b></td></tr>
+<tr><td>MCP tools, skills</td><td>Tools of your MCP servers, and the skills you installed.</td><td><b>yes</b></td></tr>
 </table></div>
 <p>When approval is needed, a list opens above the input line showing what is about to happen, with three buttons: <b>Allow once</b>, <b>Always allow</b> (this tool, until the session ends) and <b>Deny</b>. Click one, or use <kbd>↑</kbd> <kbd>↓</kbd> and <kbd>enter</kbd>, or press <kbd>y</kbd> / <kbd>a</kbd> / <kbd>n</kbd> (<kbd>esc</kbd> denies).</p>
 <p>The number of steps for one request is limited by the mode (10 in small, up to 40 in maximum). When the limit is reached, send another message to continue.</p>
 <p>Agent mode needs a model that supports tool calls. In automatic mode Relay skips models marked without tools; if you pick a model yourself and it cannot use tools, the provider will say so.</p>
 <h3>MCP servers</h3>
-<p>Add a <code>[[mcp]]</code> entry to <code>config.toml</code> and its tools become available to the agent:</p>
-<pre><code>[[mcp]]
-name = "fs"
-command = "npx"
-args = ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/dir"]</code></pre>
+<p>An MCP server gives the agent new tools: files, a browser, a database, your own program. Add one in a terminal:</p>
+<pre><code>relay mcp add files --command npx -- -y @modelcontextprotocol/server-filesystem /path/to/dir
+relay mcp add docs --url https://example.com/mcp
+relay mcp list
+relay mcp test files</code></pre>
+<p>Servers are kept in <code>mcp.json</code> in the Relay config folder. You can edit it by hand; Relay notices the change without a restart. A local server is a program that Relay runs for you, so it starts only after you approved that exact command (<code>relay mcp add</code> asks; for an entry you wrote by hand run <code>relay mcp trust &lt;id&gt;</code>). It does not get the API keys of Relay: list what it needs in <code>"env"</code>, and write <code>${NAME}</code> to take a value from your own environment. Every tool call still asks first; switch single tools off with <code>"disabled_tools"</code>. The old <code>[[mcp]]</code> entries of <code>config.toml</code> keep working.</p>
+<h3>Skills</h3>
+<p>A skill is a folder with a <code>SKILL.md</code> (the open Agent Skills format) that teaches the agent one kind of task. <code>relay skill add ./my-skill</code> installs one, or just copy the folder into the <code>skills</code> folder. The agent sees the names and descriptions and loads a skill only when the task matches. Scripts inside a skill are never run automatically. <code>/skills</code> and <code>/mcp</code> show what is installed.</p>
 </section>
 
 <section id="compare">
@@ -271,7 +274,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/dir"]</code><
 <h3>Settings page: /settings</h3>
 <p><code>/settings</code> opens a page where you can turn the model's thoughts on or off (they are shown dimmed, apart from the answer; when off they are not sent at all), choose the typing speed, hide the side panel or the mascot, limit the text width, switch the mouse off, set the default mode, and on the <b>Sessions</b> tab see and delete saved sessions. Autostart, the model file of llama.cpp and start/stop buttons for Ollama and llama.cpp are on the keys page (<code>/keys</code>), on their own cards. Shortcuts: <code>/thoughts on|off</code>, <code>/mouse on|off</code>.</p>
 <h3>Copying text</h3>
-<p>Press <kbd>f2</kbd> (or type <code>/select</code>) for <b>select mode</b>: the screen stops changing and the mouse goes back to the terminal, so you can select and copy as in any terminal. Press any key to leave. (A terminal cannot tell an application that <kbd>shift</kbd> alone is pressed, so it cannot be the trigger.) <code>/copy</code> puts the last answer on the clipboard without selecting. <code>/mouse off</code> turns the mouse capture off for good (then scroll with <kbd>pgup</kbd>/<kbd>pgdn</kbd>).</p>
+<p>Press <kbd>f2</kbd> (or type <code>/select</code>) for <b>select mode</b>: the screen stops changing, the side panel is hidden and the mouse goes back to the terminal, so you can select and copy the chat as in any terminal. Press any key to leave. (A terminal cannot tell an application that <kbd>shift</kbd> alone is pressed, so it cannot be the trigger.) <code>/copy</code> puts the last answer on the clipboard without selecting. <code>/mouse off</code> turns the mouse capture off for good (then scroll with <kbd>pgup</kbd>/<kbd>pgdn</kbd>).</p>
 <h3>The side panel: processes</h3>
 <p>The <b>processes</b> block lists the local servers that are running right now (Ollama, llama.cpp, LM Studio, ...), also ones you started yourself. When there are none it says <code>Nothing running :)</code>.</p>
 <h3>Mouse</h3>

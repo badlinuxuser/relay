@@ -43,6 +43,9 @@ func (m *model) approvalKey(key string) string {
 }
 
 func approvalLabel(i int, tool string) string {
+	if tool == "switch_model" { // the router asks before it moves to another model
+		return [...]string{"Switch to the other model", "Switch, and do not ask again in this session", "Do not switch (show the error)"}[i]
+	}
 	switch i {
 	case 0:
 		return "Allow once"

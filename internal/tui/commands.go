@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -12,6 +11,7 @@ import (
 	"relay/internal/browser"
 	"relay/internal/client"
 	"relay/internal/proto"
+	"relay/internal/runner"
 	"relay/internal/settings"
 )
 
@@ -19,7 +19,7 @@ import (
 const helpText = `Relay help is a web page: run /help to open it, or open <backend address>/ui/help.
 Quick reference: /models pick a model · /mode small|medium|hard|maximum · /agent on|off · /keys API keys
 /preset <name>|none · /compare <model> <model> <text> · /new · /sessions · /load <id> · /clear · /quit
-Servers: /ollama · /llamacpp <model.gguf> · /stop (pick what to stop)
+Servers: /ollama · /llamacpp <model.gguf | org/repo> · /stop (pick what to stop)
 Settings: /settings (page) · /thoughts on|off · /mouse on|off · f2 or /select (select and copy text) · /copy (last answer)
 Keys: ctrl+t mode · ctrl+a agent · ctrl+n new session · esc stop · pgup/pgdn or shift+↑↓ or mouse wheel scroll · ctrl+c quit`
 
@@ -72,7 +72,7 @@ func sessionsCmd(cl *client.Client) tea.Cmd {
 	}
 }
 
-func loadCmd(cl *client.Client, query string) tea.Cmd {
+func loadCmd(cl *client.Client, query, cwd string) tea.Cmd {
 	return func() tea.Msg {
 		list, err := cl.Sessions()
 		if err != nil {
@@ -83,6 +83,13 @@ func loadCmd(cl *client.Client, query string) tea.Cmd {
 				si, err := cl.GetSession(s.ID)
 				if err != nil {
 					return errMsg{err}
+				}
+				// the agent works where Relay was started, not where the session once was
+				if cwd != "" && si.Workspace != cwd {
+					if moved, err := cl.Settings(si.ID, proto.SettingsReq{Workspace: &cwd}); err == nil {
+						moved.Messages = si.Messages
+						return sessionMsg{sess: moved, reset: true, note: "Session moved to this folder: " + shortPath(cwd)}
+					}
 				}
 				return sessionMsg{sess: si, reset: true}
 			}
@@ -122,20 +129,6 @@ func (m model) isProcess(name string) bool {
 	return false
 }
 
-// unquote removes quotes around a path pasted with spaces and expands ~.
-func unquote(s string) string {
-	s = strings.TrimSpace(s)
-	if len(s) >= 2 && (s[0] == '"' || s[0] == '\'') && s[len(s)-1] == s[0] {
-		s = s[1 : len(s)-1]
-	}
-	if s == "~" || strings.HasPrefix(s, "~/") || strings.HasPrefix(s, "~\\") {
-		if home, err := os.UserHomeDir(); err == nil {
-			s = home + s[1:]
-		}
-	}
-	return s
-}
-
 // processArgs turns the text after /<name> into extra arguments. llama.cpp takes a
 // model file (the path may contain spaces); other servers take plain arguments.
 func processArgs(name, rest string) []string {
@@ -143,8 +136,8 @@ func processArgs(name, rest string) []string {
 	if rest == "" {
 		return nil
 	}
-	if name == "llamacpp" && !strings.HasPrefix(rest, "-") {
-		return []string{"-m", unquote(rest)}
+	if name == "llamacpp" {
+		return runner.ModelArgs(rest)
 	}
 	return strings.Fields(rest)
 }
@@ -353,7 +346,7 @@ func (m model) command(line string) (tea.Model, tea.Cmd) {
 		if !needConn() || len(args) != 1 {
 			return m, nil
 		}
-		return m, loadCmd(m.cl, args[0])
+		return m, loadCmd(m.cl, args[0], m.cwd)
 
 	case "/stop":
 		if !needConn() {
@@ -363,6 +356,18 @@ func (m model) command(line string) (tea.Model, tea.Cmd) {
 			return m, stopListCmd(m)
 		}
 		return m, procCmd(m.cl, args[0], "stop")
+
+	case "/mcp":
+		for _, l := range mcpLines(m.status) {
+			m.addNotice(l)
+		}
+		return m, nil
+
+	case "/skills":
+		for _, l := range skillsLines(m.status) {
+			m.addNotice(l)
+		}
+		return m, nil
 
 	case "/start":
 		m.addNotice("/start is gone: use /ollama or /llamacpp <model.gguf>")

@@ -2,14 +2,17 @@ package router
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"relay/internal/catalog"
 	"relay/internal/config"
+	"relay/internal/provider"
 	"relay/internal/usage"
 )
 
@@ -107,5 +110,159 @@ func TestStreamFindsModelByProviderSlashName(t *testing.T) {
 	}
 	if _, _, err := rt.Resolve("small", "nope/x", false, Hint{}); err == nil {
 		t.Fatal("unknown provider must be an error")
+	}
+}
+
+func TestStreamAskBeforeSwitchingModels(t *testing.T) {
+	good := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		if strings.Contains(string(body), `"model":"bad"`) {
+			http.Error(w, `{"error":{"message":"boom"}}`, 500)
+			return
+		}
+		good++
+		w.Header().Set("Content-Type", "text/event-stream")
+		io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")
+	}))
+	t.Cleanup(srv.Close)
+	cfg := &config.Config{
+		Providers: []config.Provider{{Name: "p", Kind: "openai", BaseURL: srv.URL + "/v1"}},
+		Models: []config.Model{
+			{ID: "bad-model", Provider: "p", Name: "bad", Tools: true},
+			{ID: "good-model", Provider: "p", Name: "good", Tools: true},
+		},
+		Modes: map[string]config.Mode{"small": {Models: []string{"bad-model", "good-model"}}},
+	}
+	r := New(cfg, usage.Load(filepath.Join(t.TempDir(), "usage.json")), keysrc{})
+	chain := []string{"bad-model", "good-model"}
+	emit := func(provider.Event) error { return nil }
+
+	var asked []string
+	id, err := r.StreamAsk(context.Background(), chain, provider.Request{}, emit,
+		func(failed, next, why string) string { asked = append(asked, failed+">"+next); return "deny" })
+	if err == nil || id != "bad-model" || len(asked) != 1 || asked[0] != "bad-model>good-model" || good != 0 {
+		t.Fatalf("refusal: id=%q err=%v asked=%v good=%d", id, err, asked, good)
+	}
+	id, err = r.StreamAsk(context.Background(), chain, provider.Request{}, emit,
+		func(string, string, string) string { return "allow" })
+	if err != nil || id != "good-model" || good != 1 {
+		t.Fatalf("consent: id=%q err=%v good=%d", id, err, good)
+	}
+}
+
+// providerServer answers "good" and "other" and fails (500) for models whose name starts with "bad".
+func providerServer(t *testing.T) (*httptest.Server, func(string) int) {
+	t.Helper()
+	var mu sync.Mutex
+	hits := map[string]int{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		name := ""
+		for _, n := range []string{"bad1", "bad2", "good", "other"} {
+			if strings.Contains(string(body), `"model":"`+n+`"`) {
+				name = n
+			}
+		}
+		mu.Lock()
+		hits[name]++
+		mu.Unlock()
+		if strings.HasPrefix(name, "bad") {
+			http.Error(w, `{"error":{"message":"boom"}}`, 500)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")
+	}))
+	t.Cleanup(srv.Close)
+	return srv, func(n string) int { mu.Lock(); defer mu.Unlock(); return hits[n] }
+}
+
+func twoProviders(t *testing.T, srv *httptest.Server) *Router {
+	cfg := &config.Config{
+		Providers: []config.Provider{
+			{Name: "p", Kind: "openai", BaseURL: srv.URL + "/v1"},
+			{Name: "q", Kind: "openai", BaseURL: srv.URL + "/v1"},
+		},
+		Models: []config.Model{
+			{ID: "bad1-m", Provider: "p", Name: "bad1", Tools: true},
+			{ID: "other-m", Provider: "q", Name: "other", Tools: true},
+			{ID: "bad2-m", Provider: "p", Name: "bad2", Tools: true},
+			{ID: "good-m", Provider: "p", Name: "good", Tools: true},
+		},
+		Modes: map[string]config.Mode{"small": {Models: []string{"bad1-m", "other-m"}}},
+	}
+	return New(cfg, usage.Load(filepath.Join(t.TempDir(), "usage.json")), keysrc{})
+}
+
+func TestStreamAskOffersModelsOfTheSameProviderOnly(t *testing.T) {
+	srv, hits := providerServer(t)
+	r := twoProviders(t, srv)
+	emit := func(provider.Event) error { return nil }
+	var asked []string
+	// the chain puts another provider's model second: it must not be offered
+	id, err := r.StreamAsk(context.Background(), []string{"bad1-m", "other-m"}, provider.Request{}, emit,
+		func(failed, next, why string) string { asked = append(asked, failed+">"+next); return "allow" })
+	if err != nil || id != "good-m" {
+		t.Fatalf("id=%q err=%v", id, err)
+	}
+	if len(asked) != 2 || asked[0] != "bad1-m>bad2-m" || asked[1] != "bad2-m>good-m" {
+		t.Fatalf("asked=%v", asked)
+	}
+	if hits("other") != 0 {
+		t.Fatal("a model of another provider was used")
+	}
+}
+
+func TestStreamAskDenyShowsTheModelsOwnError(t *testing.T) {
+	srv, hits := providerServer(t)
+	r := twoProviders(t, srv)
+	emit := func(provider.Event) error { return nil }
+	id, err := r.StreamAsk(context.Background(), []string{"bad1-m", "other-m"}, provider.Request{}, emit,
+		func(string, string, string) string { return "deny" })
+	if id != "bad1-m" || err == nil || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("id=%q err=%v", id, err)
+	}
+	if hits("bad2") != 0 || hits("good") != 0 {
+		t.Fatal("no other model must be tried after a refusal")
+	}
+}
+
+func TestStreamAskAlwaysAsksOnlyOnce(t *testing.T) {
+	srv, _ := providerServer(t)
+	r := twoProviders(t, srv)
+	emit := func(provider.Event) error { return nil }
+	calls := 0
+	id, err := r.StreamAsk(context.Background(), []string{"bad1-m"}, provider.Request{}, emit,
+		func(string, string, string) string { calls++; return "always" })
+	if err != nil || id != "good-m" || calls != 1 {
+		t.Fatalf("id=%q err=%v asked=%d", id, err, calls)
+	}
+}
+
+func TestStreamAskWholeProviderFailing(t *testing.T) {
+	srv, hits := providerServer(t)
+	r := twoProviders(t, srv)
+	r.cfg.Models = []config.Model{ // p has only failing models; q has a good one
+		{ID: "bad1-m", Provider: "p", Name: "bad1", Tools: true},
+		{ID: "bad2-m", Provider: "p", Name: "bad2", Tools: true},
+		{ID: "other-m", Provider: "q", Name: "other", Tools: true},
+	}
+	emit := func(provider.Event) error { return nil }
+	id, err := r.StreamAsk(context.Background(), []string{"bad1-m", "other-m"}, provider.Request{}, emit, nil)
+	if id != "" || err == nil || !strings.Contains(err.Error(), "none of the models of p") || !strings.Contains(err.Error(), "pick another model") {
+		t.Fatalf("id=%q err=%v", id, err)
+	}
+	if hits("bad1") != 1 || hits("bad2") != 1 || hits("other") != 0 {
+		t.Fatalf("hits: bad1=%d bad2=%d other=%d", hits("bad1"), hits("bad2"), hits("other"))
+	}
+}
+
+func TestAdviceMentionsKeysForRemoteProviders(t *testing.T) {
+	if !strings.Contains(advice(false), "/keys") {
+		t.Fatal("a remote provider: point to /keys")
+	}
+	if strings.Contains(advice(true), "/keys") {
+		t.Fatal("a local server has no keys")
 	}
 }

@@ -156,7 +156,7 @@ footer{margin-top:26px;color:var(--dim);font-size:13px}
     sw.appendChild(cb); sw.appendChild(el('i')); r1.appendChild(sw); box.appendChild(r1);
     var r2 = el('div','lrow'); r2.appendChild(el('span','lab', p.name==='llamacpp' ? 'model' : 'arguments'));
     var arg = el('input','arg'); arg.type='text'; arg.spellcheck=false;
-    arg.placeholder = p.name==='llamacpp' ? '-m /path/to/model.gguf  (or -hf org/repo)' : 'extra arguments (optional)';
+    arg.placeholder = p.name==='llamacpp' ? 'path to a .gguf file, or org/repo from Hugging Face' : 'extra arguments (optional)';
     arg.value = (appSettings.process_args||{})[p.name] || '';
     arg.onchange=function(){ appSettings.process_args[p.name]=arg.value.trim(); saveApp(); };
     r2.appendChild(arg); box.appendChild(r2);

@@ -177,7 +177,7 @@ func (m *model) chooseOverlay() tea.Cmd {
 	it := o.items[o.sel]
 	switch o.kind {
 	case ovSessions:
-		return loadCmd(m.cl, it.id)
+		return loadCmd(m.cl, it.id, m.cwd)
 	case ovStop:
 		return procCmd(m.cl, it.id, "stop")
 	}

@@ -134,6 +134,7 @@ type statusMsg struct{ st *proto.StatusResp }
 type sessionMsg struct {
 	sess  *proto.SessionInfo
 	reset bool
+	note  string
 }
 type sessionsMsg struct{ list []proto.SessionInfo }
 type evMsg proto.Event
@@ -209,6 +210,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if miss := missingKeys(msg.status); len(miss) > 0 {
 			m.addNotice("No API keys for: " + strings.Join(miss, ", ") + ". Run /keys to open a page where you can add them (keys are saved).")
 		}
+		for _, h := range mcpHints(msg.status) {
+			m.addNotice(h)
+		}
 		m.mc.react("joy", 2500*time.Millisecond, "Relay is here.")
 		m.catBusy = true // look for models (Ollama, Gemini, ...) in the background
 		return m, catalogCmd(msg.cl, false)
@@ -262,6 +266,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.reset {
 			m.entries = entriesFromSession(msg.sess)
 			m.scroll = 0
+		}
+		if msg.note != "" {
+			m.addNotice(msg.note)
 		}
 		// tokens and cost belong to the session: show the ones of the session that is open
 		m.totIn, m.totOut, m.totCost, m.ctxTokens = msg.sess.TokensIn, msg.sess.TokensOut, msg.sess.Cost, msg.sess.Context
@@ -711,4 +718,12 @@ func (m *model) reportFailed(st *proto.StatusResp) {
 		}
 		m.addError(p.Name + " did not start: " + shorten(why, 200))
 	}
+}
+
+// folder is where the agent works: the folder of the open session.
+func (m model) folder() string {
+	if m.sess != nil && m.sess.Workspace != "" {
+		return m.sess.Workspace
+	}
+	return m.cwd
 }

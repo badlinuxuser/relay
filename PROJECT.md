@@ -79,10 +79,12 @@ mapped in `internal/tui/model.go` (`handleEvent`):
 - `internal/proto`: all DTOs and events of the protocol (the single source of truth for client and server).
 - `internal/config`: TOML loading, validation, `example.toml` (embedded, created on first run).
 - `internal/provider`: `Client` (`Stream` with a callback), `Keys` (keys from the store and env, rotation, rest after a limit or missing credit), `OpenAI`, `Anthropic`, `thinking.go` (splits reasoning from text), classification of errors (`RateLimited`, `Billing`, `Auth`, `NoKey`).
-- `internal/router`: `Resolve` (model chain by mode and hint, skips providers without keys or credit), `Stream` (fallback only while a model has produced nothing), usage accounting.
+- `internal/router`: `Resolve` (model chain by mode and hint, skips providers without keys or credit), `StreamAsk` (the agent and chat: when a model fails, the next untried model of the SAME provider is offered: models of the config first, then those the catalog lists; max 8 tries; provider-wide errors (no key, bad key, no credit) stop at once; after all of them failed the error says so and points to `/keys`), `Stream` (gateway/compare: silent fallback along the mode chain, across providers), `attempt` (one model), usage accounting. A rate limit pauses a key for that model only (`Keys.GetFor`, `DoWithKeysFor`); no credit pauses the whole key.
 - `internal/agent`: the step loop, approvals, limit on tool output, per-session token and cost accounting.
 - `internal/tools`: `read_file`, `list_dir`, `grep`, `write_file`, `edit_file`, `run_shell`, `web_fetch`, MCP adapter. Paths are limited to the workspace (symlinks are not resolved: a known gap).
-- `internal/mcp`: MCP client over stdio (initialize, tools/list, tools/call).
+- `internal/mcp`: `config.go` (mcp.json: `File`/`ServerConfig`, `Parse` rejects the whole file on one bad entry, `Fingerprint`, safe `buildEnv`), `trust.go` (approvals of stdio commands in `mcp-trust.json`), `rpc.go` (JSON-RPC, `Transport`, `AuthError`), `stdio.go` (own process group, stderr tail), `http.go` (Streamable HTTP: JSON or SSE answers, `Mcp-Session-Id`, no redirects), `client.go` (handshake, tools, calls), `manager.go` (`Manager`: states, reload with the last good config, lazy reconnect, `Dial`).
+- `internal/skills`: `frontmatter.go` (the small YAML subset, no dependency), `skill.go` (`Parse`/`ParseAs`, Agent Skills validation), `manager.go` (list, enable/disable in `skills.json`, `Prompt`, `readInside` that keeps paths in the skill folder), `install.go` (`Install`/`Remove`).
+- `internal/watch`: polling watcher (`Poll`, `FileSig`, `DirSig`) for mcp.json, the approvals and skills/.
 - `internal/runner`: process launcher, URL ready probe, stop (Interrupt, then Kill), attaches to servers that already run.
 - `internal/session`: session storage (messages, tokens, cost), `Run` mutex (one request per session), `AutoTools` ("always" for the session), delete.
 - `internal/server`: routes (Go 1.22 ServeMux with methods), SSE, approvals, compare, the `/v1` gateway, the keys API and page `ui/keys.html`, the help page `ui/help.html`, the settings API and page `ui/settings.html`, Host check.
@@ -102,7 +104,13 @@ mapped in `internal/tui/model.go` (`handleEvent`):
 
 ## Status
 
-**v0.7 (later changes).** Select mode (`f2`, `/select`; a terminal cannot report Shift alone, and in-app drag-copy was tried and dropped): the screen is frozen (no ticks, no cursor blink, animations drawn as of the freeze moment) and the mouse goes back to the terminal, so a selection is not dropped; the settings page bug where every second change was lost (the controls held a stale settings object) is fixed; launcher settings of Ollama and llama.cpp (autostart, arguments, start/stop) moved to their cards on the keys page; sessions are a separate tab of the settings page; the interface polls status every ~2.4 s.
+**v0.8 (extensions, uncompiled).** Written without a Go toolchain: `go mod tidy && go vet ./... && go test ./...` has NOT been run, expect a few compile errors to fix first. Done from the extensions roadmap (Phases 1, 2 and the file-based part of 4): `mcp.json` (+ `mcpServers` alias, old `[[mcp]]` still works with the full environment), stdio and Streamable HTTP, `Manager` with the six states, hot reload (polling, not fsnotify: no new dependencies), approvals for stdio commands by fingerprint (`relay mcp trust`), safe environment with `${VAR}` expansion, `disabled_tools`, Skills (Agent Skills, progressive disclosure through `load_skill` / `read_skill_file`, list in the agent system prompt, hot reload, enable/disable), `relay mcp ...` and `relay skill ...`, `GET /api/mcp`, `/api/skills`, an "extensions" block in the side panel, `/mcp`, `/skills`. Fallback reworked (see `internal/router` above); the agent keeps the model it switched to for the rest of the request.
+
+Decisions of this step: the official MCP SDK was NOT used (no network to fetch it, and its API could not be checked); the transports sit behind `mcp.Transport`, so the SDK can replace them. `config.json` of the roadmap is not created: the settings stay in `config.toml`. Skills outside `~/.config/relay/skills` (project folders) are not read.
+
+Not done yet (roadmap): Phase 3 OAuth (the `AuthError` carries `resource_metadata`; tokens go to `auth/`, 0700; `httpTransport.token` is the hook), Phase 5 the Extensions page of the web UI (the API exists), Phase 6 Git install / registry (`skill add github:...` says "not yet"), `notifications/tools/list_changed`, GET stream of Streamable HTTP, `relay extension ...`.
+
+**v0.7 (later changes).** Fallback asks before moving to another model (agent/chat; `/compare` and the gateway still switch silently); an accepted switch becomes the session model; a Gemini limit no longer rules out its other models; llama.cpp: the model value picks `-m` / `-hf` / `-mu` itself and several binary names are tried; `/load` moves the session to the current folder; select mode hides the side panel. Select mode (`f2`, `/select`; a terminal cannot report Shift alone, and in-app drag-copy was tried and dropped): the screen is frozen (no ticks, no cursor blink, animations drawn as of the freeze moment) and the mouse goes back to the terminal, so a selection is not dropped; the settings page bug where every second change was lost (the controls held a stale settings object) is fixed; launcher settings of Ollama and llama.cpp (autostart, arguments, start/stop) moved to their cards on the keys page; sessions are a separate tab of the settings page; the interface polls status every ~2.4 s.
 
 **v0.7.** Reasoning of models is split from the answer (`thinking` events, dimmed block in the feed, can be turned
 off: then it is not sent at all); the answer is typed out smoothly at a chosen speed; `/settings` opens a page
@@ -135,7 +143,7 @@ come from documentation and the author's screenshots, not from live services.
 
 ## First steps of the next session
 
-1. `go mod tidy && go vet ./... && go build ./...`, fix compile errors (if the author sent the output, start from it).
+1. `go mod tidy && go vet ./... && go build ./... && go test ./...`, fix compile errors (v0.8 was written without a compiler; if the author sent the output, start from it).
 2. `relay install`, then `relay keys` and `relay` (`/settings`, `/models`, a chat with a thinking model).
 3. Check `pgup` / `shift+↑` scrolling and text selection (`/mouse off`) in the author's terminal (GNOME Console).
 4. Windows: `relay install` (PowerShell, PATH), background start (`detach`), `rundll32` for the browser, UTF-8 console.

@@ -185,6 +185,9 @@ func TestSelectModeFreezesTheScreen(t *testing.T) {
 	if !m.selecting || m.mouseOn || c == nil {
 		t.Fatalf("select mode: selecting=%v mouse=%v cmd=%v", m.selecting, m.mouseOn, c != nil)
 	}
+	if m.showSidebar() || strings.Contains(m.View(), "processes") {
+		t.Error("the side panel is hidden in select mode, or it would be selected with the chat")
+	}
 	before := m.View()
 	for i := 0; i < 50; i++ { // ticks must change nothing
 		next, _ := m.Update(tickMsg{})

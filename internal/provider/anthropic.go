@@ -154,7 +154,7 @@ func (c *Anthropic) Stream(ctx context.Context, req Request, emit func(Event) er
 	if err != nil {
 		return err
 	}
-	return DoWithKeys(c.keys, c.name, emit, func(key string) error {
+	return DoWithKeysFor(c.keys, c.name, req.Model, emit, func(key string) error {
 		return c.once(ctx, key, body, emit)
 	})
 }

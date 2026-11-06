@@ -27,7 +27,7 @@ startup, ctrl+t mode switch with the colour wave, an answer, the agent running a
 
 - **No model names in config files.** Relay asks each provider what you actually have access to and lists it in `/models`.
 - **Four modes, one keystroke.** `small → medium → hard → maximum`: each mode is a chain of models with its own colour theme. Press `ctrl+t` to switch.
-- **Doesn't stop at limits.** Fallback along the model chain on errors and rate limits, several API keys per provider with automatic rotation, token and cost tracking.
+- **Doesn't stop at limits.** When a model fails (a limit, no credit, a server error) Relay offers the next model of the same provider, and tells you if the whole provider is down; several API keys per provider with automatic rotation, token and cost tracking.
 - **Local and cloud side by side.** Start Ollama or llama.cpp from inside Relay with a readiness check, compare answers from several models with one command.
 - **A coding agent with guardrails.** A "model → tool → result" loop with file, search, shell, web and MCP tools. Limited to the working folder; writes, shell and MCP always ask first.
 - **Your own gateway.** The backend speaks the OpenAI API, so any other program can work through Relay.
@@ -164,11 +164,32 @@ Type `/models` and a list opens above the input line (`↑` `↓` select, `tab` 
 
 ## Coding agent
 
-Press `ctrl+a` to turn agent mode on. The agent reads, searches, writes and edits files, runs shell commands, browses the web and calls tools of connected MCP servers (stdio).
+Press `ctrl+a` to turn agent mode on. The agent reads, searches, writes and edits files, runs shell commands, browses the web and calls tools of the MCP servers you connected and uses your skills (see below).
 
 - File access is limited to the working folder.
 - Writing, shell and MCP calls always ask for confirmation.
 - The shell is **not sandboxed**: read commands before you confirm them.
+
+## MCP servers and skills
+
+Relay can use any MCP server and any skill with any model, local or cloud. Everything is plain files in the Relay config folder (`relay config` shows where): `mcp.json` for servers, `skills/` for skills.
+
+```
+relay mcp add files --command npx -- -y @modelcontextprotocol/server-filesystem /home/me/projects
+relay mcp add docs --url https://example.com/mcp
+relay mcp list                    # state of every server
+relay mcp test files              # connect once and show the tools
+relay mcp trust files             # approve a program that you added by editing mcp.json
+
+relay skill add ./my-skill        # a folder with a SKILL.md (the open Agent Skills format)
+relay skill list | info | validate | enable | disable | remove
+```
+
+- `mcp.json` can be edited by hand; Relay applies the change without a restart, and keeps the last good version if you make a mistake. The Claude Desktop / Cursor key `mcpServers` is read too.
+- A local server is a program that Relay would run for you, so it runs **only after you approved that exact command** (`relay mcp add` asks; for a hand-edited entry run `relay mcp trust <id>`). It gets a small environment (no API keys of Relay); put what it needs into `"env"`, and write `${NAME}` to take a value from your own environment instead of storing a secret in the file.
+- Every MCP tool call still asks for confirmation in the agent. Single tools can be switched off with `"disabled_tools"`.
+- Skills show up in the agent as a short list; the agent loads a skill only when the task matches it, and a skill's scripts are never run automatically.
+- Not yet: signing in (OAuth) to remote servers, a page in the settings UI, installing from Git.
 
 ## Compare models
 
@@ -245,7 +266,9 @@ internal/provider  openai and anthropic adapters, key rotation
 internal/router    modes, model chains, fallback, usage accounting
 internal/agent     the agent loop
 internal/tools     agent tools (files, shell, web, MCP)
-internal/mcp       MCP client (stdio)
+internal/mcp       MCP: manager for mcp.json, stdio and Streamable HTTP clients, approvals
+internal/skills    Agent Skills: SKILL.md parser, manager, installer
+internal/watch     change detection for mcp.json and skills/
 internal/runner    launcher for local processes
 internal/session   conversation history
 internal/server    HTTP API, SSE, /v1 gateway, keys page, help page
@@ -279,7 +302,7 @@ Five emotions from a sprite sheet, four colour themes. Sprites are built from `a
 
 ## Status
 
-Relay is **pre-release software** (version 0.6). There is no stable version yet and stable releases are still a long way off, so expect rough edges and breaking changes. Notes, decisions and the plan are in [PROJECT.md](PROJECT.md) (in Russian).
+Relay is **pre-release software** (version 0.8). There is no stable version yet and stable releases are still a long way off, so expect rough edges and breaking changes. Notes, decisions and the plan are in [PROJECT.md](PROJECT.md) (in Russian).
 
 Found a bug or have an idea? Please open an [issue](https://github.com/badlinuxuser/relay/issues).
 

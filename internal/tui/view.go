@@ -17,6 +17,9 @@ const (
 var spin = []string{"·", "✢", "✳", "✶", "✻", "✽", "✻", "✶", "✳", "✢"}
 
 func (m model) showSidebar() bool {
+	if m.selecting { // the terminal selects whole rows: with the panel beside the chat it would be copied too
+		return false
+	}
 	return m.width >= 104 && m.appSettings().Sidebar != "hidden"
 }
 
@@ -289,7 +292,7 @@ func (m model) sidebar(w, h int, th theme, st styles) []string {
 		set = m.sprites["small"]
 	}
 	mood := m.mc.frame(now)
-	if cols, rows := set.size(mood); m.appSettings().Mascot && rows > 0 && h >= rows+14+max(1, len(m.runningList())) {
+	if cols, rows := set.size(mood); m.appSettings().Mascot && rows > 0 && h >= rows+14+max(1, len(m.runningList()))+m.extHeight() {
 		var art string
 		if p, on := m.transition(); on {
 			scan := mixHex(th.accent, "#FFFFFF", 0.6)
@@ -327,7 +330,7 @@ func (m model) sidebar(w, h int, th theme, st styles) []string {
 		kv("mode", st.accentBold.Render(m.mode)),
 		kv("model", st.text.Render(shorten(m.modelLabel(), w-11))),
 		kv("agent", st.text.Render(agent)),
-		kv("folder", st.text.Render(shortLeft(shortPath(m.cwd), w-11))),
+		kv("folder", st.text.Render(shortLeft(shortPath(m.folder()), w-11))),
 		kv("tokens", st.text.Render(humanTokens(m.totIn)+" / "+humanTokens(m.totOut))),
 		kv("context", st.text.Render(humanTokens(m.ctxTokens))),
 		kv("cost", st.text.Render(fmt.Sprintf("$%.4f", m.totCost))),
@@ -342,6 +345,14 @@ func (m model) sidebar(w, h int, th theme, st styles) []string {
 		}
 		for _, r := range run {
 			lines = append(lines, " "+st.accent.Render(r.dot)+" "+st.text.Render(r.name)+" "+st.dim.Render(r.note))
+		}
+	}
+
+	// MCP servers and skills
+	if rows := m.extRows(); len(rows) > 0 {
+		lines = append(lines, sep, " "+st.gray.Render("extensions"))
+		for _, r := range rows {
+			lines = append(lines, " "+st.accent.Render(r.dot)+" "+st.text.Render(shorten(r.name, max(6, w-16)))+" "+st.dim.Render(r.note))
 		}
 	}
 

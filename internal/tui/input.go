@@ -141,6 +141,8 @@ var commandTable = []cmdHelp{
 	{"/ollama", "", "start Ollama"},
 	{"/llamacpp", "<model.gguf>", "start llama.cpp with a model"},
 	{"/stop", "[name]", "stop a running server"},
+	{"/mcp", "", "MCP servers and their state"},
+	{"/skills", "", "installed skills"},
 	{"/keys", "", "open the API keys page"},
 	{"/settings", "", "open the settings page"},
 	{"/thoughts", "on|off", "show the model's thoughts"},
