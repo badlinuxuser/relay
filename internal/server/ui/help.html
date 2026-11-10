@@ -259,6 +259,10 @@ relay mcp list
 relay mcp test files</code></pre>
 <p>Servers are kept in <code>mcp.json</code> in the Relay config folder. You can edit it by hand; Relay notices the change without a restart. A local server is a program that Relay runs for you, so it starts only after you approved that exact command (<code>relay mcp add</code> asks; for an entry you wrote by hand run <code>relay mcp trust &lt;id&gt;</code>). It does not get the API keys of Relay: list what it needs in <code>"env"</code>, and write <code>${NAME}</code> to take a value from your own environment. Every tool call still asks first; switch single tools off with <code>"disabled_tools"</code>. The old <code>[[mcp]]</code> entries of <code>config.toml</code> keep working.</p>
 <h3>Skills</h3>
+<h3>Let the model build them</h3>
+<p>Turn the agent on (<code>ctrl+a</code>) and ask: "connect my GitHub", "make a tool that keeps notes in a folder". Any model that can call tools can do it: Relay has the tools and the skill <code>relay-builder</code> built in. You approve the creation. <code>/tools</code> lists the tools, <code>/connectors</code> the connectors (they work with outside services), <code>/skills</code> the skills.</p>
+<h3>Signing in (OAuth)</h3>
+<p>If a connector needs a sign-in and you have not signed in, the answer pauses, the sign-in page opens in your browser, and the work continues after you have signed in. <code>/connectors auth &lt;id&gt;</code> signs in on its own. The OAuth app at the service must list the callback address that <code>/connectors</code> shows. Relay keeps the tokens (owner-only files) and refreshes them; a connector only gets the current access token.</p>
 <p>A skill is a folder with a <code>SKILL.md</code> (the open Agent Skills format) that teaches the agent one kind of task. <code>relay skill add ./my-skill</code> installs one, or just copy the folder into the <code>skills</code> folder. The agent sees the names and descriptions and loads a skill only when the task matches. Scripts inside a skill are never run automatically. <code>/skills</code> and <code>/mcp</code> show what is installed.</p>
 </section>
 

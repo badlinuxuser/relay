@@ -7,7 +7,9 @@ import (
 	"os"
 	"strings"
 	"text/tabwriter"
+	"time"
 
+	"relay/internal/browser"
 	"relay/internal/client"
 	"relay/internal/config"
 	"relay/internal/mcp"
@@ -26,7 +28,9 @@ Usage:
   relay mcp connect <id> | disconnect <id> | reconnect <id>
 
 Servers live in mcp.json (edit it by hand if you like; Relay notices the change).
-Options of add: --name TEXT  --header "Name: value"  --yes  --force
+Options of add: --name TEXT  --kind tool|connector  --header "Name: value"  --yes  --force
+  tool: works on this computer (/tools); connector: works with an outside service (/connectors).
+  connect signs you in (opens the browser) to a server that needs it.
 Example:
   relay mcp add files --command npx -- -y @modelcontextprotocol/server-filesystem /home/me/projects
 `
@@ -90,7 +94,7 @@ func mcpList() int {
 				return 0
 			}
 			tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-			fmt.Fprintln(tw, "ID\tTYPE\tSTATE\tTOOLS\tTARGET")
+			fmt.Fprintln(tw, "ID\tKIND\tTYPE\tSTATE\tTOOLS\tTARGET")
 			for _, s := range r.Servers {
 				tools := "-"
 				if s.State == "connected" {
@@ -100,14 +104,14 @@ func mcpList() int {
 				if s.Disabled {
 					state = "disabled"
 				}
-				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", s.ID, s.Type, state, tools, oneLine(s.Target, 60))
+				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", s.ID, s.Kind, s.Type, state, tools, oneLine(s.Target, 60))
 			}
 			tw.Flush()
 			for _, s := range r.Servers {
 				switch {
 				case s.Type == mcp.TypeStdio && !s.Trusted:
 					fmt.Printf("! %s waits for your approval to run: %s\n  approve it: relay mcp trust %s\n", s.ID, oneLine(s.Target, 80), s.ID)
-				case s.State == "auth_required":
+				case s.State == "auth_required" || (s.OAuth && !s.SignedIn):
 					fmt.Printf("! %s needs you to sign in (relay mcp connect %s)\n", s.ID, s.ID)
 				case s.Error != "":
 					fmt.Printf("! %s: %s\n", s.ID, oneLine(s.Error, 160))
@@ -161,6 +165,7 @@ func mcpAdd(args []string) int {
 	}
 	fs := flag.NewFlagSet("relay mcp add", flag.ContinueOnError)
 	name := fs.String("name", "", "display name")
+	kind := fs.String("kind", "", "tool (works on this computer) or connector (works with an outside service)")
 	url := fs.String("url", "", "address of a remote server")
 	command := fs.String("command", "", "program to run")
 	argStr := fs.String("args", "", "arguments, separated by spaces")
@@ -178,7 +183,7 @@ func mcpAdd(args []string) int {
 	if (*url == "") == (*command == "") {
 		return fail(fmt.Errorf("give exactly one of --url (a remote server) and --command (a local program)"))
 	}
-	cfg := mcp.ServerConfig{Name: *name, URL: *url, Command: *command}
+	cfg := mcp.ServerConfig{Name: *name, Kind: *kind, URL: *url, Command: *command}
 	cfg.Args = append(strings.Fields(*argStr), extra...)
 	for _, kv := range envs {
 		k, v, ok := strings.Cut(kv, "=")
@@ -356,6 +361,7 @@ func mcpAction(action string, args []string) int {
 		fmt.Fprintf(os.Stderr, "usage: relay mcp %s <id>\n", action)
 		return 2
 	}
+	id := args[0]
 	cl, err := client.Connect(true)
 	if err != nil {
 		return fail(err)
@@ -363,19 +369,59 @@ func mcpAction(action string, args []string) int {
 	if cl.Spawned {
 		fmt.Println("Backend started in the background (stop it with: relay stop)")
 	}
-	fmt.Printf("%s %s ...\n", strings.ToUpper(action[:1])+action[1:], args[0])
-	r, err := cl.MCPAction(args[0], action)
+	fmt.Printf("%s %s ...\n", strings.ToUpper(action[:1])+action[1:], id)
+	r, err := cl.MCPAction(id, action)
+	needSignIn := false
 	if err != nil {
-		return fail(err)
+		if action == "disconnect" || !strings.Contains(err.Error(), "authorization required") {
+			return fail(err)
+		}
+		needSignIn = true // a remote server that wants the user to sign in
+	}
+	if r == nil {
+		if r, err = cl.MCP(); err != nil {
+			return fail(err)
+		}
 	}
 	for _, s := range r.Servers {
-		if s.ID == args[0] {
-			fmt.Printf("%s: %s", s.ID, s.State)
-			if s.State == "connected" {
-				fmt.Printf(", %d tools", s.ToolCount)
-			}
-			fmt.Println()
+		if s.ID != id {
+			continue
+		}
+		fmt.Printf("%s: %s", s.ID, s.State)
+		if s.State == "connected" {
+			fmt.Printf(", %d tools", s.ToolCount)
+		}
+		fmt.Println()
+		if action != "disconnect" && (needSignIn || s.State == "auth_required" || (s.OAuth && !s.SignedIn)) {
+			return signInCLI(cl, id)
 		}
 	}
 	return 0
+}
+
+// signInCLI opens the sign-in page of a connector and waits until the user is done.
+func signInCLI(cl *client.Client, id string) int {
+	url, err := cl.MCPAuthorize(id)
+	if err != nil {
+		return fail(err)
+	}
+	fmt.Println("Opening the sign-in page in your browser. Waiting for you to finish (up to 5 minutes)...")
+	if err := browser.Open(url); err != nil {
+		fmt.Println("Could not open the browser. Open this address yourself:\n" + url)
+	}
+	deadline := time.Now().Add(5 * time.Minute)
+	for time.Now().Before(deadline) {
+		time.Sleep(time.Second)
+		r, err := cl.MCP()
+		if err != nil {
+			return fail(err)
+		}
+		for _, s := range r.Servers {
+			if s.ID == id && s.SignedIn && s.State == "connected" {
+				fmt.Printf("Signed in to %s: %d tools\n", id, s.ToolCount)
+				return 0
+			}
+		}
+	}
+	return fail(fmt.Errorf("the sign-in was not finished within 5 minutes"))
 }

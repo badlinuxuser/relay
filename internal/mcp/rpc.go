@@ -129,6 +129,22 @@ type AuthError struct {
 
 func (e *AuthError) Error() string { return "authorization required" }
 
+// AuthRequiredError is returned by the manager when a call cannot work before the user signs
+// in. The agent answers it by opening the sign-in page, waiting, and repeating the call.
+type AuthRequiredError struct{ Server string }
+
+func (e *AuthRequiredError) Error() string {
+	return fmt.Sprintf("the user has to sign in to %q first (/connectors auth %s)", e.Server, e.Server)
+}
+
+// SignInTool is the name of the tool that Relay offers for a server that cannot list its
+// tools before the user signs in. Calling it starts the sign-in.
+const SignInTool = "sign_in"
+
+// AuthMarker is the start of a tool error text with which a connector says that the service
+// refused its token (HTTP 401): Relay drops the token and asks the user to sign in again.
+const AuthMarker = "relay:auth-required"
+
 // parseResourceMetadata extracts resource_metadata="..." from a WWW-Authenticate header.
 func parseResourceMetadata(h string) string {
 	const key = "resource_metadata="

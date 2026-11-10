@@ -282,6 +282,21 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.addNotice(msg.text)
 		return m, nil
 
+	case extMsg:
+		lines := toolsLines(msg.tools)
+		if msg.which == "connectors" {
+			lines = connectorLines(msg.tools)
+		}
+		for _, l := range lines {
+			m.addNotice(l)
+		}
+		return m, nil
+
+	case authURLMsg:
+		m.addNotice("Opening the sign-in page for " + msg.id + " in your browser…")
+		m.openSignIn(msg.url)
+		return m, nil
+
 	case evMsg:
 		m.handleEvent(proto.Event(msg))
 		return m, waitEvent(m.events)
@@ -520,6 +535,11 @@ func (m *model) handleEvent(ev proto.Event) {
 		}
 		m.entries = append(m.entries, entry{kind: eTool, tool: ev.Tool, text: desc})
 		m.mc.react("noticed", 2*time.Second, "")
+
+	case "auth":
+		// the agent waits until the user has signed in to a connector
+		m.addNotice(ev.Desc)
+		m.openSignIn(ev.Text)
 
 	case "approval":
 		e := ev

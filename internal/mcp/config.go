@@ -21,9 +21,32 @@ const (
 	TypeHTTP  = "http"  // Streamable HTTP, a remote server
 )
 
+// Kinds. A "tool" server works on this computer (files, programs); a "connector" works with
+// an external service (GitHub, a calendar, a remote MCP server). The kind only decides where
+// Relay lists the server (/tools or /connectors); it does not change what the server can do.
+const (
+	KindTool      = "tool"
+	KindConnector = "connector"
+)
+
+// OAuthConfig tells Relay how to sign the user in to the service of a connector. Relay runs
+// the sign-in, keeps the tokens and refreshes them; the connector program gets the current
+// access token as the content of the file named in RELAY_OAUTH_TOKEN_FILE. A remote (http)
+// server that follows the MCP authorization specification needs no such block.
+type OAuthConfig struct {
+	AuthorizeURL string            `json:"authorize_url"`
+	TokenURL     string            `json:"token_url"`
+	ClientID     string            `json:"client_id"`
+	ClientSecret string            `json:"client_secret,omitempty"` // write ${ENV_NAME} instead of the secret itself
+	Scopes       []string          `json:"scopes,omitempty"`
+	Params       map[string]string `json:"params,omitempty"` // extra parameters of the authorize address
+}
+
 // ServerConfig is one entry of mcp.json.
 type ServerConfig struct {
 	Name          string            `json:"name,omitempty"`
+	Kind          string            `json:"kind,omitempty"`
+	OAuth         *OAuthConfig      `json:"oauth,omitempty"`
 	Type          string            `json:"type,omitempty"`
 	Command       string            `json:"command,omitempty"`
 	Args          []string          `json:"args,omitempty"`
@@ -70,6 +93,14 @@ func Normalize(c ServerConfig) ServerConfig {
 	default:
 		c.Type = strings.ToLower(strings.TrimSpace(c.Type))
 	}
+	c.Kind = strings.ToLower(strings.TrimSpace(c.Kind))
+	if c.Kind == "" {
+		if c.Type == TypeHTTP || c.OAuth != nil {
+			c.Kind = KindConnector
+		} else {
+			c.Kind = KindTool
+		}
+	}
 	return c
 }
 
@@ -99,6 +130,20 @@ func Validate(id string, c ServerConfig) error {
 	default:
 		return fmt.Errorf("server %q: type %q is not supported (use \"stdio\" or \"http\")", id, c.Type)
 	}
+	if c.Kind != KindTool && c.Kind != KindConnector {
+		return fmt.Errorf("server %q: \"kind\" must be \"tool\" or \"connector\"", id)
+	}
+	if o := c.OAuth; o != nil {
+		if o.ClientID == "" {
+			return fmt.Errorf("server %q: oauth.client_id is required (register an OAuth app at the service)", id)
+		}
+		for what, a := range map[string]string{"authorize_url": o.AuthorizeURL, "token_url": o.TokenURL} {
+			u, err := url.Parse(a)
+			if err != nil || u.Host == "" || !(u.Scheme == "https" || (u.Scheme == "http" && isLoopback(u.Hostname()))) {
+				return fmt.Errorf("server %q: oauth.%s must be an https address", id, what)
+			}
+		}
+	}
 	for k := range c.Env {
 		if k == "" || strings.Contains(k, "=") {
 			return fmt.Errorf("server %q: bad environment variable name %q", id, k)
@@ -119,6 +164,9 @@ func Validate(id string, c ServerConfig) error {
 
 // Warning returns a non-fatal remark about an entry ("" if none).
 func Warning(c ServerConfig) string {
+	if o := c.OAuth; o != nil && o.ClientSecret != "" && !strings.HasPrefix(o.ClientSecret, "${") {
+		return "oauth.client_secret is stored as plain text: write ${ENV_NAME} and set the variable instead"
+	}
 	if c.Type != TypeHTTP {
 		return ""
 	}
@@ -232,7 +280,8 @@ func Fingerprint(c ServerConfig) string {
 		Env     map[string]string `json:"env"`
 		URL     string            `json:"url"`
 		Headers map[string]string `json:"headers"`
-	}{c.Type, c.Command, c.Args, c.Env, c.URL, c.Headers}
+		OAuth   *OAuthConfig      `json:"oauth"`
+	}{c.Type, c.Command, c.Args, c.Env, c.URL, c.Headers, c.OAuth}
 	b, _ := json.Marshal(v) // map keys are sorted by encoding/json
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])

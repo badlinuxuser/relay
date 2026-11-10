@@ -112,3 +112,7 @@ func parse(args json.RawMessage, v any) error {
 	}
 	return nil
 }
+
+// OnceOnly is implemented by tools whose approval is never remembered for the session: "always"
+// counts as "allow once". They are the ones that can run new code or change what Relay can do.
+type OnceOnly interface{ OnceOnly() bool }

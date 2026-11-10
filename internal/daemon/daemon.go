@@ -91,6 +91,7 @@ func Run(args []string) int {
 	if err != nil {
 		return fail(fmt.Errorf("cannot listen on %s: %w", cfg.Listen, err))
 	}
+	srv.SetAddr(ln.Addr().String())
 	httpSrv := &http.Server{Handler: srv.Handler()}
 
 	infoPath := filepath.Join(home, "daemon.json")

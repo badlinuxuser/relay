@@ -9,7 +9,7 @@ import (
 	"relay/internal/settings"
 )
 
-const Version = "0.8.0"
+const Version = "0.9.0"
 
 // Event это одно событие потока выполнения (SSE: "data: <json>").
 //
@@ -21,6 +21,8 @@ const Version = "0.8.0"
 //	notice       служебное сообщение (Kind: fallback | rate_limit | key_switch | info)
 //	tool_call    агент вызывает инструмент Tool (Args, Desc)
 //	approval     нужно подтверждение действия; CallID это id для POST /api/approvals/{id}
+//	auth         агент ждёт, пока пользователь войдёт в сервис Tool (коннектор): Text это адрес
+//	             страницы входа, её надо открыть в браузере; Desc это сообщение для пользователя
 //	tool_result  результат инструмента в Result (IsError)
 //	usage        расход токенов и стоимость (In, Out, Cost)
 //	error        ошибка в Text (Kind: rate_limit | provider | internal)
@@ -254,7 +256,10 @@ type MCPServerInfo struct {
 	State     string        `json:"state"`
 	Error     string        `json:"error,omitempty"`
 	Warning   string        `json:"warning,omitempty"`
-	Trusted   bool          `json:"trusted"` // stdio: the user approved this command
+	Kind      string        `json:"kind"`      // tool | connector
+	OAuth     bool          `json:"oauth"`     // the entry has an "oauth" block
+	SignedIn  bool          `json:"signed_in"` // there is a token
+	Trusted   bool          `json:"trusted"`   // stdio: the user approved this command
 	Disabled  bool          `json:"disabled,omitempty"`
 	ToolCount int           `json:"tool_count"`
 	Tools     []MCPToolInfo `json:"tools,omitempty"`
@@ -275,6 +280,28 @@ type SkillInfo struct {
 	Metadata      map[string]string `json:"metadata,omitempty"`
 	Path          string            `json:"path"`
 	Enabled       bool              `json:"enabled"`
+	Builtin       bool              `json:"builtin,omitempty"`
+}
+
+// ToolInfo is a tool that the agent has without any MCP server.
+type ToolInfo struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Approval    bool   `json:"approval"` // asks the user before each use
+}
+
+// ToolsResp is the answer of GET /api/tools: what the user has, sorted into the three groups of
+// /tools (built in, and local MCP servers) and /connectors (MCP servers of outside services).
+type ToolsResp struct {
+	Builtin    []ToolInfo      `json:"builtin"`
+	Local      []MCPServerInfo `json:"local"`
+	Connectors []MCPServerInfo `json:"connectors"`
+	Callback   string          `json:"oauth_callback,omitempty"`
+}
+
+// AuthResp is the answer of POST /api/mcp/{id}/authorize: open URL in the browser.
+type AuthResp struct {
+	URL string `json:"url"`
 }
 
 type SkillProblem struct {

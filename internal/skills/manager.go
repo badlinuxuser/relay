@@ -91,6 +91,10 @@ func (m *Manager) Reload() {
 	disabled := m.loadState()
 	var list []*Skill
 	var problems []Problem
+	byName := map[string]*Skill{}
+	for _, b := range builtinSkills() {
+		byName[b.Name] = b
+	}
 	entries, _ := os.ReadDir(m.dir)
 	for _, e := range entries {
 		if strings.HasPrefix(e.Name(), ".") {
@@ -105,6 +109,9 @@ func (m *Manager) Reload() {
 			problems = append(problems, Problem{Dir: e.Name(), Error: err.Error()})
 			continue
 		}
+		byName[s.Name] = s // a skill in the folder replaces a built-in one of the same name
+	}
+	for _, s := range byName {
 		s.Enabled = !disabled[s.Name]
 		list = append(list, s)
 	}
@@ -193,6 +200,10 @@ func (m *Manager) Body(name string) (string, error) {
 	if !s.Enabled {
 		return "", fmt.Errorf("the skill %q is switched off by the user", name)
 	}
+	if s.fsys != nil {
+		_, body, err := parseFS(s.fsys, s.Name)
+		return body, err
+	}
 	_, body, err := Parse(s.Dir)
 	return body, err
 }
@@ -221,6 +232,9 @@ func (m *Manager) ReadFile(name, rel string) (string, error) {
 	}
 	if !s.Enabled {
 		return "", fmt.Errorf("the skill %q is switched off by the user", name)
+	}
+	if s.fsys != nil {
+		return readInsideFS(s.fsys, rel)
 	}
 	return readInside(s.Dir, rel)
 }
@@ -277,6 +291,9 @@ func (m *Manager) Files(name string, max int) []string {
 	s, ok := m.Get(name)
 	if !ok {
 		return nil
+	}
+	if s.fsys != nil {
+		return listFilesFS(s.fsys, max)
 	}
 	return ListFiles(s.Dir, max)
 }

@@ -334,3 +334,21 @@ func (c *Client) MCPAction(id, action string) (*proto.MCPResp, error) {
 	}
 	return &r, nil
 }
+
+// MCPAuthorize starts the sign-in to a connector and returns the address to open in the browser.
+func (c *Client) MCPAuthorize(id string) (string, error) {
+	var r proto.AuthResp
+	if err := c.do("POST", "/api/mcp/"+id+"/authorize", nil, &r); err != nil {
+		return "", err
+	}
+	return r.URL, nil
+}
+
+// Tools lists the built-in tools and the MCP servers sorted into local tools and connectors.
+func (c *Client) Tools() (*proto.ToolsResp, error) {
+	var r proto.ToolsResp
+	if err := c.do("GET", "/api/tools", nil, &r); err != nil {
+		return nil, err
+	}
+	return &r, nil
+}

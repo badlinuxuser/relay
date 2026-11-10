@@ -3,6 +3,7 @@ package skills
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -236,5 +237,49 @@ func TestInstallCopiesChecksAndRefusesDuplicates(t *testing.T) {
 	}
 	if _, _, err := Install(t.TempDir(), dest, false); err == nil {
 		t.Error("a folder without SKILL.md is not a skill")
+	}
+}
+
+func TestBuiltinSkillIsThereWithoutAnyFiles(t *testing.T) {
+	m := NewManager(t.TempDir(), filepath.Join(t.TempDir(), "skills.json"))
+	m.Reload()
+	s, ok := m.Get("relay-builder")
+	if !ok || !s.Builtin || !s.Enabled {
+		t.Fatalf("the builder skill must exist right after the build: %+v", s)
+	}
+	if !strings.Contains(m.Prompt(), "relay-builder") {
+		t.Fatal("it must be announced to the model")
+	}
+	body, err := m.Body("relay-builder")
+	if err != nil || !strings.Contains(body, "create_mcp_server") {
+		t.Fatalf("body: %v", err)
+	}
+	// every file that the instructions point to exists, and nothing escapes
+	for _, f := range regexp.MustCompile(`references/[A-Za-z0-9._-]+`).FindAllString(body, -1) {
+		if _, err := m.ReadFile("relay-builder", f); err != nil {
+			t.Errorf("SKILL.md mentions %s: %v", f, err)
+		}
+	}
+	for _, bad := range []string{"../x", "/etc/passwd", `..\x`, "", "references"} {
+		if _, err := m.ReadFile("relay-builder", bad); err == nil {
+			t.Errorf("%q must not be readable", bad)
+		}
+	}
+	if files := m.Files("relay-builder", 50); len(files) < 5 {
+		t.Errorf("files: %v", files)
+	}
+	// it can be switched off, and a skill of the same name in the folder replaces it
+	if err := m.SetEnabled("relay-builder", false); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(m.Prompt(), "relay-builder") {
+		t.Error("a skill that is off is not announced")
+	}
+	root := t.TempDir()
+	writeSkill(t, root, "relay-builder", "---\nname: relay-builder\ndescription: My own version of it.\n---\nMine\n")
+	m2 := NewManager(root, filepath.Join(t.TempDir(), "s.json"))
+	m2.Reload()
+	if s, _ := m2.Get("relay-builder"); s.Builtin || s.Description != "My own version of it." {
+		t.Fatalf("the user's skill must win: %+v", s)
 	}
 }

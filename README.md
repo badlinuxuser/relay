@@ -189,7 +189,19 @@ relay skill list | info | validate | enable | disable | remove
 - A local server is a program that Relay would run for you, so it runs **only after you approved that exact command** (`relay mcp add` asks; for a hand-edited entry run `relay mcp trust <id>`). It gets a small environment (no API keys of Relay); put what it needs into `"env"`, and write `${NAME}` to take a value from your own environment instead of storing a secret in the file.
 - Every MCP tool call still asks for confirmation in the agent. Single tools can be switched off with `"disabled_tools"`.
 - Skills show up in the agent as a short list; the agent loads a skill only when the task matches it, and a skill's scripts are never run automatically.
-- Not yet: signing in (OAuth) to remote servers, a page in the settings UI, installing from Git.
+- Not yet: a page in the settings UI for adding servers by hand, installing from Git, services that want the client secret in an HTTP Basic header at the token address.
+
+### Let the model build them
+
+Relay can extend itself: turn the agent on (`ctrl+a`) and ask, for example, *"connect my GitHub"* or *"make a tool that keeps notes in a folder"*. This works with **any model that can call tools**, local or cloud. Relay has the tools for it built in (`create_mcp_server`, `create_skill`, `list_extensions`, `authorize_connector`, `remove_extension`) and a built-in skill, `relay-builder`, that explains to the model how Relay is organised and how to write a server with a small Python helper (`relay_mcp.py`, which Relay puts next to every server it creates). Nothing to install: it is inside the program. You approve the creation, and the approval shows what the program can do (the addresses it contacts, whether it runs programs or writes files). It needs Python 3 on the computer.
+
+A server the model builds is a **tool** (works on this computer) or a **connector** (works with an outside service); `/tools`, `/connectors` and `/skills` list them.
+
+### OAuth sign-in
+
+A connector may use OAuth. Relay does the whole sign-in: it opens the page in your browser, receives the answer on its own callback address (`http://127.0.0.1:<port>/oauth/callback`, shown by `/connectors`; register exactly this address in the OAuth app of the service), stores the token in the `auth` folder (owner only) and refreshes it. A connector program never sees the refresh token or the client secret, only the current access token. Remote MCP servers that follow the MCP authorization specification (discovery, dynamic client registration, PKCE) need no setup.
+
+If the model calls a tool of a connector and you have not signed in, the answer **pauses**, Relay opens the sign-in page, and the work continues after you have signed in (esc cancels). `/connectors auth <id>` or `relay mcp connect <id>` signs in without waiting for the model. The port of the callback is the port Relay listens on: keep `listen` fixed in the config if a service needs a fixed callback address.
 
 ## Compare models
 
@@ -302,7 +314,7 @@ Five emotions from a sprite sheet, four colour themes. Sprites are built from `a
 
 ## Status
 
-Relay is **pre-release software** (version 0.8). There is no stable version yet and stable releases are still a long way off, so expect rough edges and breaking changes. Notes, decisions and the plan are in [PROJECT.md](PROJECT.md) (in Russian).
+Relay is **pre-release software** (version 0.9). There is no stable version yet and stable releases are still a long way off, so expect rough edges and breaking changes. Notes, decisions and the plan are in [PROJECT.md](PROJECT.md) (in Russian).
 
 Found a bug or have an idea? Please open an [issue](https://github.com/badlinuxuser/relay/issues).
 

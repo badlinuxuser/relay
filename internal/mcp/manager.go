@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"regexp"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"relay/internal/oauth"
 	"relay/internal/watch"
 )
 
@@ -58,6 +60,9 @@ type Status struct {
 	Warning       string
 	Trusted       bool // for a stdio server: the user approved this exact command
 	Disabled      bool
+	Kind          string // tool | connector
+	OAuth         bool   // the entry has an "oauth" block
+	SignedIn      bool   // there is a token (or a refresh token)
 	Tools         []ToolStatus
 	DisabledTools []string
 }
@@ -69,7 +74,7 @@ func StatusOf(id string, c ServerConfig, source string, trust *Trust) Status {
 		name = id
 	}
 	st := Status{
-		ID: id, Name: name, Type: c.Type, Target: Target(c), Source: source,
+		ID: id, Name: name, Type: c.Type, Target: Target(c), Source: source, Kind: c.Kind, OAuth: c.OAuth != nil,
 		State: StateConfigured, Warning: Warning(c), Disabled: c.Disabled,
 		DisabledTools: c.DisabledTools,
 	}
@@ -94,6 +99,8 @@ type server struct {
 	client *Client
 	gen    int  // bumped by every start, stop and change: a late result of an older attempt is dropped
 	paused bool // the user disconnected it; stays so until Connect
+
+	authMeta string // resource_metadata address from the last 401 answer (for the sign-in discovery)
 }
 
 // Manager keeps the servers of mcp.json (and the old [[mcp]] entries) running. It watches
@@ -111,6 +118,9 @@ type Manager struct {
 	loadErr  string
 	loaded   bool
 	onChange func()
+
+	broker   *oauth.Broker
+	redirect func() string // the callback address of the daemon
 
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
@@ -321,7 +331,7 @@ func (m *Manager) connect(id string, manual bool) error {
 	m.mu.Unlock()
 	m.changed()
 
-	cl, err := Dial(cfg)
+	cl, err := m.dial(id, cfg)
 
 	m.mu.Lock()
 	if m.servers[id] != s || s.gen != gen {
@@ -337,7 +347,7 @@ func (m *Manager) connect(id string, manual bool) error {
 		s.client, s.state, s.err = cl, StateConnected, ""
 		go m.watchClient(s, cl)
 	case errors.As(err, &auth):
-		s.state, s.err = StateAuthRequired, "sign-in required"
+		s.state, s.err, s.authMeta = StateAuthRequired, "sign-in required", auth.ResourceMetadata
 	default:
 		s.state, s.err = StateError, err.Error()
 	}
@@ -436,6 +446,15 @@ func (m *Manager) Tools() []ToolRef {
 	for _, id := range ids {
 		s := m.servers[id]
 		if s.client == nil {
+			if s.state == StateAuthRequired && m.broker != nil {
+				// the server lists its tools only after the user signed in: offer the way in
+				name := s.cfg.Name
+				if name == "" {
+					name = id
+				}
+				out = append(out, ToolRef{Server: id, Name: SignInTool,
+					Description: "Sign the user in to " + name + ". The tools of " + name + " appear after that. Opens the browser and waits."})
+			}
 			continue
 		}
 		for _, t := range s.client.Tools() {
@@ -448,19 +467,31 @@ func (m *Manager) Tools() []ToolRef {
 	return out
 }
 
-// CallTool runs a tool of a server. A server that dropped is started again first.
+// CallTool runs a tool of a server. A server that dropped is started again first. When the
+// user has to sign in first, the error is an *AuthRequiredError: the caller opens the sign-in,
+// waits, and calls again (the call was not made, so repeating it is safe).
 func (m *Manager) CallTool(ctx context.Context, id, tool string, args json.RawMessage) (string, error) {
 	m.mu.Lock()
 	s := m.servers[id]
 	var cl *Client
 	var state State
 	var off bool
+	var cfg ServerConfig
 	if s != nil {
-		cl, state, off = s.client, s.state, contains(s.cfg.DisabledTools, tool)
+		cl, state, off, cfg = s.client, s.state, contains(s.cfg.DisabledTools, tool), s.cfg
 	}
 	m.mu.Unlock()
 	if s == nil {
 		return "", fmt.Errorf("the MCP server %q is not in mcp.json any more", id)
+	}
+	if tool == SignInTool && cl == nil {
+		if m.broker == nil || !m.broker.Store().SignedIn(id) {
+			return "", &AuthRequiredError{Server: id}
+		}
+		if err := m.connect(id, true); err != nil { // reconnect, now with the token
+			return "", err
+		}
+		return "Signed in. Tools now available: " + strings.Join(m.toolNames(id), ", "), nil
 	}
 	if off {
 		return "", fmt.Errorf("the tool %q of %q is switched off in mcp.json (\"disabled_tools\")", tool, id)
@@ -474,20 +505,168 @@ func (m *Manager) CallTool(ctx context.Context, id, tool string, args json.RawMe
 		m.mu.Unlock()
 	}
 	if cl == nil {
+		if state == StateAuthRequired {
+			return "", &AuthRequiredError{Server: id}
+		}
 		return "", fmt.Errorf("the MCP server %q is not connected (%s); see: relay mcp list", id, m.describeState(id))
+	}
+	if cfg.OAuth != nil && m.broker != nil { // refreshes an expired token; the connector reads the file
+		if _, ok, err := m.broker.Token(ctx, id, staticOAuth(cfg)); err != nil {
+			return "", err
+		} else if !ok {
+			return "", &AuthRequiredError{Server: id}
+		}
 	}
 	text, err := cl.Call(ctx, tool, args)
 	var auth *AuthError
-	if errors.As(err, &auth) {
+	switch {
+	case errors.As(err, &auth):
 		m.mu.Lock()
 		if s.client == cl {
-			s.state, s.err = StateAuthRequired, "sign-in required"
+			s.state, s.err, s.authMeta = StateAuthRequired, "sign-in required", auth.ResourceMetadata
 		}
 		m.mu.Unlock()
 		m.changed()
-		return "", fmt.Errorf("the MCP server %q needs you to sign in: relay mcp connect %s", id, id)
+		return "", &AuthRequiredError{Server: id}
+	case err != nil && strings.HasPrefix(err.Error(), AuthMarker) && m.broker != nil:
+		_ = m.broker.Store().DropToken(id) // the service refused the token: sign in again
+		return "", &AuthRequiredError{Server: id}
 	}
 	return text, err
+}
+
+// toolNames lists the tools of a connected server.
+func (m *Manager) toolNames(id string) []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []string
+	if s := m.servers[id]; s != nil && s.client != nil {
+		for _, t := range s.client.Tools() {
+			out = append(out, t.Name)
+		}
+	}
+	return out
+}
+
+// ---- sign-in -----------------------------------------------------------------
+
+// SetOAuth connects the manager to the sign-in broker. redirect returns the address of the
+// callback served by the daemon.
+func (m *Manager) SetOAuth(b *oauth.Broker, redirect func() string) {
+	m.broker, m.redirect = b, redirect
+	b.OnSignedIn = m.afterSignIn
+}
+
+// afterSignIn connects a server that was waiting for the user to sign in.
+func (m *Manager) afterSignIn(id string) {
+	m.mu.Lock()
+	s := m.servers[id]
+	waiting := s != nil && s.client == nil
+	m.mu.Unlock()
+	if waiting {
+		_ = m.connect(id, true)
+	}
+	m.changed()
+}
+
+// staticOAuth is the sign-in configuration written in mcp.json (nil if there is none).
+func staticOAuth(c ServerConfig) *oauth.Config {
+	o := c.OAuth
+	if o == nil {
+		return nil
+	}
+	return &oauth.Config{
+		AuthorizeURL: o.AuthorizeURL, TokenURL: o.TokenURL, Scopes: o.Scopes, Params: o.Params,
+		ClientID: os.ExpandEnv(o.ClientID), ClientSecret: os.ExpandEnv(o.ClientSecret),
+	}
+}
+
+// Authorize starts the sign-in of a server. It returns the address to open in the browser and
+// a function that waits until the user has finished (or the context ends).
+func (m *Manager) Authorize(ctx context.Context, id string) (string, func(context.Context) error, error) {
+	if m.broker == nil || m.redirect == nil {
+		return "", nil, errors.New("signing in is not available in this process")
+	}
+	m.mu.Lock()
+	s := m.servers[id]
+	var cfg ServerConfig
+	var meta string
+	if s != nil {
+		cfg, meta = s.cfg, s.authMeta
+	}
+	m.mu.Unlock()
+	if s == nil {
+		return "", nil, fmt.Errorf("there is no server %q in mcp.json", id)
+	}
+	redirect := m.redirect()
+	if oc := staticOAuth(cfg); oc != nil {
+		return m.broker.Begin(ctx, id, *oc, false, redirect)
+	}
+	if cfg.Type != TypeHTTP {
+		return "", nil, fmt.Errorf("%q has no sign-in settings: add an \"oauth\" block to its entry in mcp.json", id)
+	}
+	oc, err := oauth.Discover(ctx, nil, cfg.URL, meta)
+	if err != nil {
+		return "", nil, err
+	}
+	return m.broker.Begin(ctx, id, *oc, true, redirect)
+}
+
+// NeedsSignIn reports whether the server cannot be used before the user signs in.
+func (m *Manager) NeedsSignIn(id string) bool {
+	m.mu.Lock()
+	s := m.servers[id]
+	var cfg ServerConfig
+	var state State
+	if s != nil {
+		cfg, state = s.cfg, s.state
+	}
+	m.mu.Unlock()
+	if s == nil || m.broker == nil {
+		return false
+	}
+	if cfg.OAuth != nil {
+		return !m.broker.Store().SignedIn(id)
+	}
+	return state == StateAuthRequired
+}
+
+// Forget removes what Relay remembers about a server that was taken out of mcp.json: the
+// approval of its command, and the token and the registration of its sign-in.
+func (m *Manager) Forget(id string) {
+	_ = m.trust.Forget(id)
+	if m.broker != nil {
+		_ = m.broker.Store().Delete(id)
+	}
+}
+
+// dial opens a connection with what the server needs from Relay: the token file for a
+// program with OAuth settings, the token itself for a remote server.
+func (m *Manager) dial(id string, cfg ServerConfig) (*Client, error) {
+	var token func(context.Context) (string, error)
+	if m.broker != nil {
+		static := staticOAuth(cfg)
+		switch cfg.Type {
+		case TypeHTTP:
+			token = func(ctx context.Context) (string, error) {
+				t, ok, err := m.broker.Token(ctx, id, static)
+				if err != nil || !ok {
+					return "", err
+				}
+				return t, nil
+			}
+		case TypeStdio:
+			if cfg.OAuth != nil {
+				env := make(map[string]string, len(cfg.Env)+1)
+				for k, v := range cfg.Env {
+					env[k] = v
+				}
+				env["RELAY_OAUTH_TOKEN_FILE"] = m.broker.Store().TokenFile(id)
+				cfg.Env = env
+			}
+		}
+	}
+	return DialWith(cfg, token)
 }
 
 func (m *Manager) describeState(id string) string {
@@ -517,6 +696,9 @@ func (m *Manager) Status() []Status {
 		s := m.servers[id]
 		st := StatusOf(id, s.cfg, s.source, m.trust)
 		st.State, st.Error = s.state, s.err
+		if m.broker != nil && (s.cfg.OAuth != nil || s.state == StateAuthRequired || s.cfg.Type == TypeHTTP) {
+			st.SignedIn = m.broker.Store().SignedIn(id)
+		}
 		if s.client != nil {
 			for _, t := range s.client.Tools() {
 				st.Tools = append(st.Tools, ToolStatus{Name: t.Name, Description: t.Description, Disabled: contains(s.cfg.DisabledTools, t.Name)})
@@ -529,7 +711,11 @@ func (m *Manager) Status() []Status {
 
 // Dial connects to a server described by cfg and performs the handshake. The caller owns
 // the client and must Close it. It does not check approvals: callers do that.
-func Dial(cfg ServerConfig) (*Client, error) {
+func Dial(cfg ServerConfig) (*Client, error) { return DialWith(cfg, nil) }
+
+// DialWith is Dial for a remote server that needs a bearer token: token is asked before each
+// request (nil: no token).
+func DialWith(cfg ServerConfig, token func(context.Context) (string, error)) (*Client, error) {
 	timeout := 30 * time.Second
 	var t Transport
 	var st *stdioTransport
@@ -542,7 +728,9 @@ func Dial(cfg ServerConfig) (*Client, error) {
 		}
 		t = st
 	case TypeHTTP:
-		t = newHTTP(cfg)
+		h := newHTTP(cfg)
+		h.token = token
+		t = h
 	default:
 		return nil, fmt.Errorf("type %q is not supported", cfg.Type)
 	}

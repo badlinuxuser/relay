@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"relay/internal/config"
+	"relay/internal/mcp"
 	"relay/internal/proto"
 	"relay/internal/provider"
 	"relay/internal/router"
@@ -27,6 +28,33 @@ type Agent struct {
 	// Skills (may be nil) supplies the installed skills in agent mode: their list goes into the
 	// system prompt and the agent loads one when it needs it.
 	Skills *skills.Manager
+	// Auth (may be nil) signs the user in when a tool needs it: the agent pauses, the interface
+	// opens the sign-in page, and the tool is called again when the user is done.
+	Auth Authorizer
+}
+
+// Authorizer starts the sign-in to a connector (the MCP manager).
+type Authorizer interface {
+	// Authorize returns the address to open in the browser and a function that waits until
+	// the user has finished or the context ends.
+	Authorize(ctx context.Context, server string) (string, func(context.Context) error, error)
+}
+
+// registry makes the tools of one step. It is made again for every step, so that a server or a
+// skill that the model has just created is available at once.
+func (a *Agent) registry(sess *session.Session) *tools.Registry {
+	reg := tools.NewRegistry(sess.Workspace)
+	if a.Extra != nil {
+		for _, t := range a.Extra() {
+			reg.Add(t)
+		}
+	}
+	if a.Skills != nil && sess.Agent {
+		for _, t := range tools.SkillTools(a.Skills) {
+			reg.Add(t)
+		}
+	}
+	return reg
 }
 
 // Approve запрашивает у пользователя разрешение; возвращает allow | always | deny.
@@ -78,19 +106,6 @@ func (a *Agent) Run(ctx context.Context, sess *session.Session, text string, sho
 		sess.Title = t
 	}
 
-	reg := tools.NewRegistry(sess.Workspace)
-	if a.Extra != nil {
-		for _, t := range a.Extra() {
-			reg.Add(t)
-		}
-	}
-
-	if a.Skills != nil && sess.Agent {
-		for _, t := range tools.SkillTools(a.Skills) {
-			reg.Add(t)
-		}
-	}
-
 	md := a.Cfg.Modes[sess.Mode]
 	maxSteps := 1
 	if sess.Agent {
@@ -102,6 +117,7 @@ func (a *Agent) Run(ctx context.Context, sess *session.Session, text string, sho
 
 	pinned := "" // the model the user agreed to switch to during this request
 	for step := 1; step <= maxSteps; step++ {
+		reg := a.registry(sess)
 		msgs := make([]provider.Message, 0, len(sess.Messages)+1)
 		skillsPrompt := ""
 		if a.Skills != nil {
@@ -224,7 +240,9 @@ func (a *Agent) runTool(ctx context.Context, sess *session.Session, reg *tools.R
 		decision := approve(ctx, proto.Event{Type: "approval", Tool: call.Name, CallID: call.ID, Args: call.Args, Desc: desc, Step: step})
 		switch decision {
 		case "always":
-			sess.AutoTools[call.Name] = true
+			if oo, ok := tool.(tools.OnceOnly); !ok || !oo.OnceOnly() {
+				sess.AutoTools[call.Name] = true
+			}
 		case "allow":
 		default:
 			return result("The user denied this action. Do not retry it; ask what to do instead.", true)
@@ -234,6 +252,14 @@ func (a *Agent) runTool(ctx context.Context, sess *session.Session, reg *tools.R
 	tctx, cancel := context.WithTimeout(ctx, 11*time.Minute)
 	defer cancel()
 	out, err := tool.Run(tctx, args)
+	var need *mcp.AuthRequiredError
+	if errors.As(err, &need) && a.Auth != nil {
+		// the user has not signed in: pause, open the sign-in page, wait, and call again
+		if serr := a.signIn(tctx, need.Server, emit); serr != nil {
+			return result("error: "+serr.Error(), true)
+		}
+		out, err = tool.Run(tctx, args)
+	}
 	if err != nil {
 		if strings.TrimSpace(out) != "" {
 			out += "\n"
@@ -241,6 +267,23 @@ func (a *Agent) runTool(ctx context.Context, sess *session.Session, reg *tools.R
 		return result(out+"error: "+err.Error(), true)
 	}
 	return result(out, false)
+}
+
+// signIn pauses the work until the user has signed in to a connector. The event "auth" tells
+// the interface to open the page; the wait ends when the user is done, cancels (esc) or the
+// time is up.
+func (a *Agent) signIn(ctx context.Context, server string, emit func(proto.Event)) error {
+	url, wait, err := a.Auth.Authorize(ctx, server)
+	if err != nil {
+		return fmt.Errorf("cannot start the sign-in to %q: %v", server, err)
+	}
+	emit(proto.Event{Type: "auth", Tool: server, Text: url,
+		Desc: fmt.Sprintf("Sign in to %s in your browser. Waiting (esc cancels)…", server)})
+	if err := wait(ctx); err != nil {
+		return fmt.Errorf("the sign-in to %q did not finish: %v", server, err)
+	}
+	emit(proto.Event{Type: "notice", Kind: "info", Text: "Signed in to " + server + ". Continuing."})
+	return nil
 }
 
 func truncateOutput(s string) string {

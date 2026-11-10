@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -37,7 +38,19 @@ func fakeStdioServer() {
 		case "tools/list":
 			result = `{"tools":[{"name":"echo","description":"echoes","inputSchema":{"type":"object"}}]}`
 		case "tools/call":
-			result = `{"content":[{"type":"text","text":"pong"}]}`
+			var call struct {
+				Name string `json:"name"`
+			}
+			_ = json.Unmarshal(msg.Params, &call)
+			if call.Name == "revoked" { // a connector whose service answered 401
+				result = `{"isError":true,"content":[{"type":"text","text":"relay:auth-required the service answered 401"}]}`
+				break
+			}
+			text := "pong"
+			if f := os.Getenv("RELAY_OAUTH_TOKEN_FILE"); f != "" {
+				text += " " + f // lets a test see that the token file reaches the program
+			}
+			result = `{"content":[{"type":"text","text":"` + strings.ReplaceAll(text, `\`, `\\`) + `"}]}`
 		}
 		fmt.Printf("{\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":%s}\n", msg.ID, result)
 	}

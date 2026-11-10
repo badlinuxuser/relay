@@ -62,7 +62,8 @@ func (t *mcpTool) Spec() provider.ToolSpec {
 	}
 	return provider.ToolSpec{Name: t.name, Description: "[MCP server " + t.ref.Server + "] " + t.ref.Description, Schema: sch}
 }
-func (t *mcpTool) NeedsApproval() bool { return true }
+// NeedsApproval: every call asks, except the sign-in tool (the user sees the page that opens).
+func (t *mcpTool) NeedsApproval() bool { return t.ref.Name != mcp.SignInTool }
 func (t *mcpTool) Describe(a json.RawMessage) string {
 	s := string(a)
 	if len(s) > 160 {

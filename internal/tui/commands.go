@@ -357,6 +357,25 @@ func (m model) command(line string) (tea.Model, tea.Cmd) {
 		}
 		return m, procCmd(m.cl, args[0], "stop")
 
+	case "/tools":
+		if !needConn() {
+			return m, nil
+		}
+		return m, extCmd(m.cl, "tools")
+
+	case "/connectors":
+		if !needConn() {
+			return m, nil
+		}
+		if len(args) > 0 && args[0] == "auth" {
+			if len(args) < 2 {
+				m.addNotice("usage: /connectors auth <id>  (the ids are in /connectors)")
+				return m, nil
+			}
+			return m, authCmd(m.cl, args[1])
+		}
+		return m, extCmd(m.cl, "connectors")
+
 	case "/mcp":
 		for _, l := range mcpLines(m.status) {
 			m.addNotice(l)

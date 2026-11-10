@@ -1,16 +1,21 @@
 package server
 
 import (
+	"context"
+	"log"
 	"net/http"
+	"strings"
 
 	"relay/internal/mcp"
 	"relay/internal/proto"
+	"relay/internal/tools"
 )
 
 func mcpInfo(st mcp.Status) proto.MCPServerInfo {
 	info := proto.MCPServerInfo{
 		ID: st.ID, Name: st.Name, Type: st.Type, Target: st.Target, Source: st.Source,
 		State: string(st.State), Error: st.Error, Warning: st.Warning,
+		Kind: st.Kind, OAuth: st.OAuth, SignedIn: st.SignedIn,
 		Trusted: st.Trusted, Disabled: st.Disabled, ToolCount: len(st.Tools),
 	}
 	for _, t := range st.Tools {
@@ -61,7 +66,7 @@ func (s *Server) skillInfos() []proto.SkillInfo {
 	for _, sk := range s.skills.List() {
 		out = append(out, proto.SkillInfo{
 			Name: sk.Name, Description: sk.Description, License: sk.License,
-			Compatibility: sk.Compatibility, Metadata: sk.Metadata, Path: sk.Dir, Enabled: sk.Enabled,
+			Compatibility: sk.Compatibility, Metadata: sk.Metadata, Path: sk.Dir, Enabled: sk.Enabled, Builtin: sk.Builtin,
 		})
 	}
 	return out
@@ -97,4 +102,57 @@ func (s *Server) handleSkillAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, s.skillsResp())
+}
+
+// handleMCPAuthorize starts the sign-in of a connector and answers with the address to open in
+// the browser. The flow goes on after this request ends: the callback completes it.
+func (s *Server) handleMCPAuthorize(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	url, wait, err := s.mcp.Authorize(context.Background(), id)
+	if err != nil {
+		httpErr(w, 400, err.Error())
+		return
+	}
+	go func() {
+		if err := wait(context.Background()); err != nil {
+			log.Printf("sign-in to %s: %v", id, err)
+		}
+	}()
+	writeJSON(w, 200, proto.AuthResp{URL: url})
+}
+
+// firstSentence shortens a tool description for the list.
+func firstSentence(s string) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if i := strings.Index(s, ". "); i > 0 {
+		s = s[:i+1]
+	}
+	if r := []rune(s); len(r) > 110 {
+		s = string(r[:109]) + "…"
+	}
+	return s
+}
+
+// handleTools lists what the user has, in the groups of /tools and /connectors.
+func (s *Server) handleTools(w http.ResponseWriter, r *http.Request) {
+	reg := tools.NewRegistry("")
+	for _, t := range s.builder.Tools() {
+		reg.Add(t)
+	}
+	for _, t := range tools.SkillTools(s.skills) {
+		reg.Add(t)
+	}
+	resp := proto.ToolsResp{Builtin: []proto.ToolInfo{}, Local: []proto.MCPServerInfo{}, Connectors: []proto.MCPServerInfo{}, Callback: s.redirectURI()}
+	for _, sp := range reg.Specs() {
+		t, _ := reg.Get(sp.Name)
+		resp.Builtin = append(resp.Builtin, proto.ToolInfo{Name: sp.Name, Description: firstSentence(sp.Description), Approval: t.NeedsApproval()})
+	}
+	for _, st := range s.mcp.Status() {
+		if st.Kind == mcp.KindConnector {
+			resp.Connectors = append(resp.Connectors, mcpInfo(st))
+		} else {
+			resp.Local = append(resp.Local, mcpInfo(st))
+		}
+	}
+	writeJSON(w, 200, resp)
 }

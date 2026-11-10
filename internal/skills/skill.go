@@ -4,7 +4,9 @@
 package skills
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -23,8 +25,11 @@ type Skill struct {
 	Compatibility string
 	Metadata      map[string]string
 	AllowedTools  []string // read, but never used to skip a permission question
-	Dir           string   // absolute path of the folder
+	Dir           string   // absolute path of the folder ("" for a built-in skill)
 	Enabled       bool
+	Builtin       bool // part of Relay itself: it can be switched off but not removed
+
+	fsys fs.FS // set for a built-in skill
 }
 
 var reName = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
@@ -40,10 +45,19 @@ func Parse(dir string) (*Skill, string, error) { return ParseAs(dir, filepath.Ba
 // ParseAs is Parse with the folder name that the skill name must match ("" skips that check:
 // a folder that is about to be installed under its skill name).
 func ParseAs(dir, folder string) (*Skill, string, error) {
-	path := filepath.Join(dir, File)
-	data, err := os.ReadFile(path)
+	s, body, err := parseFS(os.DirFS(dir), folder)
 	if err != nil {
-		if os.IsNotExist(err) {
+		return nil, "", err
+	}
+	s.Dir = dir
+	return s, body, nil
+}
+
+// parseFS reads SKILL.md from the root of fsys (a folder on disk or a folder inside Relay).
+func parseFS(fsys fs.FS, folder string) (*Skill, string, error) {
+	data, err := fs.ReadFile(fsys, File)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil, "", fmt.Errorf("no %s in the folder", File)
 		}
 		return nil, "", err
@@ -62,7 +76,7 @@ func ParseAs(dir, folder string) (*Skill, string, error) {
 	if err != nil {
 		return nil, "", fmt.Errorf("the header of %s: %w", File, err)
 	}
-	s := &Skill{Dir: dir, Enabled: true}
+	s := &Skill{Enabled: true}
 	s.Name = text(fields["name"])
 	s.Description = strings.Join(strings.Fields(text(fields["description"])), " ")
 	s.License = text(fields["license"])

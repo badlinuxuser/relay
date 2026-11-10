@@ -19,10 +19,12 @@ import (
 	"sync"
 
 	"relay/internal/agent"
+	"relay/internal/builder"
 	"relay/internal/catalog"
 	"relay/internal/config"
 	"relay/internal/keystore"
 	"relay/internal/mcp"
+	"relay/internal/oauth"
 	"relay/internal/proto"
 	"relay/internal/provider"
 	"relay/internal/router"
@@ -46,8 +48,12 @@ type Server struct {
 	procs  *runner.Manager
 	agent  *agent.Agent
 
-	mcp    *mcp.Manager    // the MCP servers of mcp.json
-	skills *skills.Manager // the skills in skills/
+	mcp     *mcp.Manager    // the MCP servers of mcp.json
+	skills  *skills.Manager // the skills in skills/
+	broker  *oauth.Broker   // signs the user in to connectors
+	builder *builder.Builder // the tools with which the agent extends Relay
+
+	addr string // the address that the daemon listens on (for the OAuth callback)
 
 	mu        sync.Mutex
 	approvals map[string]chan string
@@ -92,7 +98,11 @@ func New(cfg *config.Config, home, token string) *Server {
 		approvals: map[string]chan string{},
 		Done:      make(chan struct{}),
 	}
-	s.agent = &agent.Agent{Cfg: cfg, Router: rt, Extra: s.mcpTools, Skills: s.skills}
+	s.addr = cfg.Listen
+	s.broker = oauth.NewBroker(oauth.NewStore(config.AuthDir(home)))
+	s.mcp.SetOAuth(s.broker, s.redirectURI)
+	s.builder = &builder.Builder{Home: home, MCP: s.mcp, Skills: s.skills, Callback: s.redirectURI}
+	s.agent = &agent.Agent{Cfg: cfg, Router: rt, Extra: s.extraTools, Skills: s.skills, Auth: s.mcp}
 	cat.Warm() // start looking for models right away: Ollama, Gemini, ...
 	return s
 }
@@ -107,8 +117,26 @@ func (s *Server) StartExtensions() {
 	s.skills.Start()
 }
 
-func (s *Server) mcpTools() []tools.Tool {
-	return tools.MCPTools(s.mcp.Tools(), s.mcp)
+// extraTools are the tools that the agent has besides the basic ones: the builders (which are
+// there from the start) and the tools of the connected MCP servers.
+func (s *Server) extraTools() []tools.Tool {
+	return append(s.builder.Tools(), tools.MCPTools(s.mcp.Tools(), s.mcp)...)
+}
+
+// SetAddr tells the server where it listens, once the listener exists. The OAuth callback
+// address is made from it, so a fixed listen port keeps the registered callback valid.
+func (s *Server) SetAddr(addr string) { s.addr = addr }
+
+// redirectURI is the address that a service sends the browser back to after the sign-in.
+func (s *Server) redirectURI() string {
+	host, port, err := net.SplitHostPort(s.addr)
+	if err != nil {
+		return ""
+	}
+	if ip := net.ParseIP(host); host == "" || (ip != nil && ip.IsUnspecified()) {
+		host = "127.0.0.1"
+	}
+	return "http://" + net.JoinHostPort(host, port) + "/oauth/callback"
 }
 
 // Close stops the MCP servers and the managed processes.
@@ -142,6 +170,9 @@ func (s *Server) Handler() http.Handler {
 		writeJSON(w, 200, map[string]any{"ok": true})
 		s.once.Do(func() { close(s.Done) })
 	})
+	mux.HandleFunc("GET /oauth/callback", s.broker.HandleCallback)
+	mux.HandleFunc("GET /api/tools", s.handleTools)
+	mux.HandleFunc("POST /api/mcp/{id}/authorize", s.handleMCPAuthorize)
 	mux.HandleFunc("GET /api/mcp", s.handleMCPList)
 	mux.HandleFunc("POST /api/mcp/{id}/{action}", s.handleMCPAction)
 	mux.HandleFunc("GET /api/skills", s.handleSkillsList)
@@ -192,7 +223,7 @@ func (s *Server) auth(next http.Handler) http.Handler {
 			return
 		}
 		p := r.URL.Path
-		if p == "/api/health" || p == "/" || strings.HasPrefix(p, "/ui/") {
+		if p == "/api/health" || p == "/" || p == "/oauth/callback" || strings.HasPrefix(p, "/ui/") {
 			next.ServeHTTP(w, r)
 			return
 		}
