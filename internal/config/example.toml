@@ -93,6 +93,11 @@ base_url = "https://openrouter.ai/api/v1"
 # local-small below when you have not pulled it) is skipped: the mode uses the models
 # that are installed instead.
 
+# context is the size of the model's window in tokens: a long conversation is shortened to fit it
+# (old tool results first, then the oldest turns; the stored history is never changed). Without it
+# Relay assumes 128000, so a model with a smaller window needs it set.
+# max_output is the most tokens one answer may have (0: the provider's default). When the limit
+# cuts an answer, the agent asks the model to go on by itself, so you never see a cut answer.
 [[models]]
 id = "local-small"
 provider = "ollama"
@@ -100,6 +105,7 @@ model = "qwen2.5-coder:7b"
 tier = "small"
 tools = true
 context = 32768
+# max_output = 4096
 
 [[models]]
 id = "haiku"

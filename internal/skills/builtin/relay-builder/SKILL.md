@@ -1,83 +1,100 @@
 ---
 name: relay-builder
-description: Build new abilities for Relay yourself. Create MCP servers (tools that work on this computer, and connectors to outside services such as GitHub, Google or a company API, with browser sign-in through OAuth) and skills (written procedures). Use it when the user wants Relay to connect a service, needs a tool that does not exist yet, wants to automate something with their own program, or asks for a skill.
+description: Build new abilities for Relay yourself, and repair them. MCP servers (tools for this computer, connectors to outside services such as Telegram, Slack, mail, a calendar, GitHub, a smart-home hub, a database, any API) and skills (written procedures). Use it whenever the user needs something that none of your tools or skills can do, whether they ask for it directly ("make a tool", "connect my GitHub", "сделай инструмент") or only ask for the RESULT ("send this to my Telegram", "what is on my calendar tomorrow", "open YouTube and search for cats", "check the orders in our database", "do the release notes the way we always do"), and when a tool you built fails and must be fixed.
 ---
 
 # Building tools, connectors and skills for Relay
 
-You can extend Relay yourself, so do not ask the user to write code or edit files. You have five tools for it:
+You can extend Relay yourself, so do not ask the user to write code or edit files. Relay runs **on the user's own computer**: what you build runs there, with their rights, and can open their browser and applications, show notifications and use their files. You are not in a sandbox.
 
-- `create_mcp_server`: write an MCP server (a program) and plug it into Relay, or plug in a remote one by address
-- `create_skill`: write a skill (instructions for a kind of task)
-- `list_extensions`: see what is installed, where it lives, and the exact sign-in callback address
-- `authorize_connector`: sign the user in to a connector (opens the browser and waits)
-- `remove_extension`: remove a server or a skill you made
+Your tools for it:
 
-## What to build
+- `propose_extension`: ask the user whether to build (or fix) something. **Always first.**
+- `list_extensions`: what exists, where it lives, what this computer has (desktop, Python), the OAuth callback address
+- `create_mcp_server`: write an MCP server (a program) and plug it in, or plug in a remote one by address. **Every server comes with a skill.**
+- `create_skill`: write a skill on its own
+- `read_server`: read the code of a server that was built here (to repair it)
+- `authorize_connector`, `remove_extension`
 
-| The user wants | Build |
+## 1. Recognise the need
+
+The user does not have to ask for a "tool". Build when the task needs something you do not have and a small program (or a written procedure) would do:
+
+| The user says | What is missing |
 |---|---|
-| Relay to do something on this computer (read a folder, run a program, query a local database) | a **tool**: `kind: "tool"` |
-| Relay to work with an outside service (GitHub, Google Calendar, Notion, a company API) | a **connector**: `kind: "connector"` |
-| Relay to follow a procedure or a style, no new ability needed | a **skill** |
+| "make a tool that ...", "connect my GitHub", "сделай коннектор", "создай скилл" | asked directly |
+| "send this to my Telegram", "напиши мне в телеграм, когда закончишь", "post it to Slack", "reply to that e-mail" | a messenger or mail |
+| "what is on my calendar tomorrow", "добавь встречу", "what are my open issues" | an account or service |
+| "open YouTube and search for cats", "открой Firefox", "show a notification" | control of this computer |
+| "turn off the lights", "check the orders in our database", "what does our API say about order 5" | a device, a database, an API |
+| "do it the way we always do", "always use this checklist" | a **skill** (no code) |
 
-A connector needs credentials. There are two ways, ask which one fits:
-1. An **API key or personal token**. The user puts it in an environment variable; the server reads it with `secret("NAME")`. Never ask the user to paste a secret into the chat.
-2. **OAuth sign-in**. The user signs in in the browser; Relay stores and refreshes the token. See "Connectors with OAuth" below.
+Test: can I do it with my tools (files, shell, web) in a reasonable way? If not, offer to build. Do not say "I cannot" or "I have no tool for this" before you have considered this. Look at `references/patterns.md`: it has a recipe for the usual requests.
 
-If the service already offers a remote MCP server (an https address), plug that in with `create_mcp_server` and `url`: no code is needed, and Relay signs the user in by itself if the server asks for it.
+## 2. Ask first. Always.
 
-## Workflow
+Call `propose_extension` (what is missing, in one short sentence; kind `tool`, `connector`, `skill`, or `fix`). Nothing can be created before the user says yes: the build tools refuse. **If the user refuses, the whole request is cancelled: do not look for another way.** After yes, do not ask again for permission to build; ask the user only what decides the design (which service, read-only or also writing, key or sign-in), one or two short questions at most.
 
-1. **Understand the goal.** Ask at most one or two short questions, only if the answer changes what you build: which service, read-only or also writing, key or OAuth.
-2. **Look first.** Call `list_extensions`: something suitable may exist, and it shows the folders and the callback address.
-3. **Design small.** 3 to 8 tools. One job per tool, names like `list_issues`, `get_file`. Start with reading tools; make writing tools separate and say so in their description ("WRITES: creates an issue"). The model that uses the tools later decides from the descriptions alone, so make them precise.
-4. **Read the references you need** with `read_skill_file` (skill `relay-builder`):
-   - `references/sdk.md`: the whole API of the `relay_mcp` helper (short)
-   - `references/example-tools.py`: a complete tool server
-   - `references/example-oauth.py`: a complete connector with OAuth
-   - `references/mcp-json.md`, `references/relay-structure.md`: how Relay is organised
-5. **Write `server.py`** with `relay_mcp` (never write the MCP protocol yourself) and call `create_mcp_server`. The user is asked to approve it, because the program will run on their computer. The approval box shows only a summary (the web addresses it contacts, whether it runs programs or writes files), not the code: when the user wants to read the code first, show it in your answer before you call the tool.
-6. **Read the answer.** It says whether the server started and lists its tools, or why it failed (a syntax error, a crash with its last message). Fix `server.py` and call `create_mcp_server` again with `replace: true`.
-7. **Test it.** The new tools are available in your next step, named `mcp__<id>__<tool>`. Call a harmless read-only one with real input and check the result. A connector that needs a sign-in opens the browser by itself on the first call.
-8. **Tell the user** what you built, which tools it has, what it needs from them (a variable to set, an OAuth app to register), and that `/tools`, `/connectors` and `/skills` show it.
+## 3. Read how Relay works, then build
 
-## Rules for what you write
+The build tools refuse until you have read, in this request: this skill (you are doing it), and for a program `references/sdk.md` (`read_skill_file`). Read an example that is close to the job: `example-apikey.py` (a service with a token), `example-public-api.py` (no login), `example-desktop.py` (this computer's desktop), `example-sqlite.py` (a local database), `example-tools.py` (files), `example-oauth.py` (sign-in with an account). Call `list_extensions` to see what exists.
 
-- **Standard library only.** Relay installs no packages. If a package is truly needed, say so and let the user decide.
-- **Secrets never go into code or into the chat.** Use `env: {"NAME": "${NAME}"}` so that the value comes from the user's own environment, and read it with `secret("NAME")`. The OAuth `client_secret` is the same: `"${NAME_CLIENT_SECRET}"`.
-- **Keep tools narrow.** A tool that can only do what its description says is safer than a general one. Check arguments; for a file tool, stay inside a folder you name and refuse `..`.
-- **Return what is needed, not everything.** Shorten long lists (`limit` argument, default 10), cut long texts. The helper stops a result at 100000 characters, but the model reads every character.
-- **Errors say what to do.** `raise ToolError("repository not found; check owner and repo")` beats a stack trace.
-- **No output to stdout.** It is the protocol channel. Use `log("...")`.
-- **Set timeouts** on everything that waits (`http()` already has 20 seconds).
-- **Be honest about writing.** Tools that change something outside must say so. The user approves each call, and your description is what they read.
-- Do not run `server.py` yourself to test it: `create_mcp_server` starts it and reports. Do not edit `mcp.json` yourself: the tools do it correctly, and they record the user's approval.
+## 4. Choose the simplest way to log in
+
+An `oauth` block is only for services where the **user signs in with their own account** and the documentation describes OAuth 2.0. For everything else use an environment variable and `secret("NAME")`:
+
+| Service | Use |
+|---|---|
+| Telegram bot | the bot token from @BotFather in env. **Telegram bots have no OAuth.** A personal Telegram account needs MTProto (a library): say so, offer the bot |
+| Slack, Discord, Teams | a webhook URL or a bot token in env |
+| GitHub, Notion, most SaaS and APIs | a token or an API key in env (OAuth only if the user wants to sign in with their account) |
+| Google, Microsoft, Spotify | OAuth |
+| files, SQLite, programs, the desktop, public APIs | nothing |
+
+Relay refuses an `oauth` block whose code never uses the token, and the other way round. The secret itself never goes into code, into the chat or into `mcp.json`: `env: {"NAME": "${NAME}"}`. Tell the user to `export NAME=...` in the shell profile and **restart Relay** (`relay stop`, then start it again): a running Relay does not see variables set later.
+
+## 5. Write it small and call `create_mcp_server`
+
+- `server.py` with `relay_mcp` (never write the protocol yourself), up to about 200 lines; more goes into `files`. The output of one reply is limited: if it is cut, Relay asks you to go on or to write the cut call again smaller.
+- Do the SIMPLEST thing. "Open Firefox and search YouTube" is an address opened in the user's browser, not Selenium or a headless browser.
+- Standard library only (Relay installs no packages).
+- 3 to 8 tools, one job each; reading tools first, writing tools separate and marked "WRITES".
+- Errors say what to do: `raise ToolError("... check owner and repo")`. No `print()`: use `log()`.
+- Validate arguments; return short results (a `limit`); timeouts on everything.
+- The user is asked to approve it, because the program will run on their computer. The approval shows only a summary (the addresses it contacts, programs, file writes), not the code: when the user wants to read it first, show it in your answer before the call.
+
+### The skill that goes with a server
+
+`create_mcp_server` refuses without a `skill`. It tells the model that uses the tools later when and how to use them. Write `skill: {description, instructions}`:
+- `description`: what the tools are for **and when to use them** (1 or 2 sentences; this is the line in the list of skills; name the situations).
+- `instructions`: Markdown, 10 to 40 lines: which tool for which job, how to fill the arguments (formats, where an id comes from), limits and pitfalls, which tools write, what the user must set up once. No secrets. The list of tools is added by Relay.
+
+## 6. Check the answer, test, finish
+
+The answer says whether the server started (and its tools) or why not (a syntax error, a crash with its last message). Failed: fix the code and call again with `replace: true` (with the skill again). Worked: call a tool that only reads, with real input, and check the result (the tools are available from the next step as `mcp__<id>__<tool>`). A connector with a sign-in opens the browser by itself on the first call (or call `authorize_connector`). Then **finish the task the user originally asked for**, and say in two or three sentences what exists now and what the user must do once (a variable, a sign-in).
+
+## 7. When something you built does not work
+
+Do not give up and do not say you cannot. Read the error. If the cause is the code or the setup (a wrong assumption, a missing module, a variable), call `propose_extension` with kind `fix` (one sentence: what is broken). If the user agrees: `read_server` to see the code, repair it, `create_mcp_server` again with `replace: true`, and run the same call again. If they refuse, the request is cancelled. See the end of `references/patterns.md`.
 
 ## Connectors with OAuth
 
-Relay does the whole sign-in: the browser page, PKCE, the callback, storing the token and refreshing it. Your program never sees the refresh token or the client secret; it only calls `http(..., oauth=True)` or `oauth_token()` and gets a valid access token.
-
-Steps:
-1. Call `list_extensions` and note the **callback address** (like `http://127.0.0.1:8787/oauth/callback`).
-2. Tell the user, briefly, to register an OAuth app in the developer settings of the service with exactly that callback address, and to give you the **client id** (it is not a secret). The **client secret**, if the service has one, they put in an environment variable of their own (for example `GITHUB_CLIENT_SECRET`); you only write `"${GITHUB_CLIENT_SECRET}"`.
-3. Call `create_mcp_server` with `kind: "connector"` and an `oauth` block:
-   `{"authorize_url": "...", "token_url": "...", "client_id": "...", "client_secret": "${NAME}", "scopes": ["..."], "params": {...}}`.
-   Endpoints of common services are in `references/mcp-json.md`; check the service's own documentation when unsure.
-4. In the code use `http("GET", url, oauth=True)`. When the service answers 401, `http` makes Relay ask the user to sign in again by itself.
-5. Call `authorize_connector` with the id, or simply call one of the tools: when the user has not signed in, Relay pauses, opens the sign-in page in the browser, waits for the user, and then repeats your call.
-
+Relay does the whole sign-in (browser page, PKCE, callback, token, refresh). Your program never sees the refresh token or the client secret: it calls `http(..., oauth=True)` and gets a valid access token.
+1. `list_extensions` gives the **callback address**.
+2. Tell the user to register an OAuth app at the service with exactly that callback address, and to give you the **client id** (not a secret); a client secret goes into their own environment variable (`"${NAME}"`).
+3. `create_mcp_server` with `kind: "connector"` and `oauth: {authorize_url, token_url, client_id, client_secret, scopes, params}`; endpoints of common services are in `references/mcp-json.md`.
+4. `authorize_connector`, or simply call a tool: Relay pauses, opens the page, waits, and repeats your call.
 Not supported yet: services that want the client secret in an HTTP Basic header at the token address.
 
-## Writing a skill
+## Writing a skill on its own
 
-Use `create_skill` when the user wants Relay to follow a procedure, a style or house rules.
+`create_skill` when the user wants Relay to follow a procedure, a style or house rules.
 - `name`: lowercase letters, digits and single hyphens (`release-notes`).
-- `description`: what the skill does **and when to use it**, in one or two sentences. Relay shows only this line in its list, and the model decides from it whether to load the skill, so name the situations ("Use when the user asks for release notes or a changelog").
-- `instructions`: Markdown the model will follow. Be concrete and short: steps, formats, examples. Under about 300 lines. Put long material in `files` (`references/...md`), mention it in the instructions, and the model will read it only when needed.
-- Never put secrets in a skill. Scripts in `scripts/` are never run automatically; if a step needs one, write the exact command in the instructions (the user is asked before it runs).
-- A skill is advice, not a rule of the system: it cannot give permissions or override what the user says.
+- `description`: what it does **and when to use it**; only this line is in the list, so name the situations.
+- `instructions`: concrete steps, formats, examples; under about 300 lines. Long material goes into extra files (for example a style guide in a `references` folder), which are read only when needed.
+- No secrets. Scripts in `scripts/` are never run automatically: write the exact command in the instructions.
+- A skill is advice, not a rule of the system: it cannot give permissions or override the user.
 
-## After you finish
+## References
 
-Say in two or three sentences what exists now and how to use it. If you made something that needs a one-time action from the user (set a variable, register an OAuth app, sign in), say exactly what and where.
+`patterns.md` (recipes, design rules, repairs), `sdk.md` (the helper), the six `example-*.py`, `mcp-json.md`, `relay-structure.md`, `skills-format.md`.

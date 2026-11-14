@@ -139,6 +139,9 @@ func (s *Server) handleTools(w http.ResponseWriter, r *http.Request) {
 	for _, t := range s.builder.Tools() {
 		reg.Add(t)
 	}
+	if s.set.Get().SuggestTools {
+		reg.Add(s.builder.Propose())
+	}
 	for _, t := range tools.SkillTools(s.skills) {
 		reg.Add(t)
 	}

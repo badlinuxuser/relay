@@ -106,7 +106,10 @@ type Model struct {
 	PriceIn  float64 `toml:"price_in"`
 	PriceOut float64 `toml:"price_out"`
 	Context  int     `toml:"context"`
-	Tools    bool    `toml:"tools"`
+	// MaxOutput is the most tokens one answer may have (0: the provider's default; Anthropic: 16384).
+	// When the limit cuts an answer, the agent asks the model to go on.
+	MaxOutput int  `toml:"max_output"`
+	Tools     bool `toml:"tools"`
 }
 
 type Mode struct {

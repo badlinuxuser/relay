@@ -197,6 +197,13 @@ Relay can extend itself: turn the agent on (`ctrl+a`) and ask, for example, *"co
 
 A server the model builds is a **tool** (works on this computer) or a **connector** (works with an outside service); `/tools`, `/connectors` and `/skills` list them.
 
+- **A skill always comes with it.** `create_mcp_server` refuses to work without a skill that tells the model when and how to use the new tools; Relay adds the exact list of the tools to it, and removes the skill together with the server.
+- **It always asks first.** If you ask for something that no tool or skill can do, the agent asks whether to build one: *"Relay has no connector for this: send messages to your Telegram. Build one now?"* This works for direct requests (*"make a tool that ..."*) and indirect ones (*"send this to my Telegram"*, *"what is on my calendar tomorrow"*, *"open YouTube and search for cats"*). **If you refuse, the whole request is cancelled.** Then the agent has to read how Relay works before it writes anything, and asks you once more before the new program runs (you can answer "always" for that second question in a session). You can switch the offers off in the settings (*Offer to build what is missing*).
+- **It repairs what it built.** If a tool of this kind fails because of its own code or setup, the agent asks for permission to fix it, reads its code (`read_server`), and replaces it, instead of giving up.
+- **One line instead of endless thoughts.** While the agent builds, you see a single line right under your question: what is going on, the time and the stage. The model's reasoning, its calls and what it says on the way are not shown; the final answer is. If you prefer to see everything, set *While the agent builds* to *Thoughts* in the settings, or use `/progress off`.
+
+To make servers and skills by hand see **[docs/EXTENSIONS.md](docs/EXTENSIONS.md)**: the files, every field of `mcp.json`, writing a server in Python (`relay mcp sdk`) or in any language, OAuth, skills, and a checklist.
+
 ### OAuth sign-in
 
 A connector may use OAuth. Relay does the whole sign-in: it opens the page in your browser, receives the answer on its own callback address (`http://127.0.0.1:<port>/oauth/callback`, shown by `/connectors`; register exactly this address in the OAuth app of the service), stores the token in the `auth` folder (owner only) and refreshes it. A connector program never sees the refresh token or the client secret, only the current access token. Remote MCP servers that follow the MCP authorization specification (discovery, dynamic client registration, PKCE) need no setup.
@@ -314,7 +321,7 @@ Five emotions from a sprite sheet, four colour themes. Sprites are built from `a
 
 ## Status
 
-Relay is **pre-release software** (version 0.9). There is no stable version yet and stable releases are still a long way off, so expect rough edges and breaking changes. Notes, decisions and the plan are in [PROJECT.md](PROJECT.md) (in Russian).
+Relay is **pre-release software** (version 0.1.1). There is no stable version yet and stable releases are still a long way off, so expect rough edges and breaking changes. Notes, decisions and the plan are in [PROJECT.md](PROJECT.md) (in Russian).
 
 Found a bug or have an idea? Please open an [issue](https://github.com/badlinuxuser/relay/issues).
 

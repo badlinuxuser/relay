@@ -102,7 +102,8 @@ func New(cfg *config.Config, home, token string) *Server {
 	s.broker = oauth.NewBroker(oauth.NewStore(config.AuthDir(home)))
 	s.mcp.SetOAuth(s.broker, s.redirectURI)
 	s.builder = &builder.Builder{Home: home, MCP: s.mcp, Skills: s.skills, Callback: s.redirectURI}
-	s.agent = &agent.Agent{Cfg: cfg, Router: rt, Extra: s.extraTools, Skills: s.skills, Auth: s.mcp}
+	s.agent = &agent.Agent{Cfg: cfg, Router: rt, Extra: s.extraTools, Skills: s.skills, Auth: s.mcp,
+		Suggest: func() bool { return s.set.Get().SuggestTools }}
 	cat.Warm() // start looking for models right away: Ollama, Gemini, ...
 	return s
 }
@@ -120,7 +121,11 @@ func (s *Server) StartExtensions() {
 // extraTools are the tools that the agent has besides the basic ones: the builders (which are
 // there from the start) and the tools of the connected MCP servers.
 func (s *Server) extraTools() []tools.Tool {
-	return append(s.builder.Tools(), tools.MCPTools(s.mcp.Tools(), s.mcp)...)
+	out := s.builder.Tools()
+	if s.set.Get().SuggestTools {
+		out = append(out, s.builder.Propose()) // the offer to build what is missing
+	}
+	return append(out, tools.MCPTools(s.mcp.Tools(), s.mcp)...)
 }
 
 // SetAddr tells the server where it listens, once the listener exists. The OAuth callback

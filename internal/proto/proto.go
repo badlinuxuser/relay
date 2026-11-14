@@ -9,7 +9,7 @@ import (
 	"relay/internal/settings"
 )
 
-const Version = "0.9.0"
+const Version = "0.1.1"
 
 // Event это одно событие потока выполнения (SSE: "data: <json>").
 //
@@ -21,6 +21,7 @@ const Version = "0.9.0"
 //	notice       служебное сообщение (Kind: fallback | rate_limit | key_switch | info)
 //	tool_call    агент вызывает инструмент Tool (Args, Desc)
 //	approval     нужно подтверждение действия; CallID это id для POST /api/approvals/{id}
+//	progress     инструмент Tool сообщает, что делает: Text это подпись, Stage из Stages это шаг
 //	auth         агент ждёт, пока пользователь войдёт в сервис Tool (коннектор): Text это адрес
 //	             страницы входа, её надо открыть в браузере; Desc это сообщение для пользователя
 //	tool_result  результат инструмента в Result (IsError)
@@ -43,6 +44,8 @@ type Event struct {
 	Kind    string  `json:"kind,omitempty"`
 	Slot    int     `json:"slot,omitempty"` // режим сравнения: номер модели, начиная с 1
 	Step    int     `json:"step,omitempty"`
+	Stage   int     `json:"stage,omitempty"`  // progress: the stage of a long job, from 1
+	Stages  int     `json:"stages,omitempty"` // progress: how many stages the job has
 }
 
 // DaemonInfo лежит в <home>/daemon.json, по нему интерфейсы находят бэкенд.

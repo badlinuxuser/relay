@@ -11,7 +11,7 @@ Errors: a 4xx/5xx status and the body `{"error":{"message":"..."}}`.
 
 | Method and path | Description |
 |---|---|
-| `GET /api/health` | no authorization: `{"ok":true,"version":"0.9.0"}`; a client restarts a backend of another version |
+| `GET /api/health` | no authorization: `{"ok":true,"version":"0.1.1"}`; a client restarts a backend of another version |
 | `GET /api/status` | modes (`effective`: the chain that is really used), models, providers (number of keys and how many are usable), processes, local servers that answer now (`servers`), usage, presets, MCP (`mcp`: names of connected servers; `mcp_servers`: the servers without their tools; `mcp_error`), `skills` (installed, with `enabled` and `builtin`), and the user's `settings` |
 | `GET /api/models` | every model to choose from: the ones the providers report (`ollama/…`, `ollama-cloud/…`, `gemini/…`), official providers first; a provider without access adds nothing (models from the config show only with `discover = "none"`); `providers` has the number found, `local`, `skipped` ("no key") and `error`. `?refresh=1` asks the providers again; adding or deleting a key clears the 60 s cache by itself |
 | `GET /api/sessions` | list of sessions (no messages), with `tokens_in`, `tokens_out`, `cost` |
@@ -76,6 +76,7 @@ The field `type`; the other fields depend on it (empty ones are not sent).
 | `tool_call` | `tool`, `call_id`, `args`, `desc` | the agent calls a tool |
 | `approval` | `tool`, `call_id`, `args`, `desc` | waits for a decision; `call_id` is the id for `/api/approvals/{id}`. `tool` = `switch_model` asks whether Relay may move to another model of the same provider after the chosen one failed (`allow` = switch and keep the new model, `always` = do not ask again in this session, `deny` = end the request with the error) |
 | `auth` | `tool` (the server id), `text` (the address), `desc` | the agent is paused until the user signs in to a connector: open `text` in a browser. The work goes on by itself when the sign-in is done, or fails when it is cancelled (the request is cancelled) or takes more than 5 minutes |
+| `progress` | `tool`, `text`, `stage`, `stages` | a tool reports what it is doing (the builder tools: "Checking the code", 2 of 4); the interface shows a progress bar |
 | `tool_result` | `tool`, `result`, `is_error` | the result of a tool |
 | `usage` | `model`, `in`, `out`, `cost` | usage (USD at the prices of the configuration); also added to the totals of the session |
 | `error` | `text`, `kind` | `rate_limit`, `no_key` (the provider has no key), `provider`, `internal` |

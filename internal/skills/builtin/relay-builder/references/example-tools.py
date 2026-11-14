@@ -1,6 +1,8 @@
 """Example: a tool server that works on this computer: simple notes kept as text files.
 
-Create it with create_mcp_server:  id "notes", kind "tool", env {"NOTES_DIR": "${HOME}/notes"}
+Create it with create_mcp_server:  id "notes", kind "tool", env {"NOTES_DIR": "${HOME}/notes"},
+and a skill: {"description": "Keep notes ... Use when the user wants to save or find a note.",
+              "instructions": "list_notes first; names are single words; write_note replaces unless append is true ..."}
 """
 import os
 

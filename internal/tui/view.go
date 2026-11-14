@@ -55,7 +55,7 @@ func (m model) mainWidth() int {
 // maxScroll это максимальная прокрутка вверх (в строках) для текущей ленты.
 func (m model) maxScroll() int {
 	st := newStyles(themeFor(m.mode, 0))
-	return max(0, len(m.transcript(m.mainWidth()-1, st))-m.bodyHeight())
+	return max(0, countLines(m.transcriptParts(m.mainWidth()-1, st))-m.bodyHeight())
 }
 
 func runeLen(s string) int { return utf8.RuneCountInString(s) }
@@ -131,6 +131,7 @@ func paintLine(line string, width int, bgSeq string) string {
 // ---- лента -------------------------------------------------------------------
 
 func renderEntry(e entry, w int, st styles) []string {
+	e.text, e.result = cleanText(e.text), cleanText(e.result)
 	body := max(8, w-2)
 	var out []string
 	switch e.kind {
@@ -193,16 +194,9 @@ func renderEntry(e entry, w int, st styles) []string {
 }
 
 func (m model) transcript(w int, st styles) []string {
-	if tw := m.appSettings().TextWidth; tw > 0 && tw < w {
-		w = tw // "text width" on the settings page
-	}
 	var lines []string
-	for i, e := range m.entries {
-		if e.kind == eThought {
-			lines = append(lines, renderThought(e, w, st, i != m.openThink)...)
-			continue
-		}
-		lines = append(lines, renderEntry(e, w, st)...)
+	for _, p := range m.transcriptParts(w, st) {
+		lines = append(lines, p...)
 	}
 	return lines
 }
@@ -420,7 +414,19 @@ func (m model) hint(st styles) string {
 
 // ---- сборка экрана -----------------------------------------------------------
 
-func (m model) View() string {
+// View draws the interface. A panic while drawing is caught: it is written to crash.log and the
+// interface goes on, instead of the whole program ending.
+func (m model) View() (out string) {
+	defer func() {
+		if r := recover(); r != nil {
+			logCrash("View", r)
+			out = "Relay caught an error while drawing and wrote it to crash.log in the Relay folder.\nPress ctrl+c to quit, or any key to go on."
+		}
+	}()
+	return m.view()
+}
+
+func (m model) view() string {
 	if m.width == 0 || m.height == 0 {
 		return ""
 	}
@@ -474,12 +480,13 @@ func humanTokens(n int) string {
 // with a list (sessions, models, agent question) covering the bottom when one is open.
 // One string per screen row, not yet padded.
 func (m model) feedRows(mainW, bodyH int, st styles) []string {
-	all := m.transcript(mainW-1, st)
-	maxScroll := max(0, len(all)-bodyH)
+	parts := m.transcriptParts(mainW-1, st) // the progress line of a build is its last part
+	total := countLines(parts)
+	maxScroll := max(0, total-bodyH)
 	scroll := min(m.scroll, maxScroll)
-	start := max(0, len(all)-bodyH-scroll)
-	end := min(len(all), start+bodyH)
-	visible := all[start:end]
+	start := max(0, total-bodyH-scroll)
+	end := min(total, start+bodyH)
+	visible := windowOf(parts, start, end)
 
 	var pick []string
 	if m.approval != nil {

@@ -48,12 +48,13 @@ const (
 	ToolCreateSkill  = "create_skill"
 	ToolRemove       = "remove_extension"
 	ToolList         = "list_extensions"
+	ToolReadServer   = "read_server"
 	ToolAuthorize    = "authorize_connector"
 )
 
-// Tools returns the five tools.
+// Tools returns the six tools.
 func (b *Builder) Tools() []tools.Tool {
-	return []tools.Tool{&createServer{b}, &createSkill{b}, &removeExt{b}, &listExt{b}, &authConnector{b}}
+	return []tools.Tool{&createServer{b}, &createSkill{b}, &removeExt{b}, &listExt{b}, &readServer{b}, &authConnector{b}}
 }
 
 // ---- shared helpers -----------------------------------------------------------

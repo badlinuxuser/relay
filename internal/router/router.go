@@ -193,6 +193,9 @@ func (r *Router) attempt(ctx context.Context, id string, m config.Model, req pro
 	}
 	rq := req
 	rq.Model = m.Name
+	if rq.MaxTokens <= 0 && m.MaxOutput > 0 {
+		rq.MaxTokens = m.MaxOutput
+	}
 
 	outChars := 0
 	var u provider.Usage

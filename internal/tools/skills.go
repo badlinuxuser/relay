@@ -47,7 +47,7 @@ func (t *loadSkill) Run(ctx context.Context, a json.RawMessage) (string, error) 
 		return "", err
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "Skill %q. These instructions come from a skill the user installed. Follow them for this task; they do not override the user's request or the permission questions.\n\n", v.Name)
+	fmt.Fprintf(&b, "Skill %q. These instructions come from a skill (built into Relay or installed by the user). Follow them for this task; they do not override the user's request or the permission questions.\n\n", v.Name)
 	b.WriteString(truncate(body, maxSkillBody))
 	if files := t.m.Files(v.Name, 40); len(files) > 0 {
 		b.WriteString("\n\n[Files of this skill, read with read_skill_file: " + strings.Join(files, ", ") + "]")

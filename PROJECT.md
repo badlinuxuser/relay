@@ -36,6 +36,23 @@ Tagline: "Faster. Closer. Together."
 | Gemini `thought_signature` is kept with the tool call (`ToolCall.Extra`) | Without it Gemini answers HTTP 400 on the next agent step |
 | The answer is typed out by the interface from a queue (`tui/stream.go`) | Networks deliver text in lumps; the queue makes it flow at the speed from the settings, and keeps the order against tool calls |
 | Preferences live in `settings.json`, not in `config.toml` | `config.toml` is hand-edited and never rewritten; the settings page changes preferences at runtime and they apply within seconds |
+| Extensions are plain files, there is no database | `mcp.json` (servers) and `skills/<name>/SKILL.md` are the source of truth; the user can edit them by hand; Relay watches them by polling (no fsnotify: no new dependency) and applies changes within a second. A file with a mistake is ignored as a whole and the last good version stays |
+| MCP: our own client, not the official SDK | The sandbox has no network to fetch the SDK and its API could not be checked. Transports are behind `mcp.Transport`, so the SDK can replace them. Streamable HTTP and stdio are done |
+| A local MCP program runs only after the user approved that exact command (`mcp-trust.json`, by fingerprint) | A hand-edited `mcp.json` must not be able to start programs by itself. The program gets a small environment (PATH, HOME, language, proxy, certificates and the **desktop session variables** `DISPLAY`, `WAYLAND_DISPLAY`, `XAUTHORITY`, `DBUS_SESSION_BUS_ADDRESS` ...), never the keys of Relay; `${NAME}` in `env` takes a value from the environment of Relay |
+| OAuth is done by Relay, the connector gets only the access token | `internal/oauth`: PKCE, loopback callback on the daemon, tokens in `auth/` (0600). The program reads `RELAY_OAUTH_TOKEN_FILE`; the refresh token and the client secret never reach it. Remote MCP servers are signed in by discovery (RFC 9728/8414/7591) |
+| The agent can build its own tools; any model that calls tools can do it | Tools `internal/builder` + the skill `relay-builder` built into the binary (`go:embed`) + a small Python SDK `relay_mcp.py` (also embedded). The model writes only tool functions; the protocol, argument checking, HTTP and token reading are in the SDK. Python 3 on the computer is a requirement for this |
+| Building has a fixed order that the code enforces | (1) `propose_extension` (the user must agree; a refusal **cancels the whole request**), (2) the model must have read the guide and `references/sdk.md` in this request, (3) `create_mcp_server` with a required `skill`. Without an agreed offer or without reading, the build tools answer "not yet" with no prompt. With the setting `suggest_tools` off, only the approval of `create_*` remains |
+| "Always allow in this session" works for `create_*`, not for the offer and not for `remove_extension` | The author asked for it (repairs repeat `create_mcp_server`); the question "may I build this?" is asked every time (`tools.OnceOnly`) |
+| Every server comes with a skill | A tool without a skill is used badly by models. `create_mcp_server` writes it after the server started and appends the exact list of tools; `metadata: {created-by, server}` ties it to the server |
+| Relay tells the model where it runs | Models believed they were in a remote sandbox and refused to "touch the user's computer". The agent prompt has a "Where you run" paragraph and `list_extensions` starts with the OS, the desktop and Python |
+| While the agent builds, one progress line replaces the reasoning, the calls of the model and what it says on the way | Setting `builder_view` (`progress` | `thoughts`). The line is the last part of the feed (right under the question): a moving label, the time, the stage `n/5`; calls of builder tools and of tools made during a build are hidden; text during a build is held and shown at the end only if it was the final answer |
+| An answer cut by the output limit goes on by itself | `provider.EvFinish("length")`; the agent adds a hidden user message (`provider.InternalPrefix`) asking to go on, or to write the cut tool call again smaller. Anthropic's `stop_reason: max_tokens` was ignored before |
+| The step limit is soft | `max_steps` is where a notice appears; the hard limit is 4x (max 120), then one more turn without tools to summarise; the same call 4 times in a row stops the agent |
+| Long conversations are fitted to the context of the model before each request | `agent/context.go`: old tool results are shortened, then the oldest turns are left out (from a user message); the stored history is not changed. `context` in `config.toml` (default 128000) |
+| The feed is drawn once per entry | `tui/perf.go` `feedCache`; control codes of terminals are removed from outside text (`cleanText`); `View`/`Update` recover from panics and write `crash.log` |
+| Fallback of a failed model stays inside its provider (agent and chat) | Asking the user (allow / always / deny); the gateway and `/compare` still fall back silently along the chain |
+| The version is 0.1.x | 0.1.0 is the first numbered release (earlier numbers 0.4 ... 0.9 were working names). The client restarts the background service only when the version string differs, so every build that changes the service gets a new patch number (0.1.1 ...) |
+
 
 ## Modes and themes
 
@@ -70,98 +87,80 @@ mapped in `internal/tui/model.go` (`handleEvent`):
 
 ## Map of the code
 
-- `cmd/relay`: the single CLI. `main.go` (subcommand dispatch; without a subcommand the TUI, flags `--no-spawn`, `--keep`), `cli.go` (keys, status, stop, config), `install.go` (install/uninstall, PATH), `console_windows.go` / `console_other.go` (UTF-8 console on Windows).
-- `internal/catalog`: finds the models of providers (Ollama `/api/tags`, Gemini `/v1beta/models`, `/v1/models`), 60 s cache, `Snapshot.Missing/Pick/Fallback` for the router, `Running` (local servers that answer).
-- `internal/daemon`: backend start (`relay daemon`): token, `daemon.json`, clean shutdown, autostart of processes.
-- `internal/keystore`: key storage (`keys.json`), implements `provider.Source`.
-- `internal/settings`: preferences (`settings.json`).
-- `internal/browser`: opens URLs in the browser.
-- `internal/proto`: all DTOs and events of the protocol (the single source of truth for client and server).
-- `internal/config`: TOML loading, validation, `example.toml` (embedded, created on first run).
-- `internal/provider`: `Client` (`Stream` with a callback), `Keys` (keys from the store and env, rotation, rest after a limit or missing credit), `OpenAI`, `Anthropic`, `thinking.go` (splits reasoning from text), classification of errors (`RateLimited`, `Billing`, `Auth`, `NoKey`).
-- `internal/router`: `Resolve` (model chain by mode and hint, skips providers without keys or credit), `StreamAsk` (the agent and chat: when a model fails, the next untried model of the SAME provider is offered: models of the config first, then those the catalog lists; max 8 tries; provider-wide errors (no key, bad key, no credit) stop at once; after all of them failed the error says so and points to `/keys`), `Stream` (gateway/compare: silent fallback along the mode chain, across providers), `attempt` (one model), usage accounting. A rate limit pauses a key for that model only (`Keys.GetFor`, `DoWithKeysFor`); no credit pauses the whole key.
-- `internal/agent`: the step loop, approvals, limit on tool output, per-session token and cost accounting.
-- `internal/tools`: `read_file`, `list_dir`, `grep`, `write_file`, `edit_file`, `run_shell`, `web_fetch`, MCP adapter. Paths are limited to the workspace (symlinks are not resolved: a known gap).
-- `internal/mcp`: `config.go` (mcp.json: `File`/`ServerConfig`, `Parse` rejects the whole file on one bad entry, `Fingerprint`, safe `buildEnv`), `trust.go` (approvals of stdio commands in `mcp-trust.json`), `rpc.go` (JSON-RPC, `Transport`, `AuthError`), `stdio.go` (own process group, stderr tail), `http.go` (Streamable HTTP: JSON or SSE answers, `Mcp-Session-Id`, no redirects), `client.go` (handshake, tools, calls), `manager.go` (`Manager`: states, reload with the last good config, lazy reconnect, `Dial`).
-- `internal/skills`: `frontmatter.go` (the small YAML subset, no dependency), `skill.go` (`Parse`/`ParseAs`, Agent Skills validation), `manager.go` (list, enable/disable in `skills.json`, `Prompt`, `readInside` that keeps paths in the skill folder), `install.go` (`Install`/`Remove`).
-- `internal/oauth`: `oauth.go` (PKCE, token and refresh requests, `Store`: `auth/<id>.json` is the whole record, `auth/<id>.token` only the access token that a connector program gets), `discover.go` (MCP authorization: protected resource metadata, authorization server metadata, dynamic client registration), `broker.go` (`Begin` starts a flow, `HandleCallback` completes it, `Token` refreshes). Depends on nothing else of Relay.
-- `internal/builder`: the five tools of the agent that build extensions (`create_mcp_server`, `create_skill`, `remove_extension`, `list_extensions`, `authorize_connector`) and `sdk/relay_mcp.py` (embedded; copied next to every server that is created; also tested by running it, see `sdk/test_relay_mcp.py`). `Describe` of `create_mcp_server` summarises the code (hosts, processes, file writes) because the approval box has no room for code.
-- `internal/skills/builtin/`: skills inside the binary (`relay-builder` with references and two example servers). A skill of the same name in the skills folder replaces a built-in one.
-- `internal/watch`: polling watcher (`Poll`, `FileSig`, `DirSig`) for mcp.json, the approvals and skills/.
-- `internal/runner`: process launcher, URL ready probe, stop (Interrupt, then Kill), attaches to servers that already run.
-- `internal/session`: session storage (messages, tokens, cost), `Run` mutex (one request per session), `AutoTools` ("always" for the session), delete.
-- `internal/server`: routes (Go 1.22 ServeMux with methods), SSE, approvals, compare, the `/v1` gateway, the keys API and page `ui/keys.html`, the help page `ui/help.html`, the settings API and page `ui/settings.html`, Host check.
-- `internal/client`: HTTP client, backend autostart (`os.Executable() daemon`, a detached process: `proc_unix.go`, `proc_windows.go`), version check, SSE.
-- `internal/tui`: `model.go` (state and Update), `commands.go` (slash commands), `view.go` (feed, side panel, input), `overlay.go` (lists above the input: sessions, running processes, clicks), `picker.go` (model list), `approval.go` (agent questions), `stream.go` (typing queue, thoughts, scroll keys, /copy, mouse, select mode), `sprites.go` (pixels → half blocks, rainbow, transition wave), `theme.go` (themes, blending), `mascot.go`.
-- `tools/sprites/build.py`: PNG sheets → `internal/tui/sprites/*.json` + previews in `assets/sprites/`.
+- `cmd/relay`: the single CLI. `main.go` (subcommand dispatch; without a subcommand the TUI, flags `--no-spawn`, `--keep`), `cli.go` (keys, status, stop, config), `ext_mcp.go` (`relay mcp list|add|remove|test|trust|connect|disconnect|reconnect|sdk`), `ext_skill.go` (`relay skill ...`), `ext_common.go`, `install.go` (install/uninstall, PATH), `console_*.go` (UTF-8 console on Windows).
+- `internal/catalog`: finds the models of providers (Ollama `/api/tags`, Gemini `/v1beta/models`, `/v1/models`), 60 s cache, `Snapshot.Missing/Pick/Fallback`, `Running`.
+- `internal/daemon`: backend start (`relay daemon`): token, `daemon.json`, `SetAddr` (the OAuth callback address), clean shutdown, autostart of processes.
+- `internal/keystore`, `internal/settings` (`settings.json`: includes `builder_view`, `suggest_tools`), `internal/browser`, `internal/proto` (all DTOs and events: the single source of truth), `internal/config` (TOML, `example.toml`, `layout.go`: the extension folders).
+- `internal/provider`: `Client` (`Stream` with a callback), `Keys` (rotation, rest after a limit: **per model** for a rate limit, whole key for no credit; `GetFor`, `DoWithKeysFor`), `OpenAI`, `Anthropic` (reports `EvFinish`, passes on a tool call cut by the limit), `thinking.go`, error classification. `InternalPrefix` marks messages that Relay adds for the model.
+- `internal/router`: `Resolve`, `StreamAsk` (same-provider fallback with questions, `nextOfProvider`, max 8 tries), `Stream` (silent chain fallback for the gateway and compare), `attempt`, usage accounting, `MaxOutput` of a model is passed on.
+- `internal/agent`: the step loop (`agent.go`): continuation after the output limit, soft step limit with a summary turn, loop detection, `registry()` built at every step, consent and order gates in `runTool` (`NeedsOffer`, `NeedsRead`, `CancelOnDeny`, `OnceOnly`, `Denier`, `BuildOffer`), the sign-in pause (`signIn`, event `auth`), progress events, prompts (`agentPrompt`, `suggestPrompt`, `environmentPrompt`); `context.go` (`fitContext`).
+- `internal/tools`: `read_file`, `list_dir`, `grep`, `write_file`, `edit_file`, `run_shell`, `web_fetch`, the MCP adapter (`mcp.go`), the skill tools `load_skill` / `read_skill_file` (`skills.go`), `progress.go` (the optional interfaces above, `Progress` reporting). Paths are limited to the workspace (symlinks are not resolved: a known gap).
+- `internal/mcp`: `config.go` (mcp.json, `Parse` rejects the whole file on one bad entry, kinds, `OAuthConfig`, `Fingerprint`, `buildEnv`), `trust.go`, `rpc.go` (JSON-RPC, `Transport`, `AuthError`, `AuthRequiredError`, `SignInTool`, `AuthMarker`), `stdio.go`, `http.go`, `client.go`, `manager.go` (`Manager`: states, reload with the last good config, lazy reconnect, `Dial`, sign-in: `SetOAuth`, `Authorize`, `NeedsSignIn`, `Forget`).
+- `internal/oauth`: `oauth.go` (PKCE, token and refresh, `Store`), `discover.go`, `broker.go` (`Begin`, `HandleCallback`, `Token`). Depends on nothing else of Relay.
+- `internal/skills`: `frontmatter.go` (a small YAML subset), `skill.go`, `manager.go` (list, enable/disable, `Prompt`: built-in descriptions are shown up to 700 characters, others 250), `install.go`, `builtin.go` + `builtin/relay-builder/` (the guide, `references/`: `sdk.md`, `patterns.md`, `mcp-json.md`, `relay-structure.md`, `skills-format.md`, and six working examples `example-*.py`).
+- `internal/builder`: the tools of the agent that build: `propose_extension` (`propose.go`), `create_mcp_server` (`server.go`), `create_skill` (`skill.go`, `skillwrite.go`), `read_server`, `list_extensions`, `authorize_connector`, `remove_extension` (`manage.go`); `sdk/relay_mcp.py` (embedded SDK) and `sdk/test_relay_mcp.py` (a real test: run it with Python).
+- `internal/watch`: polling watcher. `internal/runner`: process launcher. `internal/session`: storage, `Run` mutex, `AutoTools`, per-request flags `BuildOK`, `Cancelled`, `Read` (not stored).
+- `internal/server`: routes, SSE, approvals, compare, `/v1` gateway, keys/settings/extensions APIs (`extensions.go`: mcp, skills, tools, authorize), pages `ui/keys.html`, `ui/settings.html`, `ui/help.html`, `/oauth/callback`.
+- `internal/client`: HTTP client, backend autostart, version check, SSE.
+- `internal/tui`: `model.go` (state, `Update` with recover), `commands.go`, `view.go` (feed, side panel, input), `perf.go` (feed cache, `cleanText`, clipping, crash log), `build.go` (the progress line, hidden calls, `trackBuild`), `ext.go` (/tools /connectors /skills /mcp, sign-in opening), `overlay.go`, `picker.go`, `approval.go`, `stream.go`, `sprites.go`, `theme.go`, `mascot.go`.
+- `tools/sprites/build.py`: PNG sheets to sprites. `tools/check/`: static checks for sessions without Go (see its README).
+- `docs/`: `PROTOCOL.md` (API and events), `EXTENSIONS.md` (the guide for making MCP servers and skills by hand).
 
 ## Conventions
 
-- Go 1.22+, `go vet` must be clean. No import cycles: `proto` knows only `provider` and `settings`.
-- Bubble Tea: the model is a value; call mutators with a pointer receiver as a separate statement
-  **before** `return m, ...` (the order of evaluating `m` and the call inside one return is not defined).
-- Colours only through `theme.go`; the background is painted in `paintLine` (after every `\x1b[0m` the background is switched on again).
-- New protocol events: add them to `proto.Event`, to the table in `docs/PROTOCOL.md`, and to `handleEvent`.
-- New settings: add to `settings.Settings` (with a default and cleaning), to the table in `docs/PROTOCOL.md`, to `ui/settings.html`, and use them in the interface.
-- All documentation, UI texts and examples are in English.
+- Go 1.22+ (go.mod says 1.24), `go vet` must be clean. No import cycles: `proto` knows only `provider` and `settings`; `oauth` knows nothing of the rest.
+- Bubble Tea: the model is a value; call mutators with a pointer receiver as a separate statement **before** `return m, ...`.
+- Colours only through `theme.go`; the background is painted in `paintLine`.
+- Anything shown to the user must pass `cleanText` if it comes from a tool or a model (control codes break the screen).
+- New protocol events: add them to `proto.Event`, the table in `docs/PROTOCOL.md`, and `handleEvent`. New settings: `settings.Settings` (default and cleaning), `docs/PROTOCOL.md`, `ui/settings.html`, and the interface.
+- A new builder or MCP-related tool that creates code must implement `OnceOnly` only if the question has to be asked every time; a tool that builds must implement `NeedsOffer`, `NeedsRead`, `CancelOnDeny`.
+- When the builder skill changes, run the example servers again against the SDK (see the tests in `internal/builder`, and the Python test).
+- All documentation, UI texts and examples are in English; the conversation with the author is in Russian.
+- **No Go in the sandbox**: the code is written without a compiler. Run `tools/check/*` before handing code over, and say plainly that it was not compiled.
 
 ## Status
 
-**v0.9 (self-extension and OAuth, uncompiled).** Added on top of v0.8, also written without a compiler: the built-in skill `relay-builder` and the five builder tools (the model can write MCP servers and skills, with any model that calls tools), OAuth (Phase 3 of the roadmap) for remote MCP servers by discovery and for local connectors by an `oauth` block in `mcp.json` (token file in `RELAY_OAUTH_TOKEN_FILE`; the manager refreshes the token before every call), the synthetic tool `sign_in` for a remote server that cannot list tools before the sign-in, pause of the agent on `*mcp.AuthRequiredError` (event `auth`, the TUI opens the browser, the tool is called again once), `kind` (tool|connector) in `mcp.json`, `/tools`, `/connectors [auth <id>]`, `/skills` (shows built-in), `relay mcp add --kind`, `relay mcp connect` signs in, `GET /api/tools`, `POST /api/mcp/{id}/authorize`, `GET /oauth/callback`. The agent now builds its tool registry at every step (a server created in step N is usable in step N+1). Python 3 is needed for servers that the model writes (the SDK is Python only for now). The OAuth callback port is the daemon port: a configured fixed `listen` keeps a registered callback valid. Tokens are in files (0600), not in a system keychain. Not done: a web page to add servers by hand, Node/Go SDKs, HTTP Basic client authentication at the token address, `tools/list_changed`.
+**0.1.1 (= 0.1.0 plus the fixes of the last session), in the hands of the author for testing. The code was never compiled by Claude**: the author compiles and reports errors (the only compile error so far was a type declared twice, `skillArgs`; everything else built). Tests were never run by Claude either: expect failures in them first.
 
-**v0.8 (extensions, uncompiled).** Written without a Go toolchain: `go mod tidy && go vet ./... && go test ./...` has NOT been run, expect a few compile errors to fix first. Done from the extensions roadmap (Phases 1, 2 and the file-based part of 4): `mcp.json` (+ `mcpServers` alias, old `[[mcp]]` still works with the full environment), stdio and Streamable HTTP, `Manager` with the six states, hot reload (polling, not fsnotify: no new dependencies), approvals for stdio commands by fingerprint (`relay mcp trust`), safe environment with `${VAR}` expansion, `disabled_tools`, Skills (Agent Skills, progressive disclosure through `load_skill` / `read_skill_file`, list in the agent system prompt, hot reload, enable/disable), `relay mcp ...` and `relay skill ...`, `GET /api/mcp`, `/api/skills`, an "extensions" block in the side panel, `/mcp`, `/skills`. Fallback reworked (see `internal/router` above); the agent keeps the model it switched to for the rest of the request.
+What exists:
+- Everything of the launcher: modes, themes, mascot, providers, catalog, keys page, settings page, sessions, agent with tools and approvals, gateway, compare.
+- Extensions: `mcp.json` (stdio, Streamable HTTP, kinds, `disabled_tools`, `${VAR}`), approvals by fingerprint, hot reload, Skills (Agent Skills; progressive disclosure; built-in `relay-builder`), OAuth (remote discovery and `oauth` blocks, pause of the agent and sign-in in the browser, refresh), CLI `relay mcp` / `relay skill`, `/tools`, `/connectors`, `/skills`, API endpoints.
+- The agent builds its own tools: see Decisions (consent, order, skill, repair with `read_server` and `propose_extension` kind `fix`).
+- Fixes of the last session: "Limit reached" (output limit and step limit), long conversations (context fitting), interface lag and garbage (feed cache, control codes, clipping, recover + `crash.log`).
 
-Decisions of this step: the official MCP SDK was NOT used (no network to fetch it, and its API could not be checked); the transports sit behind `mcp.Transport`, so the SDK can replace them. `config.json` of the roadmap is not created: the settings stay in `config.toml`. Skills outside `~/.config/relay/skills` (project folders) are not read.
+What the author reported in the last session and how it was handled:
+1. The progress bar looked bad: removed. One line under the question: a label that shimmers, the time, the stage; the model's calls are hidden while it builds; interim text is dropped, the final answer is shown.
+2. The model did not offer to build, it said "I cannot": the prompt now forbids that (`suggestPrompt` is placed before the skills and lists direct and indirect requests); `propose_extension` is described as the thing to call instead; the skill description lists indirect triggers (and is shown in full).
+3. A refusal must cancel the whole request: `CancelOnDeny`; building cannot start without an agreed offer (`NeedsOffer`).
+4. "Always allow" for `create_mcp_server` did not work (it was `OnceOnly`): it works now; the offer stays once-only.
+5. The model built before reading the guide: `NeedsRead` makes the build tools refuse until `relay-builder` and (for a program) `references/sdk.md` were read in the request.
+6. A tool opened no window and the model said it cannot control the computer: the sandbox variables `DISPLAY` etc. were missing from the small environment (a bug of ours) and the model believed it was in a sandbox. Both fixed; example `example-desktop.py` and the rule "the simplest thing" (no browser automation).
+7. A broken tool was abandoned: the repair path (`propose_extension` kind `fix`, `read_server`, `create_mcp_server` with `replace`), with the user's permission.
+8. A Telegram connector got an OAuth block although a bot uses a token: the skill has a table "choose the simplest way to log in"; `create_mcp_server` refuses an `oauth` block whose code never uses the token (and the reverse); `example-apikey.py` is the Telegram bot.
 
-Not done yet (roadmap): Phase 3 OAuth (the `AuthError` carries `resource_metadata`; tokens go to `auth/`, 0700; `httpTransport.token` is the hook), Phase 5 the Extensions page of the web UI (the API exists), Phase 6 Git install / registry (`skill add github:...` says "not yet"), `notifications/tools/list_changed`, GET stream of Streamable HTTP, `relay extension ...`.
+Not done / ideas (see also the plan): a web page to add servers by hand; Node and Go SDKs (only Python now); Basic client authentication at token endpoints; `tools/list_changed`; a store for secrets (now the user exports a variable and restarts Relay; the answer of `create_mcp_server` says so); a scheduler (tools run only when called).
 
-**v0.7 (later changes).** Fallback asks before moving to another model (agent/chat; `/compare` and the gateway still switch silently); an accepted switch becomes the session model; a Gemini limit no longer rules out its other models; llama.cpp: the model value picks `-m` / `-hf` / `-mu` itself and several binary names are tried; `/load` moves the session to the current folder; select mode hides the side panel. Select mode (`f2`, `/select`; a terminal cannot report Shift alone, and in-app drag-copy was tried and dropped): the screen is frozen (no ticks, no cursor blink, animations drawn as of the freeze moment) and the mouse goes back to the terminal, so a selection is not dropped; the settings page bug where every second change was lost (the controls held a stale settings object) is fixed; launcher settings of Ollama and llama.cpp (autostart, arguments, start/stop) moved to their cards on the keys page; sessions are a separate tab of the settings page; the interface polls status every ~2.4 s.
+History (older work, short): v0.8 extensions (mcp.json, skills, CLI, hot reload); v0.9 builder tools, OAuth, `/tools` `/connectors`; v0.7 reasoning split from the answer, typing queue, settings page, select mode, ask before switching models; v0.6 processes panel, clickable lists, approvals box; v0.5 Grok and DeepSeek, official providers first; v0.4 model picker and catalog; v0.1-v0.2 first build.
 
-**v0.7.** Reasoning of models is split from the answer (`thinking` events, dimmed block in the feed, can be turned
-off: then it is not sent at all); the answer is typed out smoothly at a chosen speed; `/settings` opens a page
-(`settings.json`: thoughts, speed, side panel, mascot, text width, mouse, default mode, autostart and arguments of
-processes, session deletion); `/thoughts`, `/mouse`, `/copy` (OSC 52); extra scroll keys (shift+↑↓, alt+↑↓, ctrl+u/d,
-home/end) with a "scrolled up" hint; tokens and cost are stored per session; Gemini `thought_signature` is kept (no
-more HTTP 400 in agent mode); providers without credit are skipped in the fallback chain and the final error lists
-every attempt; no key field on the keys page for local servers; the side panel says "N local models".
-
-**v0.6.** `processes` block in the side panel (only what runs, otherwise "Nothing running :)"); lists above the input
-can be clicked: models, sessions (`/sessions`), running processes (`/stop`), the agent's approval (Allow once /
-Always / Deny; keys y/a/n, ↑↓ enter); `/start` removed in favour of `/ollama` and `/llamacpp <model.gguf>`;
-quick status polling after a start and a message when a process dies; UTF-8 console on Windows; a hint for stopping
-Ollama without systemctl (tray icon).
-
-**v0.5.** Providers Grok (xAI) and DeepSeek; official providers first (`Provider.IsOfficial`, by host); provider
-errors only on the keys page; `/help` opens `/ui/help`; README in English; filter for mouse-report fragments in the input.
-
-**v0.4.** `/model` became `/models` with a picker (`internal/tui/picker.go`); `internal/catalog` finds Ollama (local
-and cloud), Gemini, Anthropic and OpenAI-compatible models; `GET /api/models`; the keys page shows the number of
-models and checks the key.
-
-**v0.1–v0.2.** First build and the author's feedback: sharp mascot, mode-change animation, keys through a page and a
-store, one CLI with PATH installation, aliases `/small` `/medium` `/hard` `/max`.
-
-Verification note: the development environment has no access to proxy.golang.org, so `go vet` and the tests run
-against stubs of the third-party libraries (bubbletea, lipgloss, bubbles, toml); the full build with the real
-libraries happens on the author's machine. Provider answer formats (`/api/tags`, `/v1beta/models`, reasoning fields)
-come from documentation and the author's screenshots, not from live services.
+Verification note: the sandbox has no access to proxy.golang.org, so `go vet` and the tests cannot run there at all. Provider answer formats (`/api/tags`, `/v1beta/models`, reasoning fields) come from documentation and the author's screenshots, not from live services. The OAuth flow was tested only against fake servers.
 
 ## First steps of the next session
 
-1. `go mod tidy && go vet ./... && go build ./... && go test ./...`, fix compile errors (v0.8 was written without a compiler; if the author sent the output, start from it).
-2. `relay install`, then `relay keys` and `relay` (`/settings`, `/models`, a chat with a thinking model).
-3. Check `pgup` / `shift+↑` scrolling and text selection (`/mouse off`) in the author's terminal (GNOME Console).
-4. Windows: `relay install` (PowerShell, PATH), background start (`detach`), `rundll32` for the browser, UTF-8 console.
+1. If the author sent compiler or test output, start from it. Otherwise ask for `go vet ./... && go build ./... && go test ./...`.
+2. Check the behaviours that only a person can see (the author's terminal is GNOME Console): the progress line under the question, hidden calls, the final answer after a build, `/tools` `/connectors` `/skills`, sign-in in the browser, a long conversation (no lag), `crash.log` stays empty.
+3. Try the builder with several models (a strong one and a weak local one): "connect my Telegram" (token, no OAuth), "open YouTube and search for cats" (desktop), an indirect request ("send this to my Telegram"), a refusal at the offer, "always allow", a deliberately broken tool and its repair.
+4. Windows: `relay install`, background start, the browser, UTF-8 console; Python for the builder (`python` vs `python3`).
 
 ## Known gaps and ideas (plan)
 
-- Tests: provider adapters against a fake SSE server, path resolution in tools, SSE parsing in the client.
-- Context management: trimming long history and counting tokens (usage is only estimated as `len/4` when a provider reports none).
+- Tests: provider adapters (OpenAI finish and Anthropic cut call are covered; the rest is not), path resolution in tools, SSE parsing in the client, TUI interaction.
+- The token count is estimated as `len/4` when a provider reports none; `context` per model is needed for small local models.
 - Gateway: pass through `tools`/`tool_calls`; `/v1/embeddings`.
-- Agent: parallel tools, cancelling the shell with `esc` while it runs, a diff preview before approval, multi-agent work (a planner on a strong model, workers on local ones), subagents ("summon": frame `summon`).
-- Mascot: use the action frames (`run` while an answer is coming, `link` when connecting to a provider, `summon` for a subagent), blinking, lines by mood.
-- Security: keys in the system keyring instead of `keys.json`, symlink limits in the workspace, a command allowlist.
-- Settings page: adding providers and models (now only keys and preferences; models and modes live in `config.toml`), a button that checks a key, a usage summary.
-- Interface: multi-line input, markdown and code highlighting, completion of commands and models.
-- Providers: native Gemini and Ollama APIs (now through OpenAI compatibility), images.
+- Agent: parallel tools, cancelling the shell with `esc` while it runs, a diff preview before approval, multi-agent work, subagents.
+- Builder: Node/Go SDKs; a secret store; Git install of skills and servers (`relay skill add github:...`), a registry; the Extensions page of the web UI; showing the code of a new program in the approval box (now only a summary).
+- Mascot: use the action frames (`run`, `link`, `summon`), blinking, lines by mood; a mood for building.
+- Security: keys and tokens in the system keyring instead of files; symlink limits in the workspace (`tools.resolve`); a command allowlist.
+- Settings page: adding providers and models, a button that checks a key, a usage summary.
+- Interface: multi-line input, markdown and code highlighting, completion of models.
+- Providers: native Gemini and Ollama APIs, images.
 - Distribution: releases for Linux and Windows (goreleaser), one-command install.

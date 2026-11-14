@@ -213,6 +213,20 @@ func (m model) command(line string) (tea.Model, tea.Cmd) {
 		}
 		return m, saveSettingsCmd(m.cl, func(s *settings.Settings) { s.ShowThoughts = on })
 
+	case "/progress":
+		if !needConn() {
+			return m, nil
+		}
+		on := onOff(args, m.appSettings().BuilderView != "thoughts")
+		view := "thoughts"
+		if on {
+			view = "progress"
+			m.addNotice("While the agent builds a tool: a progress bar instead of the model's reasoning")
+		} else {
+			m.addNotice("While the agent builds a tool: the reasoning and the answers are shown as usual")
+		}
+		return m, saveSettingsCmd(m.cl, func(s *settings.Settings) { s.BuilderView = view })
+
 	case "/mouse":
 		if !needConn() {
 			return m, nil

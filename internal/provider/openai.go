@@ -265,7 +265,9 @@ func (c *OpenAI) once(ctx context.Context, key string, body []byte, emit func(Ev
 		_ = emit(Event{Kind: EvNotice, Tag: "info", Text: c.name + ": the answer may be incomplete (the connection closed early)"})
 	}
 	if finish == "length" {
-		_ = emit(Event{Kind: EvNotice, Tag: "info", Text: c.name + ": the answer was cut by the model's token limit"})
+		if err := emit(Event{Kind: EvFinish, Text: "length"}); err != nil {
+			return err
+		}
 	}
 
 	sort.Ints(order)

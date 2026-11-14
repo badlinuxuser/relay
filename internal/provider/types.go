@@ -56,7 +56,12 @@ const (
 	EvModel                     // Text = id модели, начавшей ответ
 	EvNotice                    // Text, Tag
 	EvThinking                  // Text = a piece of the model's reasoning (not part of the answer)
+	EvFinish                    // Text = why the model stopped; "length": the output limit cut the answer off
 )
+
+// InternalPrefix starts the text of a message that Relay adds to the conversation for the model
+// ("continue", "the step budget is used up"). Such a message is not shown to the user.
+const InternalPrefix = "[relay] "
 
 type Event struct {
 	Kind  EventKind

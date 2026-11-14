@@ -5,11 +5,13 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"text/tabwriter"
 	"time"
 
 	"relay/internal/browser"
+	"relay/internal/builder"
 	"relay/internal/client"
 	"relay/internal/config"
 	"relay/internal/mcp"
@@ -26,6 +28,7 @@ Usage:
   relay mcp test <id>                   connect once and show the tools
   relay mcp trust <id>                  approve the command of a local server
   relay mcp connect <id> | disconnect <id> | reconnect <id>
+  relay mcp sdk [folder]                write relay_mcp.py (the helper for writing a server in Python) into a folder
 
 Servers live in mcp.json (edit it by hand if you like; Relay notices the change).
 Options of add: --name TEXT  --kind tool|connector  --header "Name: value"  --yes  --force
@@ -53,6 +56,8 @@ func cmdMCP(args []string) int {
 		return mcpTrust(args[1:])
 	case "connect", "disconnect", "reconnect":
 		return mcpAction(args[0], args[1:])
+	case "sdk":
+		return mcpSDK(args[1:])
 	}
 	fmt.Fprintf(os.Stderr, "relay mcp: unknown command %q\n\n%s", args[0], mcpUsage)
 	return 2
@@ -424,4 +429,22 @@ func signInCLI(cl *client.Client, id string) int {
 		}
 	}
 	return fail(fmt.Errorf("the sign-in was not finished within 5 minutes"))
+}
+
+// mcpSDK writes the helper for Python servers into a folder, so that a server can be written by hand.
+func mcpSDK(args []string) int {
+	dir := "."
+	if len(args) > 0 {
+		dir = args[0]
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fail(err)
+	}
+	p := filepath.Join(dir, "relay_mcp.py")
+	if err := os.WriteFile(p, builder.SDK(), 0o644); err != nil {
+		return fail(err)
+	}
+	fmt.Printf("Wrote %s\nUse it in your server:  from relay_mcp import Server, ToolError, http, secret\nThen:  relay mcp add <id> --command python3 -- %s\nThe guide: docs/EXTENSIONS.md\n",
+		p, filepath.Join(dir, "server.py"))
+	return 0
 }

@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"relay/internal/mcp"
 	"relay/internal/provider"
@@ -76,6 +78,12 @@ func (t *removeExt) Run(ctx context.Context, a json.RawMessage) (string, error) 
 				note = " Its code in " + dir + " was deleted."
 			}
 		}
+		for _, sk := range b.skillsOfServer(v.Name) { // the skill that was written with the server
+			if _, err := skills.Remove(b.Skills.Dir(), sk.Name); err == nil {
+				note += fmt.Sprintf(" Its skill %q was removed too.", sk.Name)
+			}
+		}
+		b.Skills.Reload()
 		b.MCP.Reload()
 		return fmt.Sprintf("Removed the server %q.%s", v.Name, note), nil
 	case "skill":
@@ -108,11 +116,12 @@ func (t *listExt) Spec() provider.ToolSpec {
 	}
 }
 
-func (t *listExt) NeedsApproval() bool                  { return false }
-func (t *listExt) Describe(a json.RawMessage) string    { return "list the MCP servers and skills" }
+func (t *listExt) NeedsApproval() bool               { return false }
+func (t *listExt) Describe(a json.RawMessage) string { return "list the MCP servers and skills" }
 func (t *listExt) Run(ctx context.Context, a json.RawMessage) (string, error) {
 	b := t.b
 	var out strings.Builder
+	out.WriteString(environmentInfo())
 	fmt.Fprintf(&out, "Folders:\n  home: %s\n  servers: %s\n  code of servers made by create_mcp_server: %s\n  skills: %s\n",
 		b.Home, b.MCP.Path(), filepath.Join(b.Home, "connectors"), b.Skills.Dir())
 	if cb := b.callback(); cb != "" {
@@ -137,6 +146,9 @@ func (t *listExt) Run(ctx context.Context, a json.RawMessage) (string, error) {
 		}
 		if len(tl) > 0 {
 			fmt.Fprintf(&out, "; tools: %s", strings.Join(tl, ", "))
+		}
+		for _, sk := range b.skillsOfServer(s.ID) {
+			fmt.Fprintf(&out, "; skill: %s", sk.Name)
 		}
 		if b.MCP.NeedsSignIn(s.ID) {
 			out.WriteString("; the user has not signed in")
@@ -206,4 +218,92 @@ func (t *authConnector) Run(ctx context.Context, a json.RawMessage) (string, err
 		ids = append(ids, s.ID)
 	}
 	return "", fmt.Errorf("there is no server %q; known: %s", v.ID, strings.Join(ids, ", "))
+}
+
+// environmentInfo says where Relay runs, so that the model builds for this computer and does not
+// think it is in a sandbox.
+func environmentInfo() string {
+	desk := "none found (a remote terminal?)"
+	switch {
+	case runtime.GOOS == "windows" || runtime.GOOS == "darwin":
+		desk = "yes"
+	case os.Getenv("WAYLAND_DISPLAY") != "":
+		desk = "yes (Wayland)"
+	case os.Getenv("DISPLAY") != "":
+		desk = "yes (X11)"
+	}
+	py := "not found"
+	if name, err := pythonCommand(); err == nil {
+		py = name
+	}
+	return fmt.Sprintf("This computer (the one Relay runs on, and where your servers run, with the user's rights): %s/%s; graphical desktop: %s; Python: %s\n\n",
+		runtime.GOOS, runtime.GOARCH, desk, py)
+}
+
+// ---- read_server ---------------------------------------------------------------
+
+type readServer struct{ b *Builder }
+
+func (t *readServer) Spec() provider.ToolSpec {
+	return provider.ToolSpec{
+		Name: ToolReadServer,
+		Description: "Read the code of an MCP server that was built with create_mcp_server (server.py and its other files). " +
+			"Use it before you repair a server that does not work: you must see the code to fix it, then call create_mcp_server again with replace=true.",
+		Schema: mkSchema(map[string]any{"id": str("The id of the server (see list_extensions).")}, "id"),
+	}
+}
+
+func (t *readServer) NeedsApproval() bool { return false }
+func (t *readServer) Describe(a json.RawMessage) string {
+	var v struct {
+		ID string `json:"id"`
+	}
+	_ = json.Unmarshal(a, &v)
+	return "read the code of " + v.ID
+}
+
+const maxReadServer = 80 * 1024
+
+func (t *readServer) Run(ctx context.Context, a json.RawMessage) (string, error) {
+	var v struct {
+		ID string `json:"id"`
+	}
+	if err := decode(a, &v); err != nil {
+		return "", err
+	}
+	if !mcp.ValidID(v.ID) {
+		return "", fmt.Errorf("%q is not a server id", v.ID)
+	}
+	dir := filepath.Join(t.b.Home, "connectors", v.ID)
+	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
+		return "", fmt.Errorf("there is no code for %q in %s: it was not built here (call list_extensions)", v.ID, filepath.Join(t.b.Home, "connectors"))
+	}
+	files := skills.ListFiles(dir, 60)
+	order := []string{}
+	for _, f := range files { // server.py first
+		if f == "server.py" {
+			order = append([]string{f}, order...)
+		} else if f != "relay_mcp.py" && !strings.HasPrefix(f, "__pycache__/") && !strings.HasSuffix(f, ".pyc") {
+			order = append(order, f)
+		}
+	}
+	if len(order) == 0 {
+		return "", fmt.Errorf("the folder of %q has no files", v.ID)
+	}
+	var out strings.Builder
+	left := maxReadServer
+	for _, f := range order {
+		data, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(f)))
+		if err != nil || !utf8.Valid(data) {
+			fmt.Fprintf(&out, "### %s\n(not a text file)\n\n", f)
+			continue
+		}
+		text := string(data)
+		if len(text) > left {
+			text = text[:max(left, 0)] + "\n[... cut]"
+		}
+		left -= len(text)
+		fmt.Fprintf(&out, "### %s\n%s\n\n", f, text)
+	}
+	return strings.TrimSpace(out.String()), nil
 }

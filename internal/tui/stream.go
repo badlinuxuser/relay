@@ -43,7 +43,11 @@ func (m *model) queue(think bool, text string) {
 	if text == "" {
 		return
 	}
-	if think && !m.appSettings().ShowThoughts {
+	if think && (!m.appSettings().ShowThoughts || m.buildProgressOn()) {
+		return // while a tool is being built, one line of progress replaces the reasoning (if so set)
+	}
+	if !think && m.buildProgressOn() {
+		m.hold += text // what the model says during a build is shown only if it turns out to be the answer
 		return
 	}
 	if settings.SpeedCPS(m.appSettings().StreamSpeed) == 0 {
@@ -65,7 +69,7 @@ func (m *model) apply(p pendPiece) {
 			m.openThink = len(m.entries) - 1
 			m.openAsst = -1 // the answer that follows starts below the thoughts
 		}
-		m.entries[m.openThink].text += p.text
+		m.entries[m.openThink].text = clipThought(m.entries[m.openThink].text + p.text)
 		return
 	}
 	m.openThink = -1
@@ -106,14 +110,13 @@ func (m *model) drain() {
 	n = max(n, m.pendingRunes()/12) // never fall far behind the network
 	for n > 0 && len(m.pend) > 0 {
 		p := &m.pend[0]
-		r := []rune(p.text)
-		take := min(n, len(r))
-		m.apply(pendPiece{p.think, string(r[:take])})
-		n -= take
-		if take == len(r) {
+		head, rest := takeRunes(p.text, n)
+		m.apply(pendPiece{p.think, head})
+		n -= runeLen(head)
+		if rest == "" {
 			m.pend = m.pend[1:]
 		} else {
-			p.text = string(r[take:])
+			p.text = rest
 		}
 	}
 }
@@ -122,12 +125,23 @@ func (m *model) drain() {
 func renderThought(e entry, w int, st styles, done bool) []string {
 	const maxLines = 6
 	body := max(8, w-4)
-	lines := wrapText(strings.TrimSpace(e.text), body)
+	txt := strings.TrimSpace(cleanText(e.text))
+	cutEarlier := false
+	if len(txt) > 3000 { // only the last lines are shown: do not wrap what nobody sees
+		txt, cutEarlier = strings.ToValidUTF8(txt[len(txt)-3000:], ""), true
+	}
+	lines := wrapText(txt, body)
 	head := st.soft.Render("✻ ") + st.dim.Render("thinking")
 	out := []string{head}
-	if len(lines) > maxLines {
-		out = append(out, st.soft.Render("┊ ")+st.dim.Render(fmt.Sprintf("… %d earlier lines", len(lines)-maxLines)))
-		lines = lines[len(lines)-maxLines:]
+	if len(lines) > maxLines || cutEarlier {
+		more := "… earlier lines"
+		if !cutEarlier {
+			more = fmt.Sprintf("… %d earlier lines", len(lines)-maxLines)
+		}
+		out = append(out, st.soft.Render("┊ ")+st.dim.Render(more))
+		if len(lines) > maxLines {
+			lines = lines[len(lines)-maxLines:]
+		}
 	}
 	for _, l := range lines {
 		out = append(out, st.soft.Render("┊ ")+st.dim.Render(l))

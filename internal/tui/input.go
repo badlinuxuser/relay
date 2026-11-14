@@ -141,6 +141,7 @@ var commandTable = []cmdHelp{
 	{"/ollama", "", "start Ollama"},
 	{"/llamacpp", "<model.gguf>", "start llama.cpp with a model"},
 	{"/stop", "[name]", "stop a running server"},
+	{"/progress", "[on|off]", "progress bar (not the reasoning) while the agent builds a tool"},
 	{"/tools", "", "tools of the agent and local MCP servers"},
 	{"/connectors", "[auth <id>]", "connectors to outside services; sign in"},
 	{"/skills", "", "installed skills"},

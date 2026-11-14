@@ -250,6 +250,11 @@ func TestBuiltinSkillIsThereWithoutAnyFiles(t *testing.T) {
 	if !strings.Contains(m.Prompt(), "relay-builder") {
 		t.Fatal("it must be announced to the model")
 	}
+	for _, trigger := range []string{"send this to my Telegram", "open YouTube", "calendar tomorrow", "fixed"} {
+		if !strings.Contains(m.Prompt(), trigger) {
+			t.Errorf("an indirect request like %q must be among the triggers the model sees in the list", trigger)
+		}
+	}
 	body, err := m.Body("relay-builder")
 	if err != nil || !strings.Contains(body, "create_mcp_server") {
 		t.Fatalf("body: %v", err)

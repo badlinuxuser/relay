@@ -71,6 +71,22 @@ func TestBuildEnvKeepsSecretsOutButExpandsReferences(t *testing.T) {
 	}
 }
 
+func TestAServerCanOpenWindowsOnTheUsersDesktop(t *testing.T) {
+	t.Setenv("DISPLAY", ":0")
+	t.Setenv("WAYLAND_DISPLAY", "wayland-0")
+	t.Setenv("DBUS_SESSION_BUS_ADDRESS", "unix:path=/run/user/1000/bus")
+	t.Setenv("RELAY_TEST_SECRET", "s3cret")
+	env := strings.Join(buildEnv(ServerConfig{}), "\n")
+	for _, want := range []string{"DISPLAY=:0", "WAYLAND_DISPLAY=wayland-0", "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus"} {
+		if !strings.Contains(env, want) {
+			t.Errorf("a program that opens the browser or a window needs %s", want)
+		}
+	}
+	if strings.Contains(env, "s3cret") {
+		t.Error("but not the secrets")
+	}
+}
+
 func TestParseResourceMetadata(t *testing.T) {
 	h := `Bearer realm="mcp", resource_metadata="https://x.example/.well-known/oauth-protected-resource"`
 	if got := parseResourceMetadata(h); got != "https://x.example/.well-known/oauth-protected-resource" {

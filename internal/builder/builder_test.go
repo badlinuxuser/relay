@@ -54,6 +54,12 @@ func needPython(t *testing.T) {
 	t.Skip("Python 3 is not installed")
 }
 
+// goodSkill is the skill that every server needs.
+var goodSkill = map[string]any{
+	"description":  "Greeting tools of the demo server. Use them when the user wants to be greeted.",
+	"instructions": "Use mcp__demo__greet with the name of the person. Use mcp__demo__fail only to test errors.",
+}
+
 const goodServer = `from relay_mcp import Server, ToolError
 
 srv = Server("demo")
@@ -69,9 +75,9 @@ def fail():
 srv.run()
 `
 
-func TestTheFiveToolsAreDescribedAndGuarded(t *testing.T) {
+func TestTheSixToolsAreDescribedAndGuarded(t *testing.T) {
 	e := newEnv(t)
-	want := map[string]bool{ToolCreateServer: true, ToolCreateSkill: true, ToolRemove: true, ToolList: false, ToolAuthorize: false}
+	want := map[string]bool{ToolCreateServer: true, ToolCreateSkill: true, ToolRemove: true, ToolList: false, ToolReadServer: false, ToolAuthorize: false}
 	got := e.b.Tools()
 	if len(got) != len(want) {
 		t.Fatalf("%d tools", len(got))
@@ -86,8 +92,13 @@ func TestTheFiveToolsAreDescribedAndGuarded(t *testing.T) {
 		if tl.NeedsApproval() != approval {
 			t.Errorf("%s: approval must be %v", sp.Name, approval)
 		}
-		if oo, isOnce := tl.(tools.OnceOnly); approval && (!isOnce || !oo.OnceOnly()) {
-			t.Errorf("%s: \"always\" must not be remembered for it", sp.Name)
+		oo, isOnce := tl.(tools.OnceOnly)
+		once := isOnce && oo.OnceOnly()
+		if sp.Name == ToolRemove && !once {
+			t.Errorf("removing: \"always\" must not be remembered")
+		}
+		if (sp.Name == ToolCreateServer || sp.Name == ToolCreateSkill) && once {
+			t.Errorf("%s: \"always allow in this session\" must work", sp.Name)
 		}
 		var schema map[string]any
 		if err := json.Unmarshal(sp.Schema, &schema); err != nil || schema["type"] != "object" || len(sp.Description) < 40 {
@@ -96,10 +107,33 @@ func TestTheFiveToolsAreDescribedAndGuarded(t *testing.T) {
 	}
 }
 
+func TestBuildingNeedsTheOfferTheGuideAndRefusalCancels(t *testing.T) {
+	e := newEnv(t)
+	for _, name := range []string{ToolCreateServer, ToolCreateSkill} {
+		tl := e.tool(name)
+		if no, ok := tl.(tools.NeedsOffer); !ok || !no.NeedsOffer() {
+			t.Errorf("%s: the user must be asked first (propose_extension)", name)
+		}
+		if c, ok := tl.(tools.CancelOnDeny); !ok || !c.CancelsRequest() {
+			t.Errorf("%s: a refusal cancels the whole request", name)
+		}
+		nr, ok := tl.(tools.NeedsRead)
+		if !ok || len(nr.NeedsRead([]byte(`{}`))) == 0 {
+			t.Errorf("%s: the guide must be read first", name)
+		}
+	}
+	nr := e.tool(ToolCreateServer).(tools.NeedsRead)
+	if got := strings.Join(nr.NeedsRead([]byte(`{"code":"x"}`)), ","); got != "guide,sdk" {
+		t.Errorf("a program needs the guide and the SDK: %s", got)
+	}
+	if got := strings.Join(nr.NeedsRead([]byte(`{"url":"https://x.example/mcp"}`)), ","); got != "guide" {
+		t.Errorf("a remote server has no SDK to read: %s", got)
+	}
+}
 func TestCreateServerEndToEnd(t *testing.T) {
 	needPython(t)
 	e := newEnv(t)
-	out, err := e.run(t, ToolCreateServer, map[string]any{"id": "demo", "name": "Demo", "code": goodServer})
+	out, err := e.run(t, ToolCreateServer, map[string]any{"id": "demo", "name": "Demo", "code": goodServer, "skill": goodSkill})
 	if err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
@@ -120,16 +154,26 @@ func TestCreateServerEndToEnd(t *testing.T) {
 	}
 
 	// the same id again needs replace=true
-	if _, err := e.run(t, ToolCreateServer, map[string]any{"id": "demo", "code": goodServer}); err == nil || !strings.Contains(err.Error(), "replace=true") {
+	if _, err := e.run(t, ToolCreateServer, map[string]any{"id": "demo", "code": goodServer, "skill": goodSkill}); err == nil || !strings.Contains(err.Error(), "replace=true") {
 		t.Fatalf("err=%v", err)
 	}
 	// replacing runs the new code
 	newCode := strings.Replace(goodServer, `"hello " + name`, `"bonjour " + name`, 1)
-	if out, err := e.run(t, ToolCreateServer, map[string]any{"id": "demo", "code": newCode, "replace": true}); err != nil {
+	if out, err := e.run(t, ToolCreateServer, map[string]any{"id": "demo", "code": newCode, "skill": goodSkill, "replace": true}); err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	if text, _ := e.b.MCP.CallTool(context.Background(), "demo", "greet", json.RawMessage(`{"name":"Ann"}`)); text != "bonjour Ann" {
 		t.Fatalf("the new code must run, got %q", text)
+	}
+
+	// the skill was written together with the server, and lists its tools exactly
+	sk, ok := e.b.Skills.Get("demo")
+	if !ok || sk.Metadata["server"] != "demo" {
+		t.Fatalf("the companion skill is missing: %+v", sk)
+	}
+	body, _ := e.b.Skills.Body("demo")
+	if !strings.Contains(body, "Use mcp__demo__greet") || !strings.Contains(body, "`mcp__demo__greet`: Greet someone by name.") {
+		t.Fatalf("the skill must have the instructions and the list of tools:\n%s", body)
 	}
 
 	// list_extensions shows it, the callback address and the built-in skill
@@ -148,24 +192,32 @@ func TestCreateServerEndToEnd(t *testing.T) {
 	if len(e.b.MCP.Status()) != 0 {
 		t.Errorf("status: %+v", e.b.MCP.Status())
 	}
+	if _, ok := e.b.Skills.Get("demo"); ok {
+		t.Error("the skill that was written with the server must go with it")
+	}
 }
 
 func TestCreateServerRefusesBadInput(t *testing.T) {
 	needPython(t)
 	e := newEnv(t)
 	cases := map[string]map[string]any{
-		"bad id":          {"id": "../x", "code": goodServer},
-		"nothing to run":  {"id": "a"},
-		"code and url":    {"id": "a", "code": goodServer, "url": "https://x.example/mcp"},
-		"no helper":       {"id": "a", "code": "print('hi')\nsrv.run()"},
-		"never runs":      {"id": "a", "code": "from relay_mcp import Server\nsrv = Server('a')"},
-		"syntax error":    {"id": "a", "code": "from relay_mcp import Server\nsrv = Server('a'\nsrv.run()"},
-		"file escapes":    {"id": "a", "code": goodServer, "files": map[string]string{"../evil.py": "x"}},
-		"absolute file":   {"id": "a", "code": goodServer, "files": map[string]string{"/etc/x": "x"}},
-		"reserved file":   {"id": "a", "code": goodServer, "files": map[string]string{"relay_mcp.py": "x"}},
-		"bad oauth":       {"id": "a", "code": goodServer, "oauth": map[string]any{"authorize_url": "http://plain.example/a", "token_url": "https://x/t", "client_id": "c"}},
-		"bad kind":        {"id": "a", "code": goodServer, "kind": "robot"},
-		"http url scheme": {"id": "a", "url": "ftp://x"},
+		"bad id":          {"id": "../x", "code": goodServer, "skill": goodSkill},
+		"no skill":        {"id": "a", "code": goodServer},
+		"empty skill":     {"id": "a", "code": goodServer, "skill": map[string]any{"description": "Short.", "instructions": "x"}},
+		"skill name":      {"id": "a", "code": goodServer, "skill": map[string]any{"name": "Bad Name", "description": goodSkill["description"], "instructions": goodSkill["instructions"]}},
+		"nothing to run":  {"id": "a", "skill": goodSkill},
+		"code and url":    {"id": "a", "code": goodServer, "url": "https://x.example/mcp", "skill": goodSkill},
+		"no helper":       {"id": "a", "code": "print('hi')\nsrv.run()", "skill": goodSkill},
+		"never runs":      {"id": "a", "code": "from relay_mcp import Server\nsrv = Server('a')", "skill": goodSkill},
+		"syntax error":    {"id": "a", "code": "from relay_mcp import Server\nsrv = Server('a'\nsrv.run()", "skill": goodSkill},
+		"file escapes":    {"id": "a", "code": goodServer, "skill": goodSkill, "files": map[string]string{"../evil.py": "x"}},
+		"absolute file":   {"id": "a", "code": goodServer, "skill": goodSkill, "files": map[string]string{"/etc/x": "x"}},
+		"reserved file":   {"id": "a", "code": goodServer, "skill": goodSkill, "files": map[string]string{"relay_mcp.py": "x"}},
+		"bad oauth":       {"id": "a", "code": goodServer, "skill": goodSkill, "oauth": map[string]any{"authorize_url": "http://plain.example/a", "token_url": "https://x/t", "client_id": "c"}},
+		"bad kind":        {"id": "a", "code": goodServer, "skill": goodSkill, "kind": "robot"},
+		"oauth unused":    {"id": "a", "code": goodServer, "skill": goodSkill, "oauth": map[string]any{"authorize_url": "https://a.example/auth", "token_url": "https://a.example/token", "client_id": "c"}},
+		"oauth missing":   {"id": "a", "code": strings.Replace(goodServer, "return \"hello \" + name", "from relay_mcp import http\n    return http('GET', 'https://x.example', oauth=True)", 1), "skill": goodSkill},
+		"http url scheme": {"id": "a", "url": "ftp://x", "skill": goodSkill},
 	}
 	for name, args := range cases {
 		if out, err := e.run(t, ToolCreateServer, args); err == nil {
@@ -184,7 +236,7 @@ func TestACrashingServerIsReportedWithItsMessage(t *testing.T) {
 	needPython(t)
 	e := newEnv(t)
 	code := "from relay_mcp import Server\nraise RuntimeError('missing GITHUB_TOKEN')\nSrv = Server('a')\nSrv.run()\n"
-	out, err := e.run(t, ToolCreateServer, map[string]any{"id": "crash", "code": code})
+	out, err := e.run(t, ToolCreateServer, map[string]any{"id": "crash", "code": code, "skill": goodSkill})
 	if err == nil || !strings.Contains(err.Error(), "missing GITHUB_TOKEN") || !strings.Contains(err.Error(), "replace=true") {
 		t.Fatalf("err=%v out=%s", err, out)
 	}
@@ -194,7 +246,7 @@ func TestConnectorWithOAuthAsksForTheSignIn(t *testing.T) {
 	needPython(t)
 	e := newEnv(t)
 	out, err := e.run(t, ToolCreateServer, map[string]any{
-		"id": "svc", "kind": "connector", "code": goodServer,
+		"id": "svc", "kind": "connector", "code": goodServer, "skill": goodSkill,
 		"oauth": map[string]any{"authorize_url": "https://a.example/auth", "token_url": "https://a.example/token", "client_id": "cid", "client_secret": "${SVC_SECRET}"},
 	})
 	if err != nil {
@@ -280,5 +332,134 @@ func TestDescribeSummarisesWhatTheCodeCanDo(t *testing.T) {
 func TestSDKIsEmbedded(t *testing.T) {
 	if !strings.Contains(string(SDK()), "class Server") || !strings.Contains(string(SDK()), "def oauth_token") {
 		t.Fatal("relay_mcp.py must be built into Relay")
+	}
+}
+
+func TestAFailedServerWritesNoSkillYet(t *testing.T) {
+	needPython(t)
+	e := newEnv(t)
+	code := "from relay_mcp import Server\nraise RuntimeError('boom')\nSrv = Server('a')\nSrv.run()\n"
+	if _, err := e.run(t, ToolCreateServer, map[string]any{"id": "bad", "code": code, "skill": goodSkill}); err == nil {
+		t.Fatal("want an error")
+	}
+	if _, ok := e.b.Skills.Get("bad"); ok {
+		t.Error("the skill is written only when the server starts")
+	}
+}
+
+func TestOfferToBuild(t *testing.T) {
+	e := newEnv(t)
+	p := e.b.Propose()
+	if !p.NeedsApproval() {
+		t.Error("the offer is a question to the user")
+	}
+	if oo, ok := p.(tools.OnceOnly); !ok || !oo.OnceOnly() {
+		t.Error("the question is asked every time")
+	}
+	if bo, ok := p.(tools.BuildOffer); !ok || !bo.IsBuildOffer() {
+		t.Error("the agent must know that this tool is the offer")
+	}
+	if c, ok := p.(tools.CancelOnDeny); !ok || !c.CancelsRequest() {
+		t.Error("a refusal cancels the whole request")
+	}
+	d, ok := p.(tools.Denier)
+	if !ok || !strings.Contains(d.DeniedMessage(), "cancelled") || !strings.Contains(d.DeniedMessage(), "another way") {
+		t.Errorf("the agent must be told to stop")
+	}
+	raw, _ := json.Marshal(map[string]any{"what": "read your Google Calendar", "kind": "connector"})
+	if desc := p.Describe(raw); !strings.Contains(desc, "no connector") || !strings.Contains(desc, "Google Calendar") || !strings.Contains(desc, "cancelled") {
+		t.Errorf("describe: %s", desc)
+	}
+	fix, _ := json.Marshal(map[string]any{"what": "the browser tool cannot open a window", "kind": "fix"})
+	if desc := p.Describe(fix); !strings.Contains(desc, "repair") || !strings.Contains(desc, "browser tool") {
+		t.Errorf("describe a fix: %s", desc)
+	}
+	out, err := p.Run(context.Background(), raw)
+	if err != nil || !strings.Contains(out, "relay-builder") || !strings.Contains(out, "references/sdk.md") || !strings.Contains(out, "read_server") {
+		t.Errorf("after the user agreed the agent must be sent to read first: %v %q", err, out)
+	}
+	for _, tl := range e.b.Tools() {
+		if tl.Spec().Name == ToolPropose {
+			t.Error("the offer is not among the six tools: the user can switch it off")
+		}
+	}
+}
+func TestProgressIsReported(t *testing.T) {
+	needPython(t)
+	e := newEnv(t)
+	var labels []string
+	ctx := tools.WithProgress(context.Background(), func(label string, stage, stages int) {
+		labels = append(labels, label)
+		if stage < 1 || stage > stages {
+			t.Errorf("stage %d of %d", stage, stages)
+		}
+	})
+	raw, _ := json.Marshal(map[string]any{"id": "demo", "code": goodServer, "skill": goodSkill})
+	if _, err := e.tool(ToolCreateServer).Run(ctx, raw); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"Writing the files", "Checking the code", "Starting the server", "Writing the skill"}
+	if strings.Join(labels, "|") != strings.Join(want, "|") {
+		t.Fatalf("stages: %v", labels)
+	}
+}
+
+func TestAnOAuthBlockWithoutTheTokenIsExplained(t *testing.T) {
+	needPython(t)
+	e := newEnv(t)
+	_, err := e.run(t, ToolCreateServer, map[string]any{"id": "tg", "kind": "connector", "code": goodServer, "skill": goodSkill,
+		"env":   map[string]string{"TELEGRAM_BOT_TOKEN": "${TELEGRAM_BOT_TOKEN}"},
+		"oauth": map[string]any{"authorize_url": "https://a.example/auth", "token_url": "https://a.example/token", "client_id": "c"}})
+	if err == nil || !strings.Contains(err.Error(), "bot token") || !strings.Contains(err.Error(), "secret(") {
+		t.Fatalf("a bot token is not OAuth, and the answer must say what to do: %v", err)
+	}
+}
+
+func TestMissingVariablesAreReportedWithWhatToDo(t *testing.T) {
+	needPython(t)
+	t.Setenv("RELAY_TEST_PRESENT", "x")
+	e := newEnv(t)
+	out, err := e.run(t, ToolCreateServer, map[string]any{"id": "demo", "code": goodServer, "skill": goodSkill,
+		"env": map[string]string{"A": "${RELAY_TEST_MISSING}", "B": "${RELAY_TEST_PRESENT}"}})
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if !strings.Contains(out, "RELAY_TEST_MISSING") || strings.Contains(out, "RELAY_TEST_PRESENT") || !strings.Contains(out, "relay stop") {
+		t.Fatalf("the answer must name the missing variable (only it) and say to restart Relay:\n%s", out)
+	}
+}
+
+func TestReadServerShowsTheCodeForARepair(t *testing.T) {
+	needPython(t)
+	e := newEnv(t)
+	if _, err := e.run(t, ToolCreateServer, map[string]any{"id": "demo", "code": goodServer, "skill": goodSkill,
+		"files": map[string]string{"helpers.py": "VALUE = 42\n"}}); err != nil {
+		t.Fatal(err)
+	}
+	out, err := e.run(t, ToolReadServer, map[string]any{"id": "demo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(out, "### server.py") || !strings.Contains(out, "def greet(name)") || !strings.Contains(out, "### helpers.py") || !strings.Contains(out, "VALUE = 42") {
+		t.Fatalf("the code must be shown, server.py first:\n%s", out)
+	}
+	if strings.Contains(out, "class Server") {
+		t.Error("the helper (relay_mcp.py) is not shown: it is Relay's, not the model's")
+	}
+	for _, bad := range []string{"nope", "../x", ""} {
+		if _, err := e.run(t, ToolReadServer, map[string]any{"id": bad}); err == nil {
+			t.Errorf("%q must not be readable", bad)
+		}
+	}
+	if tl := e.tool(ToolReadServer); tl.NeedsApproval() {
+		t.Error("reading needs no question")
+	}
+}
+
+func TestListExtensionsTellsWhereRelayRuns(t *testing.T) {
+	e := newEnv(t)
+	out, err := e.run(t, ToolList, map[string]any{})
+	if err != nil || !strings.Contains(out, "graphical desktop:") || !strings.Contains(out, "Python:") || !strings.Contains(out, "this computer") {
+		t.Fatalf("the model must be told that this is the user's computer, and what it has: %v\n%s", err, out)
 	}
 }

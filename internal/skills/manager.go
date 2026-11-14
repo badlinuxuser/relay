@@ -353,8 +353,12 @@ func (m *Manager) Prompt() string {
 			break
 		}
 		d := s.Description
-		if r := []rune(d); len(r) > 250 {
-			d = string(r[:250]) + "…"
+		limit := 250
+		if s.Builtin {
+			limit = 700 // the builder lists its triggers in the description: all of them must be seen
+		}
+		if r := []rune(d); len(r) > limit {
+			d = string(r[:limit]) + "…"
 		}
 		fmt.Fprintf(&b, "- %s: %s\n", s.Name, d)
 	}

@@ -38,6 +38,12 @@ type Session struct {
 	Run sync.Mutex `json:"-"`
 	// AutoTools: инструменты, разрешённые на всю сессию ("always").
 	AutoTools map[string]bool `json:"-"`
+	// BuildOK: in this request the user agreed to an offer to build something.
+	BuildOK bool `json:"-"`
+	// Cancelled: in this request the user refused something that cancels the whole request.
+	Cancelled bool `json:"-"`
+	// Read: what the model has read in this request ("guide", "sdk"), see tools.NeedsRead.
+	Read map[string]bool `json:"-"`
 }
 
 type Store struct {

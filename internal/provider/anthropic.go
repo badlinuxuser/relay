@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"sort"
 	"strings"
 )
 
@@ -55,6 +56,7 @@ type anEvent struct {
 		Text        string `json:"text"`
 		Thinking    string `json:"thinking"`
 		PartialJSON string `json:"partial_json"`
+		StopReason  string `json:"stop_reason"`
 	} `json:"delta"`
 	Usage struct {
 		OutputTokens int `json:"output_tokens"`
@@ -117,7 +119,7 @@ func (c *Anthropic) buildBody(req Request) ([]byte, error) {
 	system, msgs := toAnthropic(req.Messages)
 	maxTokens := req.MaxTokens
 	if maxTokens <= 0 {
-		maxTokens = 8192
+		maxTokens = 16384
 	}
 	body := map[string]any{
 		"model":      req.Model,
@@ -188,6 +190,7 @@ func (c *Anthropic) once(ctx context.Context, key string, body []byte, emit func
 	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 	tools := map[int]*ToolCall{}
 	var usage Usage
+	finish := ""
 	for sc.Scan() {
 		line := sc.Text()
 		if !strings.HasPrefix(line, "data:") {
@@ -241,6 +244,9 @@ func (c *Anthropic) once(ctx context.Context, key string, body []byte, emit func
 			if ev.Usage.OutputTokens > 0 {
 				usage.Out = ev.Usage.OutputTokens
 			}
+			if ev.Delta.StopReason == "max_tokens" {
+				finish = "length"
+			}
 		case "error":
 			low := strings.ToLower(ev.Error.Type + " " + ev.Error.Message)
 			return &Error{Provider: c.name, Msg: ev.Error.Message,
@@ -253,6 +259,28 @@ func (c *Anthropic) once(ctx context.Context, key string, body []byte, emit func
 			return ctx.Err()
 		}
 		return &Error{Provider: c.name, Msg: err.Error()}
+	}
+	// A tool call that was still being written when the output limit hit never got its
+	// content_block_stop. It is passed on as it is (its arguments are cut, not valid JSON), so
+	// that the agent can see it and ask the model to write it again smaller.
+	rest := make([]int, 0, len(tools))
+	for idx := range tools {
+		rest = append(rest, idx)
+	}
+	sort.Ints(rest)
+	for _, idx := range rest {
+		tc := tools[idx]
+		if tc.Args == "" {
+			tc.Args = "{}"
+		}
+		if err := emit(Event{Kind: EvToolCall, Call: tc}); err != nil {
+			return err
+		}
+	}
+	if finish != "" {
+		if err := emit(Event{Kind: EvFinish, Text: finish}); err != nil {
+			return err
+		}
 	}
 	if usage.In > 0 || usage.Out > 0 {
 		return emit(Event{Kind: EvUsage, Usage: usage})

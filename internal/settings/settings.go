@@ -16,6 +16,11 @@ type Settings struct {
 	// Chat
 	ShowThoughts bool   `json:"show_thoughts"` // show the model's reasoning, set apart from the answer
 	StreamSpeed  string `json:"stream_speed"`  // instant | fast | normal | slow: how quickly the answer is typed out
+	// BuilderView: what to show while the agent builds a tool or a skill. "progress": a progress bar with
+	// the stage instead of the model's reasoning; "thoughts": the reasoning and the text as usual.
+	BuilderView string `json:"builder_view"`
+	// SuggestTools: the agent offers to build a tool or a skill when the task needs one that it lacks.
+	SuggestTools bool `json:"suggest_tools"`
 
 	// Interface
 	Sidebar   string `json:"sidebar"`    // auto | hidden
@@ -34,6 +39,8 @@ func Default() Settings {
 	return Settings{
 		ShowThoughts: true,
 		StreamSpeed:  "normal",
+		BuilderView:  "progress",
+		SuggestTools: true,
 		Sidebar:      "auto",
 		Mascot:       true,
 		Mouse:        true,
@@ -61,6 +68,11 @@ func (s *Settings) Clean() {
 	case "instant", "fast", "normal", "slow":
 	default:
 		s.StreamSpeed = "normal"
+	}
+	switch s.BuilderView {
+	case "progress", "thoughts":
+	default:
+		s.BuilderView = "progress"
 	}
 	switch s.Sidebar {
 	case "auto", "hidden":

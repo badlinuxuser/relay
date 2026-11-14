@@ -15,6 +15,7 @@ import (
 
 	"relay/internal/client"
 	"relay/internal/proto"
+	"relay/internal/provider"
 )
 
 type entryKind int
@@ -35,6 +36,7 @@ type entry struct {
 	tool   string
 	result string
 	isErr  bool
+	hidden bool // a tool call made while the agent builds something: not shown (see build.go)
 }
 
 type model struct {
@@ -49,6 +51,9 @@ type model struct {
 	cwd    string
 
 	entries []entry
+	cache   *feedCache // the drawn lines of the entries (see perf.go)
+	build   buildState // the progress of a tool or skill that the agent builds
+	hold    string     // the model's text during a build: shown at the end only if it is the final answer
 	input   textinput.Model
 	scroll  int
 
@@ -119,6 +124,7 @@ func New(spawn, keep bool) tea.Model {
 		mc:        newMascot(),
 		sprites:   loadSprites(),
 		entries:   []entry{{kind: eNotice, text: "Connecting to the backend…"}},
+		cache:     &feedCache{},
 	}
 }
 
@@ -180,7 +186,21 @@ func (m model) Init() tea.Cmd {
 
 // ---- Update ------------------------------------------------------------------
 
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+// Update handles a message. A panic is caught, written to crash.log, and the interface goes on
+// with the state it had before the message.
+func (m model) Update(msg tea.Msg) (res tea.Model, cmd tea.Cmd) {
+	before := m
+	defer func() {
+		if r := recover(); r != nil {
+			logCrash("Update", r)
+			before.addNotice("An internal error was caught and written to crash.log in the Relay folder; the interface goes on.")
+			res, cmd = before, nil
+		}
+	}()
+	return m.update(msg)
+}
+
+func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
@@ -309,6 +329,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case streamEndMsg:
+		if strings.TrimSpace(m.hold) != "" { // the text after the last tool call is the answer
+			m.entries = append(m.entries, entry{kind: eAssistant, text: strings.TrimSpace(m.hold)})
+			m.openAsst = -1
+		}
+		m.hold = ""
+		m.build = buildState{}
 		m.streaming = false
 		m.cancel = nil
 		m.approval = nil
@@ -461,6 +487,7 @@ func (m *model) beginStream(run func(ctx context.Context, emit func(proto.Event)
 	ctx, cancel := context.WithCancel(context.Background())
 	ch := make(chan proto.Event, 256)
 	m.cancel, m.events, m.streaming = cancel, ch, true
+	m.build, m.hold = buildState{}, ""
 	m.flushPending()
 	m.openAsst, m.openThink, m.slots, m.runErr = -1, -1, map[int]int{}, false
 	m.scroll = 0
@@ -492,6 +519,7 @@ func (m model) send(text string) (tea.Model, tea.Cmd) {
 }
 
 func (m *model) handleEvent(ev proto.Event) {
+	m.trackBuild(ev)
 	if ev.Type != "text" && ev.Type != "thinking" && ev.Type != "usage" {
 		m.flushPending() // keep the order: what was said before a tool call is on screen before it
 		m.openThink = -1
@@ -533,7 +561,8 @@ func (m *model) handleEvent(ev proto.Event) {
 		if desc == "" {
 			desc = shorten(ev.Args, 100)
 		}
-		m.entries = append(m.entries, entry{kind: eTool, tool: ev.Tool, text: desc})
+		m.hold = "" // what the model said before a tool call was not an answer
+		m.entries = append(m.entries, entry{kind: eTool, tool: ev.Tool, text: desc, hidden: m.buildProgressOn()})
 		m.mc.react("noticed", 2*time.Second, "")
 
 	case "auth":
@@ -551,7 +580,7 @@ func (m *model) handleEvent(ev proto.Event) {
 	case "tool_result":
 		for i := len(m.entries) - 1; i >= 0; i-- {
 			if m.entries[i].kind == eTool && m.entries[i].tool == ev.Tool && m.entries[i].result == "" {
-				m.entries[i].result = ev.Result
+				m.entries[i].result = clipResult(ev.Result)
 				m.entries[i].isErr = ev.IsError
 				break
 			}
@@ -674,6 +703,9 @@ func entriesFromSession(s *proto.SessionInfo) []entry {
 	for _, pm := range s.Messages {
 		switch pm.Role {
 		case "user":
+			if strings.HasPrefix(pm.Content, provider.InternalPrefix) {
+				continue // a line that Relay added for the model ("continue"): not the user's
+			}
 			out = append(out, entry{kind: eUser, text: pm.Content})
 		case "assistant":
 			if pm.Content != "" {
@@ -685,7 +717,7 @@ func entriesFromSession(s *proto.SessionInfo) []entry {
 		case "tool":
 			for i := len(out) - 1; i >= 0; i-- {
 				if out[i].kind == eTool && out[i].tool == pm.Name && out[i].result == "" {
-					out[i].result = pm.Content
+					out[i].result = clipResult(pm.Content)
 					break
 				}
 			}

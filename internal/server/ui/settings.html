@@ -163,6 +163,13 @@ input.num{width:92px}
       select([['instant','Instant'],['fast','Fast'],['normal','Normal'],['slow','Slow']], function(){return s.stream_speed;}, function(v){s.stream_speed=v;}));
     root.appendChild(c);
 
+    c=card('Agent: tools and skills','The agent can build its own tools, connectors and skills.');
+    row(c,'While the agent builds','Progress: a progress bar with the stage (writing the code, checking, starting, writing the skill) instead of the model\u2019s reasoning. Thoughts: show the reasoning and the answer as usual.',
+      select([['progress','Progress bar'],['thoughts','Thoughts and answers']], function(){return s.builder_view;}, function(v){s.builder_view=v;}));
+    row(c,'Offer to build what is missing','When you ask for something that no tool or skill can do, the agent offers to build one. If you decline, it does the task as well as it can without it.',
+      toggle(function(){return s.suggest_tools;}, function(v){s.suggest_tools=v;}));
+    root.appendChild(c);
+
     c=card('Interface');
     row(c,'Side panel','The panel with the mascot, mode, model, tokens and running processes.',
       select([['auto','Show when the window is wide'],['hidden','Hide']], function(){return s.sidebar;}, function(v){s.sidebar=v;}));

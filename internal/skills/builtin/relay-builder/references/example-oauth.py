@@ -8,6 +8,7 @@ Create it with create_mcp_server:
          "client_secret": "${GITHUB_CLIENT_SECRET}",
          "scopes": ["repo"]}
 The callback address of the OAuth app must be the one that list_extensions shows.
+It also needs a skill (required): when to use these tools, how to fill owner and repo, that create_issue writes.
 """
 from relay_mcp import Server, ToolError, http
 
