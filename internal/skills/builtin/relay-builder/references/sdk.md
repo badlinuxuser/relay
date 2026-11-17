@@ -60,3 +60,8 @@ the model leaves out are not passed.
 The program runs with the user's rights, in its own folder, with a small environment (PATH, HOME,
 language and proxy settings, plus your `env`). Relay's API keys are not passed on. Keep state, if
 any, in a file next to `server.py` (`os.path.dirname(__file__)`).
+
+
+## Optional project dependencies in Relay 0.2
+
+`create_mcp_server` and `validate_mcp_server` accept a `dependencies` array of PyPI package names with optional version constraints, for example `requests>=2.31,<3`. Relay installs these into a private `.venv` inside the server's connector folder; it does not install them globally. Direct URLs, VCS links, local paths and pip command-line options are rejected. The selected dependencies are also saved in `requirements.txt` so the project can be inspected and repaired later. Use this only when a dependency is genuinely needed.

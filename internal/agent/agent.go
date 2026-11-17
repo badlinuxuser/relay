@@ -33,7 +33,7 @@ NEVER answer "I cannot do that", "I have no tool for that" or "I do not have acc
 - something the user wants to repeat or do regularly in a fixed way (a skill).
 Building ALWAYS starts with propose_extension: the user must agree first, and you cannot create anything before that. If the user refuses, the whole request is cancelled: do not look for another way.
 If a tool that was built for you (an MCP tool, its name starts with mcp__) fails because of a defect in its own code or setup (an error in the code, a missing module, the wrong approach, a wrong assumption about this computer), do NOT give up and do not say that you cannot do it: call propose_extension with kind "fix" and say what is broken. If the user agrees, read its code (read_server), repair it, and use it again.
-Before you build, read how Relay works: load the skill relay-builder and its references/sdk.md; the build tools refuse to work until you have.
+Before you build, read how Relay works: load the skill relay-builder and its references/sdk.md; the build tools refuse to work until you have. For a new local MCP project, develop in iterations: validate_mcp_server first (temporary launch + MCP handshake + tool discovery, no registration), inspect errors and fix the source, repeat until it passes, then create_mcp_server to install/register it. Use private per-server Python dependencies only when necessary; never put credentials into source, arguments or logs.
 Do not offer for what your tools already cover (files, the shell, the web).`
 
 type Agent struct {
@@ -357,7 +357,11 @@ func (a *Agent) runTool(ctx context.Context, sess *session.Session, reg *tools.R
 	}
 	args := []byte(call.Args)
 	desc := tool.Describe(args)
-	emit(proto.Event{Type: "tool_call", Tool: call.Name, CallID: call.ID, Args: call.Args, Desc: desc, Step: step})
+	eventArgs := call.Args
+	if hide, ok := tool.(tools.HideRawArgs); ok && hide.HideRawArgs() {
+		eventArgs = "" // Describe carries the redacted preview; never stream raw connector arguments.
+	}
+	emit(proto.Event{Type: "tool_call", Tool: call.Name, CallID: call.ID, Args: eventArgs, Desc: desc, Step: step})
 
 	if no, ok := tool.(tools.NeedsOffer); ok && no.NeedsOffer() && !sess.BuildOK && a.Suggest != nil && a.Suggest() {
 		// building always starts with a question to the user
@@ -369,8 +373,18 @@ func (a *Agent) runTool(ctx context.Context, sess *session.Session, reg *tools.R
 				strings.Join(need, " ")+" Then build.", true)
 		}
 	}
-	if tool.NeedsApproval() && !sess.AutoTools[call.Name] {
-		decision := approve(ctx, proto.Event{Type: "approval", Tool: call.Name, CallID: call.ID, Args: call.Args, Desc: desc, Step: step})
+	onceOnly := false
+	if oo, ok := tool.(tools.OnceOnly); ok {
+		onceOnly = oo.OnceOnly()
+	}
+	// A OnceOnly tool must ask on every invocation even if an older session state
+	// or a previous approval marked the tool name as automatically allowed.
+	if tool.NeedsApproval() && (onceOnly || !sess.AutoTools[call.Name]) {
+		approvalArgs := call.Args
+		if hide, ok := tool.(tools.HideRawArgs); ok && hide.HideRawArgs() {
+			approvalArgs = ""
+		}
+		decision := approve(ctx, proto.Event{Type: "approval", Tool: call.Name, CallID: call.ID, Args: approvalArgs, Desc: desc, Step: step})
 		switch decision {
 		case "always":
 			if oo, ok := tool.(tools.OnceOnly); !ok || !oo.OnceOnly() {

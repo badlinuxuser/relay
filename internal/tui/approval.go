@@ -52,8 +52,9 @@ func approvalLabel(i int, tool string) string {
 	case 0:
 		return "Allow once"
 	case 1:
-		if strings.HasPrefix(tool, "mcp__") || tool == "create_mcp_server" || tool == "create_skill" {
-			return "Always allow this capability in this session"
+		if strings.HasPrefix(tool, "mcp__") || tool == "create_mcp_server" || tool == "validate_mcp_server" ||
+			tool == "create_skill" || tool == "propose_extension" || tool == "run_shell" || tool == "write_file" || tool == "edit_file" || tool == "remove_extension" {
+			return "Allow this time only (not remembered)"
 		}
 		return "Always allow " + tool + " in this session"
 	}
@@ -69,7 +70,7 @@ func (m model) approvalLines(w, maxH int, st styles) []string {
 	toolLabel := ev.Tool
 	// Builder/MCP implementation names are not useful to someone approving a
 	// capability. Keep the actual tool name in events/logs, but present a plain label.
-	if strings.HasPrefix(toolLabel, "mcp__") || toolLabel == "create_mcp_server" || toolLabel == "create_skill" {
+	if strings.HasPrefix(toolLabel, "mcp__") || toolLabel == "create_mcp_server" || toolLabel == "validate_mcp_server" || toolLabel == "create_skill" {
 		toolLabel = "Relay capability"
 	}
 	head := st.red.Render("⚠ approval needed") + st.dim.Render(" · "+toolLabel+" · ↑↓ select · enter confirm · y once · a always · n deny")

@@ -9,7 +9,7 @@ import (
 	"relay/internal/settings"
 )
 
-const Version = "0.1.1"
+const Version = "0.2.1"
 
 // Event это одно событие потока выполнения (SSE: "data: <json>").
 //
@@ -253,7 +253,7 @@ type MCPToolInfo struct {
 type MCPServerInfo struct {
 	ID        string        `json:"id"`
 	Name      string        `json:"name"`
-	Type      string        `json:"type"` // stdio | http
+	Type      string        `json:"type"`   // stdio | http
 	Target    string        `json:"target"` // the command line or the url
 	Source    string        `json:"source"` // mcp.json | config.toml
 	State     string        `json:"state"`

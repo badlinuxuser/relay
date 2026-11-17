@@ -1,6 +1,6 @@
 ---
 name: relay-builder
-description: Build new abilities for Relay yourself, and repair them. MCP servers (tools for this computer, connectors to outside services such as Telegram, Slack, mail, a calendar, GitHub, a smart-home hub, a database, any API) and skills (written procedures). Use it whenever the user needs something that none of your tools or skills can do, whether they ask for it directly ("make a tool", "connect my GitHub", "сделай инструмент") or only ask for the RESULT ("send this to my Telegram", "what is on my calendar tomorrow", "open YouTube and search for cats", "check the orders in our database", "do the release notes the way we always do"), and when a tool you built fails and must be fixed.
+description: Build new abilities for Relay yourself, and repair them. MCP servers (tools for this computer, connectors to outside services such as Telegram, Slack, mail, a calendar, GitHub, a smart-home hub, a database, any API) and skills (written procedures). Use it whenever the user needs something that none of your tools or skills can do, whether they ask for it directly ("make a tool", "connect my GitHub", "make a tool") or only ask for the RESULT ("send this to my Telegram", "what is on my calendar tomorrow", "open YouTube and search for cats", "check the orders in our database", "do the release notes the way we always do"), and when a tool you built fails and must be fixed.
 ---
 
 # Building skills and capabilities for Relay
@@ -24,10 +24,10 @@ The user does not have to ask for a "tool". Build when the task needs something 
 
 | The user says | What is missing |
 |---|---|
-| "make a tool that ...", "connect my GitHub", "сделай коннектор", "создай скилл" | asked directly |
-| "send this to my Telegram", "напиши мне в телеграм, когда закончишь", "post it to Slack", "reply to that e-mail" | a messenger or mail |
-| "what is on my calendar tomorrow", "добавь встречу", "what are my open issues" | an account or service |
-| "open YouTube and search for cats", "открой Firefox", "show a notification" | control of this computer |
+| "make a tool that ...", "connect my GitHub", "make a connector", "create a skill" | asked directly |
+| "send this to my Telegram", "message me on Telegram when you finish", "post it to Slack", "reply to that e-mail" | a messenger or mail |
+| "what is on my calendar tomorrow", "add a meeting", "what are my open issues" | an account or service |
+| "open YouTube and search for cats", "open Firefox", "show a notification" | control of this computer |
 | "turn off the lights", "check the orders in our database", "what does our API say about order 5" | a device, a database, an API |
 | "do it the way we always do", "always use this checklist" | a **skill** (no code) |
 
@@ -63,11 +63,17 @@ An `oauth` block is only for services where the **user signs in with their own a
 
 Relay refuses an `oauth` block whose code never uses the token, and the other way round. The secret itself never goes into code, into the chat or into `mcp.json`: `env: {"NAME": "${NAME}"}`. Tell the user to `export NAME=...` in the shell profile and **restart Relay** (`relay stop`, then start it again): a running Relay does not see variables set later.
 
-## 5. Write it small and call `create_mcp_server` when tools are needed
+## 5. Develop and validate before installation
+
+For a local MCP project, use `validate_mcp_server` before `create_mcp_server`. It runs a temporary copy through Relay, checks syntax, starts the MCP process and verifies tool discovery without registering it. Iterate on errors and validate again until it passes. Read `references/development-workflow.md` for the complete Relay 0.2 workflow.
+
+`create_mcp_server` can install optional PyPI dependencies into a private `.venv` for that server only. Give package names with optional version pins (for example `requests>=2.31,<3`); direct URLs, local paths and pip command-line options are not accepted. Use dependencies only when needed.
+
+## 6. Write it small and call `create_mcp_server` when tools are needed
 
 - `server.py` with `relay_mcp` (never write the protocol yourself), up to about 200 lines; more goes into `files`. The output of one reply is limited: if it is cut, Relay asks you to go on or to write the cut call again smaller.
 - Do the SIMPLEST thing. "Open Firefox and search YouTube" is an address opened in the user's browser, not Selenium or a headless browser.
-- Standard library only (Relay installs no packages).
+- Prefer the Python standard library. When genuinely needed, declare PyPI packages in `dependencies`; Relay installs them into this server's private `.venv`, never globally.
 - 3 to 8 tools, one job each; reading tools first, writing tools separate and marked "WRITES".
 - Errors say what to do: `raise ToolError("... check owner and repo")`. No `print()`: use `log()`.
 - Validate arguments; return short results (a `limit`); timeouts on everything.
@@ -79,13 +85,13 @@ Relay refuses an `oauth` block whose code never uses the token, and the other wa
 - `description`: what the tools are for **and when to use them** (1 or 2 sentences; this is the line in the list of skills; name the situations).
 - `instructions`: Markdown, 10 to 40 lines: which tool for which job, how to fill the arguments (formats, where an id comes from), limits and pitfalls, which tools write, what the user must set up once. No secrets. The list of tools is added by Relay.
 
-## 6. Check the answer, test, finish
+## 7. Check the answer, test, finish
 
 After creation, call `list_extensions` again and verify the server is registered, connected (or clearly reports what setup is missing), and that its Skill is present and associated. Use a read-only tool with realistic input to test it; do not perform an irreversible write just as a test. A connector requiring sign-in opens the browser on first use (or use `authorize_connector`). If validation or startup fails, read the error, repair the same component and replace it; do not leave a broken duplicate. Finally finish the user's original task, then briefly say what capability was added/reused and any one-time setup the user must do.
 
-## 7. When something you built does not work
+## 8. When something you built does not work
 
-Do not give up and do not say you cannot. Read the error. If the cause is the code or the setup (a wrong assumption, a missing module, a variable), call `propose_extension` with kind `fix` (one sentence: what is broken). If the user agrees: `read_server` to see the code, repair it, `create_mcp_server` again with `replace: true`, and run the same call again. If they refuse, the request is cancelled. See the end of `references/patterns.md`.
+Do not give up and do not say you cannot. Read the error. If the cause is the code or the setup (a wrong assumption, a missing module, a variable), call `propose_extension` with kind `fix` (one sentence: what is broken). If the user agrees: `read_server` to see the code, repair it, run `validate_mcp_server`, then `create_mcp_server` with `replace: true`, and run the same call again. If they refuse, the request is cancelled. See the end of `references/patterns.md`.
 
 ## Connectors with OAuth
 
@@ -107,4 +113,4 @@ Not supported yet: services that want the client secret in an HTTP Basic header 
 
 ## References
 
-`patterns.md` (recipes, design rules, repairs), `sdk.md` (the helper), the six `example-*.py`, `mcp-json.md`, `relay-structure.md`, `skills-format.md`.
+`patterns.md` (recipes, design rules, repairs), `development-workflow.md` (iterative MCP development and validation), `sdk.md` (the helper), the six `example-*.py`, `mcp-json.md`, `relay-structure.md`, `skills-format.md`.

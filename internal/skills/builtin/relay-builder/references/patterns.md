@@ -4,7 +4,7 @@ Always look for the SIMPLEST thing that does the job. Most requests need 2 to 5 
 
 | The user says (examples) | Build | How it logs in | Notes |
 |---|---|---|---|
-| "send this to my Telegram", "напиши мне в телеграм, когда закончишь" | connector: Telegram Bot API | bot token from @BotFather, in an environment variable. **No OAuth.** | `references/example-apikey.py`. The user must write to the bot first, so that `get_updates` shows the chat id. A personal account (reading private chats) needs MTProto and a library: say so honestly and offer the bot. |
+| "send this to my Telegram", "message me on Telegram when you finish" | connector: Telegram Bot API | bot token from @BotFather, in an environment variable. **No OAuth.** | `references/example-apikey.py`. The user must write to the bot first, so that `get_updates` shows the chat id. A personal account (reading private chats) needs MTProto and a library: say so honestly and offer the bot. |
 | "post it to Slack / Discord / Teams" | connector | **incoming webhook URL** (one secret, simplest) or a bot token | A webhook is a URL you POST JSON to: `http("POST", secret("SLACK_WEBHOOK"), body={"text": ...})`. |
 | "what is on my calendar tomorrow", "add a meeting" | connector | Google: OAuth (see `example-oauth.py`). Read-only: the secret ICS link of the calendar, no login at all | Time zones: ask which one, pass ISO dates. |
 | "read my mail", "reply to this e-mail" | connector | IMAP/SMTP with an app password (standard library: `imaplib`, `smtplib`), or Gmail OAuth | Never send mail without the text and the recipient shown to the user (the approval does it). |

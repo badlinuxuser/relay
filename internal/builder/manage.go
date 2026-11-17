@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -240,6 +241,38 @@ func environmentInfo() string {
 		runtime.GOOS, runtime.GOARCH, desk, py)
 }
 
+// listServerFiles skips generated environments and caches before applying the file limit, so
+// a private .venv cannot crowd the actual project source out of read_server's result.
+func listServerFiles(dir string, maxFiles int) []string {
+	var out []string
+	_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			switch d.Name() {
+			case ".venv", ".git", "__pycache__":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !d.Type().IsRegular() {
+			return nil
+		}
+		rel, err := filepath.Rel(dir, p)
+		if err != nil || rel == "server.py" || rel == "relay_mcp.py" {
+			return nil
+		}
+		out = append(out, filepath.ToSlash(rel))
+		if len(out) >= maxFiles {
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	sort.Strings(out)
+	return out
+}
+
 // ---- read_server ---------------------------------------------------------------
 
 type readServer struct{ b *Builder }
@@ -278,15 +311,8 @@ func (t *readServer) Run(ctx context.Context, a json.RawMessage) (string, error)
 	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
 		return "", fmt.Errorf("there is no code for %q in %s: it was not built here (call list_extensions)", v.ID, filepath.Join(t.b.Home, "connectors"))
 	}
-	files := skills.ListFiles(dir, 60)
-	order := []string{}
-	for _, f := range files { // server.py first
-		if f == "server.py" {
-			order = append([]string{f}, order...)
-		} else if f != "relay_mcp.py" && !strings.HasPrefix(f, "__pycache__/") && !strings.HasSuffix(f, ".pyc") {
-			order = append(order, f)
-		}
-	}
+	files := listServerFiles(dir, 60)
+	order := append([]string{"server.py"}, files...)
 	if len(order) == 0 {
 		return "", fmt.Errorf("the folder of %q has no files", v.ID)
 	}

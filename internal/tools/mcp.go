@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"relay/internal/mcp"
 	"relay/internal/provider"
@@ -62,14 +63,51 @@ func (t *mcpTool) Spec() provider.ToolSpec {
 	}
 	return provider.ToolSpec{Name: t.name, Description: "[MCP server " + t.ref.Server + "] " + t.ref.Description, Schema: sch}
 }
-// NeedsApproval: every call asks, except the sign-in tool (the user sees the page that opens).
-func (t *mcpTool) NeedsApproval() bool { return t.ref.Name != mcp.SignInTool }
+
+// Every MCP invocation is an external capability boundary. Even sign-in changes account
+// authorization state, so it is confirmed like any other MCP operation.
+func (t *mcpTool) NeedsApproval() bool { return true }
+
+// Never persist approval for MCP calls: a connector may expose both read-only and
+// account-changing tools, and the tool name alone is not a safe permission boundary.
+func (t *mcpTool) OnceOnly() bool { return true }
+
+func (t *mcpTool) HideRawArgs() bool { return true }
 func (t *mcpTool) Describe(a json.RawMessage) string {
+	// Approval previews should show the user which connector operation is about to
+	// happen and its meaningful arguments, while never echoing common credential fields.
+	var value any
+	if json.Unmarshal(a, &value) == nil {
+		redactMCPArguments(value)
+		if b, err := json.Marshal(value); err == nil {
+			a = b
+		}
+	}
 	s := string(a)
-	if len(s) > 160 {
-		s = s[:160] + "…"
+	if len(s) > 1000 {
+		s = s[:1000] + "…"
 	}
 	return t.ref.Server + "/" + t.ref.Name + " " + s
+}
+
+func redactMCPArguments(v any) {
+	switch x := v.(type) {
+	case map[string]any:
+		for k, value := range x {
+			key := strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(k, "-", "_"), " ", "_"))
+			if strings.Contains(key, "token") || strings.Contains(key, "secret") || strings.Contains(key, "password") ||
+				strings.Contains(key, "authorization") || strings.Contains(key, "api_key") || strings.Contains(key, "apikey") ||
+				strings.Contains(key, "cookie") || strings.Contains(key, "credential") || strings.Contains(key, "session") {
+				x[k] = "[redacted]"
+				continue
+			}
+			redactMCPArguments(value)
+		}
+	case []any:
+		for _, value := range x {
+			redactMCPArguments(value)
+		}
+	}
 }
 func (t *mcpTool) Run(ctx context.Context, a json.RawMessage) (string, error) {
 	return t.caller.CallTool(ctx, t.ref.Server, t.ref.Name, a)

@@ -188,12 +188,18 @@ func TestBuildProgressFollowsTheEvents(t *testing.T) {
 	if m.build.phase != 2 || m.build.label != "" {
 		t.Fatalf("the model designs now: %+v", m.build)
 	}
+	feed(proto.Event{Type: "tool_call", Tool: "validate_mcp_server"})
+	feed(proto.Event{Type: "progress", Tool: "validate_mcp_server", Text: "MCP handshake and tool discovery passed", Stage: 3, Stages: 3})
+	feed(proto.Event{Type: "tool_result", Tool: "validate_mcp_server"})
+	if m.build.phase != 3 || m.build.label != "MCP validation passed" {
+		t.Fatalf("successful validation must leave the build in the implementation phase: %+v", m.build)
+	}
 	feed(proto.Event{Type: "tool_call", Tool: "create_mcp_server"})
-	feed(proto.Event{Type: "progress", Tool: "create_mcp_server", Text: "Checking the code", Stage: 2, Stages: 4})
+	feed(proto.Event{Type: "progress", Tool: "create_mcp_server", Text: "Checking the code", Stage: 3, Stages: 5})
 	if m.build.phase != 3 || m.build.label != "Checking the code" || m.build.frac <= 0 {
 		t.Fatalf("%+v", m.build)
 	}
-	feed(proto.Event{Type: "progress", Tool: "create_mcp_server", Text: "Writing the skill", Stage: 4, Stages: 4})
+	feed(proto.Event{Type: "progress", Tool: "create_mcp_server", Text: "Writing the skill", Stage: 5, Stages: 5})
 	if m.build.phase != 4 {
 		t.Fatalf("the skill is part of the build: %+v", m.build)
 	}
@@ -283,6 +289,7 @@ func TestTheWorkOfTheModelIsHiddenWhileBuilding(t *testing.T) {
 		{kind: eUser, text: "connect my telegram"},
 		{kind: eTool, tool: "load_skill", text: "load skill relay-builder", result: "SECRET GUIDE TEXT"},
 		{kind: eTool, tool: "read_skill_file", text: "read relay-builder/references/sdk.md", result: "SDK TEXT"},
+		{kind: eTool, tool: "validate_mcp_server", text: "validate the MCP project", result: "passed"},
 		{kind: eTool, tool: "create_mcp_server", text: "create the MCP tool", result: "created"},
 		{kind: eTool, tool: "read_file", text: "main.go", result: "VISIBLE RESULT"},
 		{kind: eTool, tool: "mcp__tg__send", text: "tg/send", result: "SENT", hidden: true},
@@ -319,7 +326,7 @@ func TestWhatTheModelSaysOnTheWayIsDroppedAndTheAnswerIsKept(t *testing.T) {
 	if m.hold == "" || len(m.pend) != 0 {
 		t.Fatal("text during a build is held")
 	}
-	m.handleEvent(proto.Event{Type: "tool_call", Tool: "create_mcp_server"})
+	m.handleEvent(proto.Event{Type: "tool_call", Tool: "validate_mcp_server"})
 	if m.hold != "" {
 		t.Fatal("what came before a tool call was not an answer")
 	}

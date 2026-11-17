@@ -44,17 +44,18 @@ type Builder struct {
 
 // Names of the tools, for the list of tools shown to the user.
 const (
-	ToolCreateServer = "create_mcp_server"
-	ToolCreateSkill  = "create_skill"
-	ToolRemove       = "remove_extension"
-	ToolList         = "list_extensions"
-	ToolReadServer   = "read_server"
-	ToolAuthorize    = "authorize_connector"
+	ToolCreateServer   = "create_mcp_server"
+	ToolCreateSkill    = "create_skill"
+	ToolRemove         = "remove_extension"
+	ToolList           = "list_extensions"
+	ToolReadServer     = "read_server"
+	ToolAuthorize      = "authorize_connector"
+	ToolValidateServer = "validate_mcp_server"
 )
 
-// Tools returns the six tools.
+// Tools returns the tools used to develop and manage extensions.
 func (b *Builder) Tools() []tools.Tool {
-	return []tools.Tool{&createServer{b}, &createSkill{b}, &removeExt{b}, &listExt{b}, &readServer{b}, &authConnector{b}}
+	return []tools.Tool{&createServer{b}, &validateServer{b}, &createSkill{b}, &removeExt{b}, &listExt{b}, &readServer{b}, &authConnector{b}}
 }
 
 // ---- shared helpers -----------------------------------------------------------
@@ -199,4 +200,3 @@ func quoteList(m map[string]string) string {
 	sort.Strings(k)
 	return strings.Join(k, ", ")
 }
-

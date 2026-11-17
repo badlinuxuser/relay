@@ -324,8 +324,8 @@ type fakeTool struct {
 func (f *fakeTool) Spec() provider.ToolSpec {
 	return provider.ToolSpec{Name: f.name, Description: "a test tool", Schema: []byte(`{"type":"object","properties":{}}`)}
 }
-func (f *fakeTool) NeedsApproval() bool                { return f.approval }
-func (f *fakeTool) Describe(json.RawMessage) string    { return f.name }
+func (f *fakeTool) NeedsApproval() bool             { return f.approval }
+func (f *fakeTool) Describe(json.RawMessage) string { return f.name }
 func (f *fakeTool) Run(ctx context.Context, a json.RawMessage) (string, error) {
 	atomic.AddInt32(f.runs, 1)
 	return "ran " + f.name, nil
@@ -514,5 +514,23 @@ func TestAlwaysAllowWorksForBuildingButNotForTheOffer(t *testing.T) {
 	}
 	if prompts["propose_thing"] != 2 {
 		t.Errorf("the offer is asked every time: %d", prompts["propose_thing"])
+	}
+}
+
+func TestOnceOnlyToolCannotBeBypassedBySessionAutoApproval(t *testing.T) {
+	var ran int32
+	a, s := newAgent(t, 3, script(
+		[][2]string{{"once_capability", "{}"}},
+	))
+	s.AutoTools["once_capability"] = true
+	a.Extra = func() []tools.Tool {
+		return []tools.Tool{&onceTool{fakeTool{"once_capability", true, &ran}}}
+	}
+	asked := 0
+	if _, err := runWith(t, a, s, func(context.Context, proto.Event) string { asked++; return "allow" }); err != nil {
+		t.Fatal(err)
+	}
+	if asked != 1 || atomic.LoadInt32(&ran) != 1 {
+		t.Fatalf("once-only approval: asked=%d ran=%d", asked, ran)
 	}
 }

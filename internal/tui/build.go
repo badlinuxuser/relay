@@ -67,7 +67,7 @@ func (m *model) dropInterim() {
 // builderTools are the tools with which the agent builds; their calls are not shown while the
 // progress line is used.
 var builderTools = map[string]bool{
-	"create_mcp_server": true, "create_skill": true, "list_extensions": true,
+	"create_mcp_server": true, "validate_mcp_server": true, "create_skill": true, "list_extensions": true,
 	"authorize_connector": true, "remove_extension": true, "propose_extension": true, "read_server": true,
 }
 
@@ -107,6 +107,8 @@ func (m *model) trackBuild(ev proto.Event) {
 			m.startBuild(1, "Reading the builder guide")
 		case ev.Tool == "create_mcp_server":
 			m.startBuild(3, "Building the server")
+		case ev.Tool == "validate_mcp_server":
+			m.startBuild(3, "Validating the MCP project")
 		case ev.Tool == "create_skill":
 			m.startBuild(4, "Writing the skill")
 		case !b.active:
@@ -122,14 +124,14 @@ func (m *model) trackBuild(ev proto.Event) {
 			b.advance(5, "Trying the new tools")
 		}
 	case "progress":
-		if ev.Tool == "create_mcp_server" || ev.Tool == "create_skill" {
+		if ev.Tool == "create_mcp_server" || ev.Tool == "validate_mcp_server" || ev.Tool == "create_skill" {
 			m.startBuild(3, ev.Text)
 		}
 		switch {
 		case ev.Tool == "create_mcp_server" && ev.Text == "Writing the skill":
 			b.advance(4, ev.Text)
 			b.frac = 0.5
-		case ev.Tool == "create_mcp_server":
+		case ev.Tool == "create_mcp_server" || ev.Tool == "validate_mcp_server":
 			b.advance(3, ev.Text)
 			b.frac = float64(ev.Stage-1) / float64(max(1, ev.Stages-1))
 		case ev.Tool == "create_skill":
@@ -141,8 +143,10 @@ func (m *model) trackBuild(ev proto.Event) {
 			return
 		}
 		switch {
-		case ev.Tool == "create_mcp_server" && ev.IsError:
+		case (ev.Tool == "create_mcp_server" || ev.Tool == "validate_mcp_server") && ev.IsError:
 			b.phase, b.frac, b.label = 2, 0, "Fixing the problem"
+		case ev.Tool == "validate_mcp_server":
+			b.advance(3, "MCP validation passed")
 		case ev.Tool == "create_mcp_server":
 			b.advance(5, "Trying the new tools")
 		case ev.Tool == "create_skill":

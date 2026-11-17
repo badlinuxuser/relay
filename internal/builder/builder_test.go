@@ -75,9 +75,9 @@ def fail():
 srv.run()
 `
 
-func TestTheSixToolsAreDescribedAndGuarded(t *testing.T) {
+func TestBuilderToolsAreDescribedAndGuarded(t *testing.T) {
 	e := newEnv(t)
-	want := map[string]bool{ToolCreateServer: true, ToolCreateSkill: true, ToolRemove: true, ToolList: false, ToolReadServer: false, ToolAuthorize: false}
+	want := map[string]bool{ToolCreateServer: true, ToolValidateServer: true, ToolCreateSkill: true, ToolRemove: true, ToolList: false, ToolReadServer: false, ToolAuthorize: false}
 	got := e.b.Tools()
 	if len(got) != len(want) {
 		t.Fatalf("%d tools", len(got))
@@ -94,11 +94,8 @@ func TestTheSixToolsAreDescribedAndGuarded(t *testing.T) {
 		}
 		oo, isOnce := tl.(tools.OnceOnly)
 		once := isOnce && oo.OnceOnly()
-		if sp.Name == ToolRemove && !once {
-			t.Errorf("removing: \"always\" must not be remembered")
-		}
-		if (sp.Name == ToolCreateServer || sp.Name == ToolCreateSkill) && once {
-			t.Errorf("%s: \"always allow in this session\" must work", sp.Name)
+		if (sp.Name == ToolRemove || sp.Name == ToolCreateServer || sp.Name == ToolValidateServer || sp.Name == ToolCreateSkill) && !once {
+			t.Errorf("%s: \"always allow\" must not be remembered", sp.Name)
 		}
 		var schema map[string]any
 		if err := json.Unmarshal(sp.Schema, &schema); err != nil || schema["type"] != "object" || len(sp.Description) < 40 {
@@ -109,7 +106,7 @@ func TestTheSixToolsAreDescribedAndGuarded(t *testing.T) {
 
 func TestBuildingNeedsTheOfferTheGuideAndRefusalCancels(t *testing.T) {
 	e := newEnv(t)
-	for _, name := range []string{ToolCreateServer, ToolCreateSkill} {
+	for _, name := range []string{ToolCreateServer, ToolValidateServer, ToolCreateSkill} {
 		tl := e.tool(name)
 		if no, ok := tl.(tools.NeedsOffer); !ok || !no.NeedsOffer() {
 			t.Errorf("%s: the user must be asked first (propose_extension)", name)
@@ -380,7 +377,7 @@ func TestOfferToBuild(t *testing.T) {
 	}
 	for _, tl := range e.b.Tools() {
 		if tl.Spec().Name == ToolPropose {
-			t.Error("the offer is not among the six tools: the user can switch it off")
+			t.Error("the offer is not among the builder tools: the user can switch it off")
 		}
 	}
 }
@@ -461,5 +458,65 @@ func TestListExtensionsTellsWhereRelayRuns(t *testing.T) {
 	out, err := e.run(t, ToolList, map[string]any{})
 	if err != nil || !strings.Contains(out, "graphical desktop:") || !strings.Contains(out, "Python:") || !strings.Contains(out, "this computer") {
 		t.Fatalf("the model must be told that this is the user's computer, and what it has: %v\n%s", err, out)
+	}
+}
+
+func TestValidateMCPProjectBeforeInstall(t *testing.T) {
+	needPython(t)
+	e := newEnv(t)
+	out, err := e.run(t, ToolValidateServer, map[string]any{"id": "draft-demo", "code": goodServer})
+	if err != nil {
+		t.Fatalf("validation failed: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "Validation passed") || !strings.Contains(out, "greet") {
+		t.Fatalf("unexpected result: %s", out)
+	}
+	if _, err := os.Stat(filepath.Join(e.home, "connectors")); !os.IsNotExist(err) {
+		t.Fatalf("validation must not create the connectors folder: %v", err)
+	}
+	if _, err := os.Stat(e.b.MCP.Path()); !os.IsNotExist(err) {
+		t.Fatalf("validation must not register the draft: %v", err)
+	}
+}
+
+func TestDependencySpecificationsAreRestricted(t *testing.T) {
+	for _, spec := range []string{"requests>=2.31,<3", "beautifulsoup4==4.12.3", "pydantic[email]>=2"} {
+		if err := validateDependencies([]string{spec}); err != nil {
+			t.Errorf("valid dependency %q rejected: %v", spec, err)
+		}
+	}
+	for _, spec := range []string{"https://example.com/pkg.whl", "-r requirements.txt", "../local-package", "git+https://example.com/repo.git"} {
+		if err := validateDependencies([]string{spec}); err == nil {
+			t.Errorf("unsafe dependency %q accepted", spec)
+		}
+	}
+	if err := validateDependencies([]string{"Requests>=2", "requests==3"}); err == nil {
+		t.Error("duplicate package names with different constraints must be rejected")
+	}
+}
+
+func TestReadServerSkipsPrivateVirtualEnvironment(t *testing.T) {
+	e := newEnv(t)
+	dir := filepath.Join(e.home, "connectors", "demo")
+	for name, body := range map[string]string{
+		"server.py":        "srv.run()\n",
+		"api.py":           "def call(): return True\n",
+		"requirements.txt": "requests>=2\n",
+		filepath.Join(".venv", "lib", "site-packages", "huge_dependency.py"): "not project source\n",
+	} {
+		p := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out, err := e.run(t, ToolReadServer, map[string]any{"id": "demo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "requirements.txt") || !strings.Contains(out, "api.py") || strings.Contains(out, "huge_dependency.py") {
+		t.Fatalf("unexpected server source listing: %s", out)
 	}
 }

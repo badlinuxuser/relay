@@ -20,36 +20,38 @@ type createServer struct{ b *Builder }
 // The skill that must come with every server has the same shape as the arguments of create_skill (skillArgs).
 
 type serverArgs struct {
-	ID      string            `json:"id"`
-	Name    string            `json:"name"`
-	Kind    string            `json:"kind"`
-	Code    string            `json:"code"`
-	Files   map[string]string `json:"files"`
-	URL     string            `json:"url"`
-	Headers map[string]string `json:"headers"`
-	Env     map[string]string `json:"env"`
-	OAuth   *mcp.OAuthConfig  `json:"oauth"`
-	Skill   *skillArgs        `json:"skill"`
-	Replace bool              `json:"replace"`
+	ID           string            `json:"id"`
+	Name         string            `json:"name"`
+	Kind         string            `json:"kind"`
+	Code         string            `json:"code"`
+	Files        map[string]string `json:"files"`
+	Dependencies []string          `json:"dependencies"`
+	URL          string            `json:"url"`
+	Headers      map[string]string `json:"headers"`
+	Env          map[string]string `json:"env"`
+	OAuth        *mcp.OAuthConfig  `json:"oauth"`
+	Skill        *skillArgs        `json:"skill"`
+	Replace      bool              `json:"replace"`
 }
 
 func (t *createServer) Spec() provider.ToolSpec {
 	return provider.ToolSpec{
 		Name: ToolCreateServer,
 		Description: "Create an MCP server and plug it into Relay: its tools become available to you in the next step. " +
-			"Either write a Python program (code) that uses the relay_mcp helper, or plug in a remote MCP server by address (url). " +
+			"Either write a Python project (code plus optional files and PyPI dependencies) that uses the relay_mcp helper, or plug in a remote MCP server by address (url). " +
 			"A skill is required: it tells the model that uses these tools later when and how to use them. " +
-			"The tool saves the files, starts the program, writes the skill, and answers with the tools or with the error; if it failed, fix the code and call again with replace=true. " +
+			"For local projects, first use validate_mcp_server to test the project in a temporary environment; then this tool installs it, starts it, writes the skill, and reports the discovered tools. If it fails, fix the code and call again with replace=true. " +
 			"Read the skill relay-builder (load_skill) before the first use: it has the helper's API and two complete examples.",
 		Schema: mkSchema(map[string]any{
 			"id":   str("Short identifier: letters, digits, '-' or '_' (up to 32). Becomes part of the tool names: mcp__<id>__<tool>."),
 			"name": str("Name shown to the user, e.g. \"GitHub\"."),
 			"kind": map[string]any{"type": "string", "enum": []string{"tool", "connector"},
 				"description": "tool: works on this computer. connector: works with an outside service. Default: connector when there is an oauth block or a url, else tool."},
-			"code":    str("The complete source of server.py. Use `from relay_mcp import Server, ToolError, http, secret`, define tools with @srv.tool(...), and end with srv.run()."),
-			"files":   obj("Optional extra files next to server.py: {\"helpers.py\": \"...\"}. Relative paths only."),
-			"url":     str("Instead of code: the address of a remote MCP server (https://...). Relay signs the user in by itself if the server needs it."),
-			"headers": obj("With url: extra HTTP headers, e.g. {\"X-Api-Key\": \"${SERVICE_KEY}\"}. Never write a secret itself: use ${ENV_NAME}."),
+			"code":         str("The complete source of server.py. Use `from relay_mcp import Server, ToolError, http, secret`, define tools with @srv.tool(...), and end with srv.run()."),
+			"files":        obj("Optional extra project files next to server.py: {\"helpers.py\": \"...\"}. Relative paths only."),
+			"dependencies": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Optional PyPI packages with optional version pins, e.g. [\"requests>=2.31,<3\", \"beautifulsoup4==4.12.3\"]. Installed into a private .venv for this MCP. Package names and version constraints only; no URLs or pip flags."},
+			"url":          str("Instead of code: the address of a remote MCP server (https://...). Relay signs the user in by itself if the server needs it."),
+			"headers":      obj("With url: extra HTTP headers, e.g. {\"X-Api-Key\": \"${SERVICE_KEY}\"}. Never write a secret itself: use ${ENV_NAME}."),
 			"env": obj("Environment variables for the program: {\"NAME\": \"${NAME}\"} takes the value from the user's own environment. " +
 				"Never write a secret itself."),
 			"oauth": obj("Sign-in settings for a connector: {authorize_url, token_url, client_id, client_secret (write \"${ENV_NAME}\"), scopes: [...], params: {...}}. " +
@@ -68,6 +70,7 @@ func (t *createServer) Spec() provider.ToolSpec {
 }
 
 func (t *createServer) NeedsApproval() bool { return true }
+func (t *createServer) OnceOnly() bool      { return true }
 
 // NeedsRead: before it builds, the model must have read the guide, and for a program also the SDK.
 func (t *createServer) NeedsRead(args []byte) []string {
@@ -105,6 +108,9 @@ func (t *createServer) Describe(a json.RawMessage) string {
 		}
 	}
 	extra := ""
+	if len(v.Dependencies) > 0 {
+		extra += "; installs private Python dependencies: " + strings.Join(v.Dependencies, ", ")
+	}
 	if len(v.Env) > 0 {
 		extra += "; env: " + quoteList(v.Env)
 	}
@@ -133,6 +139,9 @@ func (t *createServer) Run(ctx context.Context, a json.RawMessage) (string, erro
 		return "", errors.New("give exactly one of: code (a program written with relay_mcp) or url (a remote MCP server)")
 	}
 	remote := strings.TrimSpace(v.URL) != ""
+	if remote && (len(v.Dependencies) > 0 || len(v.Files) > 0) {
+		return "", errors.New("files and dependencies are only supported for local Python MCP projects")
+	}
 
 	// the skill is part of the job: it is checked before anything is written
 	if v.Skill == nil {
@@ -158,18 +167,19 @@ func (t *createServer) Run(ctx context.Context, a json.RawMessage) (string, erro
 	if _, exists := file.Servers[v.ID]; exists && !v.Replace {
 		return "", fmt.Errorf("a server %q already exists. To change it, call again with replace=true; to look at it, call list_extensions", v.ID)
 	}
-	stages := 4
+	stages := 5
 	if remote {
 		stages = 3
 	}
 
 	cfg := mcp.ServerConfig{Name: v.Name, Kind: v.Kind, Env: v.Env, OAuth: v.OAuth}
 	var dir string
+	var py string
 	var files map[string][]byte
 	if remote {
 		cfg.URL, cfg.Headers = strings.TrimSpace(v.URL), v.Headers
 	} else {
-		py, err := pythonCommand()
+		py, err = pythonCommand()
 		if err != nil {
 			return "", err
 		}
@@ -179,7 +189,7 @@ func (t *createServer) Run(ctx context.Context, a json.RawMessage) (string, erro
 		if !strings.Contains(v.Code, ".run(") {
 			return "", errors.New("the program must end with srv.run(), otherwise it exits at once")
 		}
-		if len(v.Code) > maxFileSize || len(v.Files) > maxFiles {
+		if len(v.Code) > maxFileSize || len(v.Files) > maxFiles || len(v.Dependencies) > 30 {
 			return "", fmt.Errorf("too big: at most %d KB of code and %d extra files", maxFileSize/1024, maxFiles)
 		}
 		usesOAuth := strings.Contains(v.Code, "oauth=True") || strings.Contains(v.Code, "oauth_token(")
@@ -194,8 +204,15 @@ func (t *createServer) Run(ctx context.Context, a json.RawMessage) (string, erro
 				"or, if the service uses a key or a token, read it with secret(\"NAME\") and put it in env")
 		}
 		files = map[string][]byte{"server.py": []byte(v.Code), "relay_mcp.py": sdkSource}
+		if len(v.Dependencies) > 0 {
+			files["requirements.txt"] = []byte(strings.Join(normalizeDependencies(v.Dependencies), "\n") + "\n")
+		}
 		for name, text := range v.Files {
-			rel, err := cleanRel(name, "server.py", "relay_mcp.py")
+			reserved := []string{"server.py", "relay_mcp.py"}
+			if len(v.Dependencies) > 0 {
+				reserved = append(reserved, "requirements.txt")
+			}
+			rel, err := cleanRel(name, reserved...)
 			if err != nil {
 				return "", err
 			}
@@ -205,7 +222,14 @@ func (t *createServer) Run(ctx context.Context, a json.RawMessage) (string, erro
 			files[rel] = []byte(text)
 		}
 		dir = filepath.Join(b.Home, "connectors", v.ID)
-		cfg.Command, cfg.Args = py, []string{filepath.Join(dir, "server.py")}
+		cfg.Command = py
+		if len(v.Dependencies) > 0 {
+			if err := validateDependencies(v.Dependencies); err != nil {
+				return "", err
+			}
+			cfg.Command = venvPythonPath(filepath.Join(dir, ".venv"))
+		}
+		cfg.Args = []string{filepath.Join(dir, "server.py")}
 	}
 	cfg = mcp.Normalize(cfg)
 	if err := mcp.Validate(v.ID, cfg); err != nil {
@@ -213,12 +237,18 @@ func (t *createServer) Run(ctx context.Context, a json.RawMessage) (string, erro
 	}
 
 	if !remote {
-		tools.Progress(ctx, "Writing the files", 1, stages)
+		tools.Progress(ctx, "Preparing the project", 1, stages)
 		_ = os.RemoveAll(dir) // leftovers of an earlier try with this id
 		if err := writeTree(dir, files); err != nil {
 			return "", err
 		}
-		tools.Progress(ctx, "Checking the code", 2, stages)
+		if len(v.Dependencies) > 0 {
+			tools.Progress(ctx, "Installing isolated dependencies", 2, stages)
+			if _, err := createPythonEnv(ctx, py, filepath.Join(dir, ".venv"), v.Dependencies); err != nil {
+				return "", fmt.Errorf("could not prepare the private Python environment: %w", err)
+			}
+		}
+		tools.Progress(ctx, "Checking the code", 3, stages)
 		if err := checkPython(ctx, cfg.Command, filepath.Join(dir, "server.py")); err != nil {
 			return "", err
 		}

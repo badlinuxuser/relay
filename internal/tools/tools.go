@@ -116,3 +116,7 @@ func parse(args json.RawMessage, v any) error {
 // OnceOnly is implemented by tools whose approval is never remembered for the session: "always"
 // counts as "allow once". They are the ones that can run new code or change what Relay can do.
 type OnceOnly interface{ OnceOnly() bool }
+
+// HideRawArgs marks tools whose raw arguments may contain credentials. The UI receives
+// only the tool's redacted Describe preview, not the unfiltered JSON arguments.
+type HideRawArgs interface{ HideRawArgs() bool }

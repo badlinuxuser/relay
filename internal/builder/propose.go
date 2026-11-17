@@ -68,6 +68,7 @@ func (t *propose) Describe(a json.RawMessage) string {
 func (t *propose) Run(ctx context.Context, a json.RawMessage) (string, error) {
 	return "The user agreed. Now: (1) load the skill relay-builder (load_skill) and read references/sdk.md (read_skill_file) before you write anything; " +
 		"(2) call list_extensions to see what exists and what this computer has; (3) for a fix, read the code with read_server; " +
-		"(4) build it (ask the user at most one or two short questions if something decides the design). " +
+		"(4) for a local Python MCP, design the project and use validate_mcp_server to syntax-check, launch it temporarily through Relay, and verify tool discovery; fix and validate again until it passes (remote MCPs go directly to connection setup); " +
+		"(5) only then call create_mcp_server to install and register it, and write the linked skill. Ask the user at most one or two short questions if something decides the design. " +
 		"When it works, finish the task that the user originally asked for.", nil
 }

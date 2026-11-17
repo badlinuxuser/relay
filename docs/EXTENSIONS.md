@@ -49,14 +49,14 @@ Turn the agent on (`ctrl+a`) and ask: directly (*"make a tool that keeps notes"*
 computer, so what the agent builds runs here, with your rights, and can open your browser and applications. The order is fixed:
 
 1. **The offer.** The agent asks: *"Relay has no connector for this: ... Build one now?"* **If you refuse, the whole request is
-   cancelled.** (Switch the offers off in the settings, *Offer to build what is missing*: then only step 4 remains.)
+   cancelled.** (Switch the offers off in the settings, *Offer to build what is missing*, to skip the offer step.)
 2. **Reading.** Before it writes anything the agent has to read the built-in skill `relay-builder` and, for a program, its SDK
    description. The build tools refuse to work until it has.
-3. **Writing.** One call creates the program, checks it, starts it, and writes **a skill** for it (required). While this goes on you
-   see a single line under your question instead of the model's thoughts (`/progress off` shows everything).
-4. **Your approval of the program.** The question shows a summary found by reading the code: the web addresses it contacts, whether it
+3. **Development and validation.** For a local MCP, the agent first calls `validate_mcp_server`. Relay writes a temporary copy, checks Python syntax, starts it through the real MCP runtime and verifies the handshake and discovered tools. This does not register the server or touch the permanent connector folder. The agent can fix the project and validate it again.
+4. **Installation.** After validation, `create_mcp_server` asks for approval; after you approve, it installs the project, starts it, and writes **a skill** for it (required). While this goes on you see a single animated line under your question instead of the model's thoughts (`/progress off` shows everything).
+5. **Approval details.** The approval question shows a summary found by reading the code: the web addresses it contacts, whether it
    runs programs, whether it writes files. You may answer "always" for this question in a session; the offer in step 1 is asked every time.
-5. **Repair.** If the tool fails because of its own code or setup, the agent asks (an offer of kind *fix*), reads the code
+6. **Repair.** If the installed tool fails because of its own code or setup, the agent asks (an offer of kind *fix*), reads the code
    (`read_server`), and replaces the server. You can read the code yourself in `~/.config/relay/connectors/<id>/server.py`.
 
 The agent chooses the simplest way to log in: a bot token or an API key goes into an environment variable (you `export` it and restart
@@ -219,6 +219,8 @@ The API in short (the full text is in the built-in skill: `/skills`, or `interna
 - `secret("NAME")` reads an environment variable of the server (with a clear error when it is empty);
 - `oauth_token()` / `http(..., oauth=True)` use the signed-in user's token;
 - `log("text")` writes to stderr. **Never `print()`**: stdout is the protocol.
+
+In Relay 0.2, `create_mcp_server` and `validate_mcp_server` accept an optional `dependencies` list of PyPI package names and version constraints. Dependencies are installed into a private `.venv` in that connector folder, not globally. Direct URLs, VCS references, local paths and pip flags are rejected. The selected versions are recorded in `requirements.txt`.
 
 ### Writing a server in another language
 

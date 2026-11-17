@@ -38,6 +38,7 @@ func (t *createSkill) Spec() provider.ToolSpec {
 }
 
 func (t *createSkill) NeedsApproval() bool { return true }
+func (t *createSkill) OnceOnly() bool      { return true }
 
 // NeedsOffer: building starts with the offer (propose_extension) that the user agreed to.
 func (t *createSkill) NeedsOffer() bool { return true }
