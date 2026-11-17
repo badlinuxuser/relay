@@ -3,7 +3,9 @@ name: relay-builder
 description: Build new abilities for Relay yourself, and repair them. MCP servers (tools for this computer, connectors to outside services such as Telegram, Slack, mail, a calendar, GitHub, a smart-home hub, a database, any API) and skills (written procedures). Use it whenever the user needs something that none of your tools or skills can do, whether they ask for it directly ("make a tool", "connect my GitHub", "сделай инструмент") or only ask for the RESULT ("send this to my Telegram", "what is on my calendar tomorrow", "open YouTube and search for cats", "check the orders in our database", "do the release notes the way we always do"), and when a tool you built fails and must be fixed.
 ---
 
-# Building tools, connectors and skills for Relay
+# Building skills and capabilities for Relay
+
+The user asks for an outcome or a Skill, not for internal implementation pieces. **Skills are the user-facing capability; MCP servers are implementation details.** Decide whether the requested Skill can work with instructions alone, can reuse an installed MCP, or needs a new MCP. A Skill request does not mean “create only a text file”: if tools are necessary, create/reuse them and connect them to the Skill in the same task. Conversely, never create an MCP when clear instructions alone are sufficient.
 
 You can extend Relay yourself, so do not ask the user to write code or edit files. Relay runs **on the user's own computer**: what you build runs there, with their rights, and can open their browser and applications, show notifications and use their files. You are not in a sandbox.
 
@@ -33,11 +35,19 @@ Test: can I do it with my tools (files, shell, web) in a reasonable way? If not,
 
 ## 2. Ask first. Always.
 
-Call `propose_extension` (what is missing, in one short sentence; kind `tool`, `connector`, `skill`, or `fix`). Nothing can be created before the user says yes: the build tools refuse. **If the user refuses, the whole request is cancelled: do not look for another way.** After yes, do not ask again for permission to build; ask the user only what decides the design (which service, read-only or also writing, key or sign-in), one or two short questions at most.
+Call `propose_extension` before creating or changing components. Describe the missing user-visible outcome in one short sentence. Choose a broad kind (`skill`, `tool`, `connector`, or `fix`) only as a hint; it does not restrict which components you may create after consent. Nothing is created before the user agrees. **If the user refuses, cancel the whole request.** After consent, do not ask again for permission to create the supporting MCP needed for the agreed capability. Ask at most one or two short questions only when a real design choice depends on the answer.
 
-## 3. Read how Relay works, then build
+## 3. Inspect, plan, then build the complete capability
 
-The build tools refuse until you have read, in this request: this skill (you are doing it), and for a program `references/sdk.md` (`read_skill_file`). Read an example that is close to the job: `example-apikey.py` (a service with a token), `example-public-api.py` (no login), `example-desktop.py` (this computer's desktop), `example-sqlite.py` (a local database), `example-tools.py` (files), `example-oauth.py` (sign-in with an account). Call `list_extensions` to see what exists.
+First call `list_extensions`. Inventory installed Skills and MCP servers, their state, available tools and existing Skill-to-server associations. Search the existing inventory by function, not just by exact name. Reuse a suitable connected server; do not create a duplicate merely because its id or tool names differ. If it exists but is broken, follow the repair procedure rather than adding a second copy.
+
+Then choose the smallest implementation:
+- Instructions/procedure/style only: create a Skill and no MCP.
+- Existing MCP already provides the needed operations: create a Skill that documents and uses those tools; do not create another server.
+- No existing MCP provides required operations: create one MCP server **with its matching Skill in the same `create_mcp_server` call**. This is the normal implementation for a Skill that needs new tools; do not create a separate empty Skill first.
+- If several existing/new servers are genuinely needed, one Skill may explain when to use each. Avoid redundant servers and overlapping tools.
+
+Before writing a local Python server, read `references/sdk.md` and the closest example: `example-apikey.py`, `example-public-api.py`, `example-desktop.py`, `example-sqlite.py`, `example-tools.py`, or `example-oauth.py`. For a remote MCP, read the MCP configuration reference. Use `read_server` before repairing code created by Relay.
 
 ## 4. Choose the simplest way to log in
 
@@ -53,7 +63,7 @@ An `oauth` block is only for services where the **user signs in with their own a
 
 Relay refuses an `oauth` block whose code never uses the token, and the other way round. The secret itself never goes into code, into the chat or into `mcp.json`: `env: {"NAME": "${NAME}"}`. Tell the user to `export NAME=...` in the shell profile and **restart Relay** (`relay stop`, then start it again): a running Relay does not see variables set later.
 
-## 5. Write it small and call `create_mcp_server`
+## 5. Write it small and call `create_mcp_server` when tools are needed
 
 - `server.py` with `relay_mcp` (never write the protocol yourself), up to about 200 lines; more goes into `files`. The output of one reply is limited: if it is cut, Relay asks you to go on or to write the cut call again smaller.
 - Do the SIMPLEST thing. "Open Firefox and search YouTube" is an address opened in the user's browser, not Selenium or a headless browser.
@@ -71,7 +81,7 @@ Relay refuses an `oauth` block whose code never uses the token, and the other wa
 
 ## 6. Check the answer, test, finish
 
-The answer says whether the server started (and its tools) or why not (a syntax error, a crash with its last message). Failed: fix the code and call again with `replace: true` (with the skill again). Worked: call a tool that only reads, with real input, and check the result (the tools are available from the next step as `mcp__<id>__<tool>`). A connector with a sign-in opens the browser by itself on the first call (or call `authorize_connector`). Then **finish the task the user originally asked for**, and say in two or three sentences what exists now and what the user must do once (a variable, a sign-in).
+After creation, call `list_extensions` again and verify the server is registered, connected (or clearly reports what setup is missing), and that its Skill is present and associated. Use a read-only tool with realistic input to test it; do not perform an irreversible write just as a test. A connector requiring sign-in opens the browser on first use (or use `authorize_connector`). If validation or startup fails, read the error, repair the same component and replace it; do not leave a broken duplicate. Finally finish the user's original task, then briefly say what capability was added/reused and any one-time setup the user must do.
 
 ## 7. When something you built does not work
 

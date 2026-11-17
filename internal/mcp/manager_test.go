@@ -196,3 +196,51 @@ func TestLegacyServerKeepsFullEnvironment(t *testing.T) {
 		t.Fatal("a name with no usable characters is rejected")
 	}
 }
+
+func TestManagedServerDisappearsWhenItsEntryPointIsRemoved(t *testing.T) {
+	home := t.TempDir()
+	id := "relay-built"
+	serverDir := filepath.Join(home, "connectors", id)
+	if err := os.MkdirAll(serverDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	entry := filepath.Join(serverDir, "server.py")
+	if err := os.WriteFile(entry, []byte("# server"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := Normalize(ServerConfig{Command: "python3", Args: []string{entry}})
+	if managedEntryPointMissing(home, id, cfg) {
+		t.Fatal("existing managed entry point was reported missing")
+	}
+	if err := os.Remove(entry); err != nil {
+		t.Fatal(err)
+	}
+	if !managedEntryPointMissing(home, id, cfg) {
+		t.Fatal("deleted managed entry point must be treated as uninstalled")
+	}
+}
+
+func TestExternalCommandIsNotTreatedAsManagedServer(t *testing.T) {
+	home := t.TempDir()
+	cfg := Normalize(ServerConfig{Command: "npx", Args: []string{"-y", "some-mcp-package"}})
+	if managedEntryPointMissing(home, "external", cfg) {
+		t.Fatal("external commands must not require a Relay connectors folder")
+	}
+}
+
+func TestManagerOmitsRelayServerWithMissingSource(t *testing.T) {
+	home := t.TempDir()
+	id := "gone"
+	entry := filepath.Join(home, "connectors", id, "server.py")
+	path := filepath.Join(home, "mcp.json")
+	cfg := Normalize(ServerConfig{Command: "python3", Args: []string{entry}})
+	if err := Save(path, &File{Servers: map[string]ServerConfig{id: cfg}}); err != nil {
+		t.Fatal(err)
+	}
+	m := NewManager(path, filepath.Join(home, "trust.json"), nil)
+	defer m.Close()
+	m.Reload()
+	if got := m.Status(); len(got) != 0 {
+		t.Fatalf("missing Relay-created source must not appear as installed: %+v", got)
+	}
+}

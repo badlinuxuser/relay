@@ -178,14 +178,17 @@ Relay can use any MCP server and any skill with any model, local or cloud. Every
 relay mcp add files --command npx -- -y @modelcontextprotocol/server-filesystem /home/me/projects
 relay mcp add docs --url https://example.com/mcp
 relay mcp list                    # state of every server
+relay mcp info files              # details of one server
+relay mcp validate                # check every server definition and Relay-created source file
 relay mcp test files              # connect once and show the tools
+relay mcp remove files            # asks before removing; use --yes for scripts
 relay mcp trust files             # approve a program that you added by editing mcp.json
 
 relay skill add ./my-skill        # a folder with a SKILL.md (the open Agent Skills format)
 relay skill list | info | validate | enable | disable | remove
 ```
 
-- `mcp.json` can be edited by hand; Relay applies the change without a restart, and keeps the last good version if you make a mistake. The Claude Desktop / Cursor key `mcpServers` is read too.
+- `mcp.json` can be edited by hand; Relay applies the change without a restart, and keeps the last good version if you make a mistake. Relay-created server entry points are watched too: deleting one removes that server from the active list. The Claude Desktop / Cursor key `mcpServers` is read too.
 - A local server is a program that Relay would run for you, so it runs **only after you approved that exact command** (`relay mcp add` asks; for a hand-edited entry run `relay mcp trust <id>`). It gets a small environment (no API keys of Relay); put what it needs into `"env"`, and write `${NAME}` to take a value from your own environment instead of storing a secret in the file.
 - Every MCP tool call still asks for confirmation in the agent. Single tools can be switched off with `"disabled_tools"`.
 - Skills show up in the agent as a short list; the agent loads a skill only when the task matches it, and a skill's scripts are never run automatically.

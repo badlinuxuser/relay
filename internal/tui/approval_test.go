@@ -118,3 +118,15 @@ func TestSidebarListsRunningServers(t *testing.T) {
 		t.Error("nothing to show before the first status")
 	}
 }
+
+func TestApprovalHidesInternalCapabilityNames(t *testing.T) {
+	m := approvalModel()
+	m.approval.Tool = "mcp__telegram__send_message"
+	lines := strings.Join(m.approvalLines(100, 20, newStyles(themeFor("small", 0))), "\n")
+	if strings.Contains(lines, "mcp__telegram__send_message") || !strings.Contains(lines, "Relay capability") {
+		t.Fatalf("internal tool name leaked into approval UI: %s", lines)
+	}
+	if !strings.Contains(lines, "Always allow this capability") {
+		t.Fatalf("approval option should use a user-facing label: %s", lines)
+	}
+}

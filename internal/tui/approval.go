@@ -1,5 +1,7 @@
 package tui
 
+import "strings"
+
 // When the agent wants to do something that needs permission (write a file, run a
 // command, use an MCP tool), a list opens above the input line, like the model list:
 // ↑ ↓ and enter, or one key.
@@ -50,6 +52,9 @@ func approvalLabel(i int, tool string) string {
 	case 0:
 		return "Allow once"
 	case 1:
+		if strings.HasPrefix(tool, "mcp__") || tool == "create_mcp_server" || tool == "create_skill" {
+			return "Always allow this capability in this session"
+		}
 		return "Always allow " + tool + " in this session"
 	}
 	return "Deny"
@@ -61,7 +66,13 @@ func (m model) approvalLines(w, maxH int, st styles) []string {
 	if ev == nil {
 		return nil
 	}
-	head := st.red.Render("⚠ approval needed") + st.dim.Render(" · "+ev.Tool+" · ↑↓ select · enter confirm · y once · a always · n deny")
+	toolLabel := ev.Tool
+	// Builder/MCP implementation names are not useful to someone approving a
+	// capability. Keep the actual tool name in events/logs, but present a plain label.
+	if strings.HasPrefix(toolLabel, "mcp__") || toolLabel == "create_mcp_server" || toolLabel == "create_skill" {
+		toolLabel = "Relay capability"
+	}
+	head := st.red.Render("⚠ approval needed") + st.dim.Render(" · "+toolLabel+" · ↑↓ select · enter confirm · y once · a always · n deny")
 
 	what := ev.Desc
 	if what == "" {

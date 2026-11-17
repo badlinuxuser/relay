@@ -105,3 +105,7 @@ Not supported: `tools` and `function_calling` (requests with them are handled as
 - While listening on loopback the server answers only to the Host `127.0.0.1`, `localhost`, `::1` (DNS rebinding).
 - The pages `/ui/keys`, `/ui/settings` and `/ui/help` are static and contain no secrets; the CSP forbids outside resources.
 - Keys are stored in `<home>/keys.json` (0600); the API returns only the last 4 characters.
+
+## Extension filesystem behavior
+
+`skills/` is scanned at startup and watched while Relay runs; a valid `SKILL.md` is required for a folder skill to appear. `mcp.json` is watched and remains the configuration source of truth. For MCP servers created by Relay, the entry point `<home>/connectors/<id>/server.py` is watched as well; when it is removed, the server is stopped and omitted from the active MCP list. External commands and remote MCP servers do not require a Relay-owned source folder. A malformed or temporarily unreadable `mcp.json` keeps the last known-good server set.

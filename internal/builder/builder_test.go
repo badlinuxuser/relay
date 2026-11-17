@@ -318,7 +318,7 @@ func TestDescribeSummarisesWhatTheCodeCanDo(t *testing.T) {
 	code := "import subprocess\nfrom relay_mcp import http\nhttp('GET','https://api.github.com/x')\nopen('f','w')\nsrv.run()"
 	raw, _ := json.Marshal(map[string]any{"id": "gh", "code": code, "env": map[string]string{"TOKEN": "${TOKEN}"}})
 	d := e.tool(ToolCreateServer).Describe(raw)
-	for _, want := range []string{"api.github.com", "RUNS PROGRAMS", "writes or deletes files", "env: TOKEN", filepath.Join("connectors", "gh")} {
+	for _, want := range []string{"api.github.com", "RUNS PROGRAMS", "writes or deletes files", "env: TOKEN", "add the tool capability"} {
 		if !strings.Contains(d, want) {
 			t.Errorf("the approval text must say %q:\n%s", want, d)
 		}

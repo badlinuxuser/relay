@@ -95,7 +95,17 @@ func (m *Manager) Reload() {
 	for _, b := range builtinSkills() {
 		byName[b.Name] = b
 	}
-	entries, _ := os.ReadDir(m.dir)
+	entries, readErr := os.ReadDir(m.dir)
+	if readErr != nil && !os.IsNotExist(readErr) {
+		// A transient permission/I/O error must not make installed skills disappear.
+		m.mu.RLock()
+		hasLoaded := len(m.skills) > 0 || len(m.problems) > 0
+		m.mu.RUnlock()
+		if hasLoaded {
+			return
+		}
+		problems = append(problems, Problem{Dir: m.dir, Error: readErr.Error()})
+	}
 	for _, e := range entries {
 		if strings.HasPrefix(e.Name(), ".") {
 			continue

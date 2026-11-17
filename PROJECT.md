@@ -87,7 +87,7 @@ mapped in `internal/tui/model.go` (`handleEvent`):
 
 ## Map of the code
 
-- `cmd/relay`: the single CLI. `main.go` (subcommand dispatch; without a subcommand the TUI, flags `--no-spawn`, `--keep`), `cli.go` (keys, status, stop, config), `ext_mcp.go` (`relay mcp list|add|remove|test|trust|connect|disconnect|reconnect|sdk`), `ext_skill.go` (`relay skill ...`), `ext_common.go`, `install.go` (install/uninstall, PATH), `console_*.go` (UTF-8 console on Windows).
+- `cmd/relay`: the single CLI. `main.go` (subcommand dispatch; without a subcommand the TUI, flags `--no-spawn`, `--keep`), `cli.go` (keys, status, stop, config), `ext_mcp.go` (`relay mcp list|info|validate|add|remove|test|trust|connect|disconnect|reconnect|sdk`), `ext_skill.go` (`relay skill ...`), `ext_common.go`, `install.go` (install/uninstall, PATH), `console_*.go` (UTF-8 console on Windows).
 - `internal/catalog`: finds the models of providers (Ollama `/api/tags`, Gemini `/v1beta/models`, `/v1/models`), 60 s cache, `Snapshot.Missing/Pick/Fallback`, `Running`.
 - `internal/daemon`: backend start (`relay daemon`): token, `daemon.json`, `SetAddr` (the OAuth callback address), clean shutdown, autostart of processes.
 - `internal/keystore`, `internal/settings` (`settings.json`: includes `builder_view`, `suggest_tools`), `internal/browser`, `internal/proto` (all DTOs and events: the single source of truth), `internal/config` (TOML, `example.toml`, `layout.go`: the extension folders).

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -168,7 +169,10 @@ func (m *Manager) Start() {
 	m.wg.Add(1)
 	go func() {
 		defer m.wg.Done()
-		sig := func() string { return watch.FileSig(m.path) + "|" + watch.FileSig(m.trustPath) }
+		sig := func() string {
+			connectors := filepath.Join(filepath.Dir(m.path), "connectors")
+			return watch.FileSig(m.path) + "|" + watch.FileSig(m.trustPath) + "|" + watch.DirSig(connectors, "server.py")
+		}
 		watch.Poll(ctx, time.Second, sig, m.Reload)
 	}()
 }
@@ -211,9 +215,34 @@ func (m *Manager) desired() (map[string]entry, error) {
 		return out, err
 	}
 	for id, c := range f.Servers {
+		// Servers created by Relay have their entry point inside connectors/<id>.
+		// If that file is manually removed, do not advertise a stale server as installed.
+		if managedEntryPointMissing(filepath.Dir(m.path), id, c) {
+			continue
+		}
 		out[id] = entry{c, SourceFile}
 	}
 	return out, nil
+}
+
+// managedEntryPointMissing recognizes only the exact layout written by create_mcp_server.
+// External stdio commands and remote servers remain valid without a Relay-owned source folder.
+func managedEntryPointMissing(home, id string, cfg ServerConfig) bool {
+	if cfg.Type != TypeStdio || len(cfg.Args) == 0 || !ValidID(id) {
+		return false
+	}
+	want := filepath.Join(home, "connectors", id, "server.py")
+	if filepath.Clean(cfg.Args[0]) != filepath.Clean(want) {
+		return false
+	}
+	fi, err := os.Stat(want)
+	if os.IsNotExist(err) {
+		return true
+	}
+	if err != nil { // temporary I/O or permission errors are not proof of deletion
+		return false
+	}
+	return fi.IsDir()
 }
 
 // Reload rereads mcp.json and the approvals and brings the running servers in line.

@@ -13,16 +13,16 @@ import (
 
 func TestCleanTextRemovesTerminalControlCodes(t *testing.T) {
 	for in, want := range map[string]string{
-		"\x1b[31mred\x1b[0m":                       "red",
-		"a\x1b[2Jb":                                "ab",
-		"\x1b[?1049hscreen":                        "screen",
-		"\x1b]0;title\x07text":                     "text",
-		"progress 10%\rprogress 50%\rdone 100%":    "done 100%",
-		"line\r\nnext":                             "line\nnext",
-		"bell\x07 and null\x00":                    "bell and null",
-		"tab\tkept\nand a new line":                "tab\tkept\nand a new line",
-		"Привет, мир ✓":                            "Привет, мир ✓",
-		"first\r\nsecond\rSECOND\nthird":           "first\nSECOND\nthird",
+		"\x1b[31mred\x1b[0m":                    "red",
+		"a\x1b[2Jb":                             "ab",
+		"\x1b[?1049hscreen":                     "screen",
+		"\x1b]0;title\x07text":                  "text",
+		"progress 10%\rprogress 50%\rdone 100%": "done 100%",
+		"line\r\nnext":                          "line\nnext",
+		"bell\x07 and null\x00":                 "bell and null",
+		"tab\tkept\nand a new line":             "tab\tkept\nand a new line",
+		"Привет, мир ✓":                         "Привет, мир ✓",
+		"first\r\nsecond\rSECOND\nthird":        "first\nSECOND\nthird",
 	} {
 		if got := cleanText(in); got != want {
 			t.Errorf("cleanText(%q) = %q, want %q", in, got, want)
@@ -198,7 +198,7 @@ func TestBuildProgressFollowsTheEvents(t *testing.T) {
 		t.Fatalf("the skill is part of the build: %+v", m.build)
 	}
 	panel := m.buildPanel(80, st)
-	if len(panel) != 2 || !strings.Contains(panel[1], "Writing the skill") || !strings.Contains(panel[1], "4/5") {
+	if len(panel) != 2 || !strings.Contains(panel[1], "Writing the skill") || strings.Contains(panel[1], "4/5") || strings.Contains(panel[1], "Development") {
 		t.Fatalf("panel: %q", panel)
 	}
 	if strings.ContainsAny(strings.Join(panel, ""), "█░") {

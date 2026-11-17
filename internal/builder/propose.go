@@ -26,9 +26,9 @@ type proposeArgs struct {
 func (t *propose) Spec() provider.ToolSpec {
 	return provider.ToolSpec{
 		Name: ToolPropose,
-		Description: "Use this INSTEAD of telling the user that you cannot do something, and BEFORE you build anything. " +
-			"It asks the user whether Relay may build a tool, a connector or a skill that you lack. Nothing can be created before the user agrees here. " +
-			"If they agree, load the skill relay-builder (load_skill) and build it; if they refuse, the whole request is cancelled.",
+		Description: "Use this BEFORE creating or changing any capability that Relay does not already have. Ask about the user-visible result, not the implementation. " +
+			"A single request may require a skill, one or more MCP tools/connectors, or both; decide the components yourself after checking what already exists. " +
+			"Nothing is created before the user agrees here. If they agree, load relay-builder and implement the complete requested capability, reusing existing components; if they refuse, cancel the request.",
 		Schema: mkSchema(map[string]any{
 			"what": str("What is missing, in one short sentence, from the user's point of view (e.g. \"send messages to your Telegram\", \"read your Google Calendar\")."),
 			"kind": map[string]any{"type": "string", "enum": []string{"tool", "connector", "skill", "fix"},

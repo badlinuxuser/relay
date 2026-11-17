@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -21,10 +22,12 @@ const mcpUsage = `relay mcp: MCP servers (tools that any model can use)
 
 Usage:
   relay mcp list                        servers and their state
+  relay mcp info <id>                   details of one configured server
+  relay mcp validate [id]               check one or all server definitions
   relay mcp add <id> --url URL          add a remote server (Streamable HTTP)
   relay mcp add <id> --command CMD [--args "A B"] [--env KEY=VALUE]
   relay mcp add <id> --command CMD -- ARG1 ARG2     (arguments after --, kept as they are)
-  relay mcp remove <id>
+  relay mcp remove <id> [--yes] [--keep-files]
   relay mcp test <id>                   connect once and show the tools
   relay mcp trust <id>                  approve the command of a local server
   relay mcp connect <id> | disconnect <id> | reconnect <id>
@@ -46,6 +49,10 @@ func cmdMCP(args []string) int {
 	switch args[0] {
 	case "list", "ls":
 		return mcpList()
+	case "info":
+		return mcpInfo(args[1:])
+	case "validate", "check":
+		return mcpValidate(args[1:])
 	case "add":
 		return mcpAdd(args[1:])
 	case "remove", "rm":
@@ -155,6 +162,134 @@ func mcpList() int {
 	return 0
 }
 
+// mcpInfo shows the persisted definition, independent of whether the backend is running.
+func mcpInfo(args []string) int {
+	if len(args) != 1 {
+		fmt.Fprint(os.Stderr, "usage: relay mcp info <id>\n")
+		return 2
+	}
+	m, err := openMCP()
+	if err != nil {
+		return fail(err)
+	}
+	cfg, err := m.entry(args[0])
+	if err != nil {
+		return fail(err)
+	}
+	fmt.Printf("ID:       %s\nName:     %s\nKind:     %s\nType:     %s\nTarget:   %s\nDisabled: %t\n",
+		args[0], cfg.Name, cfg.Kind, cfg.Type, mcp.Target(cfg), cfg.Disabled)
+	if len(cfg.Args) > 0 {
+		fmt.Printf("Args:     %s\n", strings.Join(cfg.Args, " "))
+	}
+	if len(cfg.Env) > 0 {
+		fmt.Printf("Env keys: %s\n", strings.Join(sortedKeys(cfg.Env), ", "))
+	}
+	if len(cfg.Headers) > 0 {
+		fmt.Printf("Headers:  %s\n", strings.Join(sortedKeys(cfg.Headers), ", "))
+	}
+	if cfg.OAuth != nil {
+		fmt.Printf("OAuth:    configured (client id %s)\n", cfg.OAuth.ClientID)
+	}
+	if len(cfg.DisabledTools) > 0 {
+		fmt.Printf("Disabled tools: %s\n", strings.Join(cfg.DisabledTools, ", "))
+	}
+	if cfg.Type == mcp.TypeStdio && len(cfg.Args) > 0 {
+		managed := filepath.Join(m.home, "connectors", args[0])
+		if filepath.Clean(cfg.Args[0]) == filepath.Join(managed, "server.py") {
+			if _, err := os.Stat(cfg.Args[0]); err != nil {
+				fmt.Printf("Files:    MISSING (%s)\n", cfg.Args[0])
+			} else {
+				fmt.Printf("Files:    present (%s)\n", filepath.Dir(cfg.Args[0]))
+			}
+		}
+	}
+	if w := mcp.Warning(cfg); w != "" {
+		fmt.Println("Warning: " + w)
+	}
+	if cl, connectErr := client.Connect(false); connectErr == nil {
+		if live, liveErr := cl.MCP(); liveErr == nil {
+			for _, server := range live.Servers {
+				if server.ID != args[0] {
+					continue
+				}
+				fmt.Printf("State:    %s\n", server.State)
+				if server.Error != "" {
+					fmt.Printf("Error:    %s\n", server.Error)
+				}
+				if server.ToolCount > 0 {
+					fmt.Printf("Tools (%d):\n", server.ToolCount)
+					for _, tool := range server.Tools {
+						state := ""
+						if tool.Disabled {
+							state = " [disabled]"
+						}
+						fmt.Printf("  %s%s\n", tool.Name, state)
+					}
+				}
+				break
+			}
+		}
+	}
+	return 0
+}
+
+func mcpValidate(args []string) int {
+	if len(args) > 1 {
+		fmt.Fprint(os.Stderr, "usage: relay mcp validate [id]\n")
+		return 2
+	}
+	m, err := openMCP()
+	if err != nil {
+		return fail(err)
+	}
+	ids := m.file.IDs()
+	if len(args) == 1 {
+		ids = []string{args[0]}
+	}
+	if len(ids) == 0 {
+		fmt.Println("No MCP servers configured.")
+		return 0
+	}
+	bad := 0
+	for _, id := range ids {
+		cfg, ok := m.file.Servers[id]
+		if !ok {
+			fmt.Printf("✗ %s: not found\n", id)
+			bad++
+			continue
+		}
+		if err := mcp.Validate(id, mcp.Normalize(cfg)); err != nil {
+			fmt.Printf("✗ %s: %v\n", id, err)
+			bad++
+			continue
+		}
+		if cfg.Type == mcp.TypeStdio && len(cfg.Args) > 0 {
+			managed := filepath.Join(m.home, "connectors", id)
+			if filepath.Clean(cfg.Args[0]) == filepath.Join(managed, "server.py") {
+				if _, err := os.Stat(cfg.Args[0]); err != nil {
+					fmt.Printf("✗ %s: server files are missing (%s)\n", id, cfg.Args[0])
+					bad++
+					continue
+				}
+			}
+		}
+		fmt.Printf("✓ %s\n", id)
+	}
+	if bad > 0 {
+		return 1
+	}
+	return 0
+}
+
+func sortedKeys(values map[string]string) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 func mcpAdd(args []string) int {
 	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
 		fmt.Fprint(os.Stderr, mcpUsage)
@@ -246,23 +381,63 @@ func mcpAdd(args []string) int {
 }
 
 func mcpRemove(args []string) int {
-	if len(args) != 1 {
-		fmt.Fprint(os.Stderr, "usage: relay mcp remove <id>\n")
+	fs := flag.NewFlagSet("relay mcp remove", flag.ContinueOnError)
+	yes := fs.Bool("yes", false, "do not ask for confirmation")
+	keepFiles := fs.Bool("keep-files", false, "keep the Relay-created server source folder")
+	if len(args) == 0 {
+		fmt.Fprint(os.Stderr, "usage: relay mcp remove <id> [--yes] [--keep-files]\n")
 		return 2
+	}
+	id := args[0]
+	if err := fs.Parse(args[1:]); err != nil {
+		return 2
+	}
+	if fs.NArg() != 0 {
+		return fail(fmt.Errorf("unexpected argument %q", fs.Arg(0)))
 	}
 	m, err := openMCP()
 	if err != nil {
 		return fail(err)
 	}
-	if _, err := m.entry(args[0]); err != nil {
+	cfg, err := m.entry(id)
+	if err != nil {
 		return fail(fmt.Errorf("%v\n(a server from the old [[mcp]] section of config.toml is removed there)", err))
 	}
-	delete(m.file.Servers, args[0])
+	var managedDir string
+	if cfg.Type == mcp.TypeStdio && len(cfg.Args) > 0 {
+		connectors := filepath.Join(m.home, "connectors")
+		candidate := filepath.Join(connectors, id)
+		if filepath.Clean(cfg.Args[0]) == filepath.Join(candidate, "server.py") {
+			// The path is derived from a validated server id, and the entry point must
+			// match the exact Relay-managed layout before recursive deletion is allowed.
+			if rel, relErr := filepath.Rel(connectors, candidate); relErr == nil && rel == id {
+				if _, statErr := os.Stat(candidate); statErr == nil {
+					managedDir = candidate
+				}
+			}
+		}
+	}
+	if !*yes {
+		question := fmt.Sprintf("Remove MCP server %q from Relay?", id)
+		if managedDir != "" && !*keepFiles {
+			question += " Its Relay-created source folder will also be deleted."
+		}
+		if !confirm(question + " [y/N] ") {
+			fmt.Println("Nothing was removed.")
+			return 1
+		}
+	}
+	delete(m.file.Servers, id)
 	if err := mcp.Save(m.path, m.file); err != nil {
 		return fail(err)
 	}
-	_ = m.trust.Forget(args[0])
-	fmt.Printf("Removed %q. A running Relay stops it within a second.\n", args[0])
+	_ = m.trust.Forget(id)
+	if managedDir != "" && !*keepFiles {
+		if err := os.RemoveAll(managedDir); err != nil {
+			return fail(fmt.Errorf("server was unregistered, but source folder could not be removed: %w", err))
+		}
+	}
+	fmt.Printf("Removed %q. A running Relay stops it within a second.\n", id)
 	return 0
 }
 

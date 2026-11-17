@@ -24,8 +24,6 @@ type buildState struct {
 
 const buildPhases = 5
 
-var buildPhaseNames = [buildPhases + 1]string{"", "Reading the guide", "Designing", "Writing and starting", "Writing the skill", "Trying it out"}
-
 // buildIdle are the lines shown, one after the other, while the model works in a phase.
 var buildIdle = map[int][]string{
 	1: {"Reading the builder guide", "Looking at the examples"},
@@ -201,8 +199,10 @@ func (m model) buildPanel(w int, st styles) []string {
 		phrases := buildIdle[phase]
 		label = phrases[(m.frame/25)%len(phrases)] + "…" // a new line about every three seconds
 	}
+	// Keep the animated activity label and elapsed time; the phase name/count is
+	// implementation detail and adds noise (especially while writing a skill).
 	line := "  " + st.accent.Render(spin[m.frame%len(spin)]) + " " + shimmer(label, m.frame, st) +
-		st.dim.Render(fmt.Sprintf("  %s  ·  %d/%d %s", clock(time.Since(b.startAt)), phase, buildPhases, buildPhaseNames[phase]))
+		st.dim.Render(fmt.Sprintf("  %s", clock(time.Since(b.startAt))))
 	return []string{"", line}
 }
 

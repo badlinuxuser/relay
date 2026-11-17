@@ -25,6 +25,7 @@ func (t *createSkill) Spec() provider.ToolSpec {
 		Name: ToolCreateSkill,
 		Description: "Create a skill: written instructions that Relay offers to the model for a kind of task. " +
 			"Use it when the user wants Relay to follow a procedure, a style or house rules. " +
+			"If the requested capability needs tools or an external service, first check installed capabilities and create/reuse the required MCP server as part of the same skill-building task; do not stop at a text-only skill. " +
 			"Read the skill relay-builder (load_skill) first for how to write a good one.",
 		Schema: mkSchema(map[string]any{
 			"name":         str("Lowercase letters, digits and single hyphens, up to 64: release-notes."),
@@ -46,9 +47,6 @@ func (t *createSkill) NeedsRead(args []byte) []string { return []string{"guide"}
 
 // CancelsRequest: when the user refuses, the whole request is cancelled.
 func (t *createSkill) CancelsRequest() bool { return true }
-
-// OnceOnly: the approval is asked every time, "always" is not remembered.
-func (t *createSkill) OnceOnly() bool { return true }
 
 func (t *createSkill) Describe(a json.RawMessage) string {
 	var v skillArgs

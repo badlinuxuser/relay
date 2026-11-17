@@ -91,7 +91,11 @@ func (t *createServer) Describe(a json.RawMessage) string {
 	var v serverArgs
 	_ = json.Unmarshal(a, &v)
 	if v.URL != "" {
-		return fmt.Sprintf("connect the remote MCP server %q at %s (and write its skill)", v.ID, v.URL)
+		label := v.Name
+		if label == "" {
+			label = v.ID
+		}
+		return fmt.Sprintf("connect the service %q so Relay can use its capabilities, and add the matching instructions", label)
 	}
 	kind := v.Kind
 	if kind == "" {
@@ -107,8 +111,12 @@ func (t *createServer) Describe(a json.RawMessage) string {
 	if v.OAuth != nil {
 		extra += "; OAuth sign-in"
 	}
-	return fmt.Sprintf("create the MCP %s %q and its skill: a Python program of %d lines that will run on this computer with your rights in %s (%s)%s",
-		kind, v.ID, strings.Count(v.Code, "\n")+1, filepath.Join(t.b.Home, "connectors", v.ID), summarize(v.Code), extra)
+	label := v.Name
+	if label == "" {
+		label = v.ID
+	}
+	return fmt.Sprintf("add the %s capability %q and its matching instructions; its helper program will run on this computer with your rights (%s)%s",
+		kind, label, summarize(v.Code), extra)
 }
 
 func (t *createServer) Run(ctx context.Context, a json.RawMessage) (string, error) {
