@@ -25,6 +25,7 @@ const (
 	StateConnecting   State = "connecting"    // starting or handshaking
 	StateConnected    State = "connected"     // tools are available
 	StateAuthRequired State = "auth_required" // the server wants the user to sign in
+	StateNeedsSetup   State = "needs_setup"   // OAuth endpoints are known but no client registration is configured
 	StateDisconnected State = "disconnected"  // stopped by the user, disabled, or the connection dropped
 	StateError        State = "error"         // could not start or connect (see Error)
 )
@@ -63,7 +64,8 @@ type Status struct {
 	Disabled      bool
 	Kind          string // tool | connector
 	OAuth         bool   // the entry has an "oauth" block
-	SignedIn      bool   // there is a token (or a refresh token)
+	OAuthProvider string
+	SignedIn      bool // there is a token (or a refresh token)
 	Tools         []ToolStatus
 	DisabledTools []string
 }
@@ -78,6 +80,9 @@ func StatusOf(id string, c ServerConfig, source string, trust *Trust) Status {
 		ID: id, Name: name, Type: c.Type, Target: Target(c), Source: source, Kind: c.Kind, OAuth: c.OAuth != nil,
 		State: StateConfigured, Warning: Warning(c), Disabled: c.Disabled,
 		DisabledTools: c.DisabledTools,
+	}
+	if c.OAuth != nil {
+		st.OAuthProvider = c.OAuth.Provider
 	}
 	st.Trusted = c.Type != TypeStdio || source == SourceLegacy || trust.Trusted(id, Fingerprint(c))
 	if c.Disabled {
@@ -108,6 +113,12 @@ type server struct {
 // mcp.json and applies changes while Relay runs: a new entry is started, a removed one
 // stopped, a changed one restarted, an unchanged one left alone. A file with an error is
 // ignored as a whole and the last good configuration stays in force.
+type preparedAuthorization struct {
+	cfg         oauth.Config
+	fingerprint string
+	created     time.Time
+}
+
 type Manager struct {
 	path      string
 	trustPath string
@@ -122,6 +133,7 @@ type Manager struct {
 
 	broker   *oauth.Broker
 	redirect func() string // the callback address of the daemon
+	prepared map[string]preparedAuthorization
 
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
@@ -132,7 +144,7 @@ type Manager struct {
 func NewManager(path, trustPath string, legacy map[string]ServerConfig) *Manager {
 	return &Manager{
 		path: path, trustPath: trustPath, trust: OpenTrust(trustPath),
-		legacy: legacy, servers: map[string]*server{},
+		legacy: legacy, servers: map[string]*server{}, prepared: map[string]preparedAuthorization{},
 	}
 }
 
@@ -296,9 +308,15 @@ func (m *Manager) Reload() {
 	}
 	var start []string
 	for id, s := range m.servers {
-		if s.state == StateConfigured && !s.paused {
-			start = append(start, id)
+		if s.state != StateConfigured || s.paused {
+			continue
 		}
+		// Do not launch an unapproved stdio process even briefly. In particular, a
+		// concurrent Trust() must not race an auto-connect that was queued by Reload().
+		if s.cfg.Type == TypeStdio && s.source != SourceLegacy && !m.trust.Trusted(id, Fingerprint(s.cfg)) {
+			continue
+		}
+		start = append(start, id)
 	}
 	m.mu.Unlock()
 
@@ -336,19 +354,19 @@ func (m *Manager) connect(id string, manual bool) error {
 		m.mu.Unlock()
 		return nil
 	}
-	if s.state == StateConnecting {
-		m.mu.Unlock()
-		if manual {
-			return fmt.Errorf("server %q is already connecting", id)
-		}
-		return nil
-	}
 	if s.cfg.Type == TypeStdio && s.source != SourceLegacy && !m.trust.Trusted(id, Fingerprint(s.cfg)) {
 		s.state, s.err = StateConfigured, ""
 		target := Target(s.cfg)
 		m.mu.Unlock()
 		if manual {
 			return fmt.Errorf("server %q runs a program on this computer and is not approved yet:\n  %s\napprove it with: relay mcp trust %s", id, target, id)
+		}
+		return nil
+	}
+	if s.state == StateConnecting {
+		m.mu.Unlock()
+		if manual {
+			return fmt.Errorf("server %q is already connecting", id)
 		}
 		return nil
 	}
@@ -514,8 +532,8 @@ func (m *Manager) CallTool(ctx context.Context, id, tool string, args json.RawMe
 		return "", fmt.Errorf("the MCP server %q is not in mcp.json any more", id)
 	}
 	if tool == SignInTool && cl == nil {
-		if m.broker == nil || !m.broker.Store().SignedIn(id) {
-			return "", &AuthRequiredError{Server: id}
+		if m.broker == nil || m.NeedsSignIn(id) {
+			return "", &AuthRequiredError{Server: id, SafeToRetry: true}
 		}
 		if err := m.connect(id, true); err != nil { // reconnect, now with the token
 			return "", err
@@ -527,6 +545,10 @@ func (m *Manager) CallTool(ctx context.Context, id, tool string, args json.RawMe
 	}
 	if cl == nil && (state == StateDisconnected || state == StateConfigured) {
 		if err := m.connect(id, false); err != nil {
+			var auth *AuthError
+			if errors.As(err, &auth) {
+				return "", &AuthRequiredError{Server: id, SafeToRetry: true}
+			}
 			return "", err
 		}
 		m.mu.Lock()
@@ -535,16 +557,36 @@ func (m *Manager) CallTool(ctx context.Context, id, tool string, args json.RawMe
 	}
 	if cl == nil {
 		if state == StateAuthRequired {
-			return "", &AuthRequiredError{Server: id}
+			return "", &AuthRequiredError{Server: id, SafeToRetry: true}
 		}
 		return "", fmt.Errorf("the MCP server %q is not connected (%s); see: relay mcp list", id, m.describeState(id))
 	}
-	if cfg.OAuth != nil && m.broker != nil { // refreshes an expired token; the connector reads the file
-		if _, ok, err := m.broker.Token(ctx, id, staticOAuth(cfg)); err != nil {
-			return "", err
-		} else if !ok {
-			return "", &AuthRequiredError{Server: id}
+	usedCredential := false
+	if m.broker != nil && cfg.Type == TypeHTTP {
+		static := staticOAuth(cfg)
+		resource := ""
+		if static != nil {
+			resource = static.Resource
 		}
+		_, ok, err := m.broker.TokenForResource(ctx, id, static, resource, cfg.URL)
+		if err != nil {
+			return "", err
+		}
+		if cfg.OAuth != nil && !ok {
+			return "", &AuthRequiredError{Server: id, SafeToRetry: true}
+		}
+		usedCredential = ok
+	} else if cfg.OAuth != nil && m.broker != nil { // the stdio SDK reads the refreshed access-token file
+		static := staticOAuth(cfg)
+		target := "stdio://" + id
+		_, ok, err := m.broker.TokenForResource(ctx, id, static, static.Resource, target)
+		if err != nil {
+			return "", err
+		}
+		if !ok {
+			return "", &AuthRequiredError{Server: id, SafeToRetry: true}
+		}
+		usedCredential = true
 	}
 	text, err := cl.Call(ctx, tool, args)
 	var auth *AuthError
@@ -556,10 +598,13 @@ func (m *Manager) CallTool(ctx context.Context, id, tool string, args json.RawMe
 		}
 		m.mu.Unlock()
 		m.changed()
-		return "", &AuthRequiredError{Server: id}
-	case err != nil && strings.HasPrefix(err.Error(), AuthMarker) && m.broker != nil:
+		return "", &AuthRequiredError{Server: id, SafeToRetry: true}
+	case err != nil && cfg.OAuth != nil && cfg.Type == TypeStdio && strings.HasPrefix(err.Error(), AuthMarker) && m.broker != nil:
 		_ = m.broker.Store().DropToken(id) // the service refused the token: sign in again
-		return "", &AuthRequiredError{Server: id}
+		return "", &AuthRequiredError{Server: id, SafeToRetry: true}
+	}
+	if err == nil && m.broker != nil && usedCredential {
+		_ = m.broker.MarkUsed(id)
 	}
 	return text, err
 }
@@ -604,10 +649,105 @@ func staticOAuth(c ServerConfig) *oauth.Config {
 	if o == nil {
 		return nil
 	}
-	return &oauth.Config{
-		AuthorizeURL: o.AuthorizeURL, TokenURL: o.TokenURL, Scopes: o.Scopes, Params: o.Params,
-		ClientID: os.ExpandEnv(o.ClientID), ClientSecret: os.ExpandEnv(o.ClientSecret),
+	resource := o.Resource
+	sendResource := o.SendResource
+	if c.Type == TypeHTTP {
+		if resource == "" {
+			resource = c.URL
+		}
+		sendResource = true
 	}
+	cfg := oauth.Config{
+		Provider:          o.Provider,
+		Issuer:            o.Issuer,
+		PKCES256Supported: o.PKCES256Supported,
+		RequireIssuer:     o.RequireIssuer,
+		AuthorizeURL:      o.AuthorizeURL, TokenURL: o.TokenURL, Registration: o.RegistrationURL, CIMDURL: o.CIMDURL, CIMDSupported: o.CIMDURL != "", RevocationURL: o.RevocationURL, UserInfoURL: o.UserInfoURL,
+		Resource: resource, SendResource: sendResource, TargetURL: c.URL, Scopes: o.Scopes, Params: o.Params,
+		ClientID: os.ExpandEnv(o.ClientID), ClientSecret: os.ExpandEnv(o.ClientSecret), TokenAuthMethod: o.TokenAuthMethod,
+	}
+	if o.Provider != "" {
+		if resolved, err := oauth.ApplyProvider(cfg, o.Provider); err == nil {
+			cfg = resolved
+		}
+	}
+	return &cfg
+}
+
+func authorizationFingerprint(cfg ServerConfig, meta string) string {
+	return Fingerprint(cfg) + "\x00" + meta
+}
+
+// AuthorizationDescription reports the provider, resource and scopes before any OAuth
+// registration or browser flow is started. Discovery is read-only; the user must still approve.
+func (m *Manager) AuthorizationDescription(ctx context.Context, id string) (string, error) {
+	m.mu.Lock()
+	s := m.servers[id]
+	var cfg ServerConfig
+	var meta string
+	if s != nil {
+		cfg, meta = s.cfg, s.authMeta
+	}
+	m.mu.Unlock()
+	if s == nil {
+		return "", fmt.Errorf("there is no server %q", id)
+	}
+	var oc *oauth.Config
+	if cfg.OAuth != nil {
+		oc = staticOAuth(cfg)
+		if oc.Resource == "" && cfg.Type == TypeHTTP {
+			oc.Resource = cfg.URL
+		}
+	} else if cfg.Type == TypeHTTP {
+		var err error
+		oc, err = oauth.Discover(ctx, nil, cfg.URL, meta)
+		if err != nil {
+			return "", err
+		}
+		oc.TargetURL = cfg.URL
+	} else {
+		return "", fmt.Errorf("%q has no OAuth configuration", id)
+	}
+	if cfg.Type == TypeStdio {
+		oc.TargetURL = "stdio://" + id
+	}
+	m.applyStoredClient(id, oc)
+	if oc.ClientID != "" {
+		if err := oc.ValidateClientAuth(); err != nil {
+			return "", err
+		}
+	}
+	// Reuse exactly the metadata/configuration shown to the user after consent; do not
+	// rediscover endpoints or scopes between the approval prompt and authorization.
+	m.mu.Lock()
+	current := m.servers[id]
+	if current == nil || authorizationFingerprint(current.cfg, current.authMeta) != authorizationFingerprint(cfg, meta) {
+		m.mu.Unlock()
+		return "", errors.New("MCP configuration changed while preparing OAuth consent")
+	}
+	m.prepared[id] = preparedAuthorization{cfg: *oc, fingerprint: authorizationFingerprint(cfg, meta), created: time.Now()}
+	m.mu.Unlock()
+	providerName := "OAuth provider"
+	if cfg.OAuth != nil && cfg.OAuth.Provider != "" {
+		if p, ok := oauth.Provider(cfg.OAuth.Provider); ok {
+			providerName = p.Name
+		}
+	}
+	if oc.Issuer != "" {
+		providerName = oc.Issuer
+	}
+	scopes := "not explicitly specified; provider defaults may apply"
+	if len(oc.Scopes) > 0 {
+		scopes = strings.Join(oc.Scopes, ", ")
+	}
+	if len(oc.SupportedScopes) > 0 {
+		scopes += "\nProvider-supported scopes (not all requested): " + strings.Join(oc.SupportedScopes, ", ")
+	}
+	resource := oc.Resource
+	if resource == "" {
+		resource = "not specified"
+	}
+	return fmt.Sprintf("Connect %s for MCP server %q?\nResource: %s\nRequested scopes: %s\nRelay opens the provider's official page; your password stays with the provider. This grants account access only, not permission for tool writes or destructive actions.", providerName, id, resource, scopes), nil
 }
 
 // Authorize starts the sign-in of a server. It returns the address to open in the browser and
@@ -623,22 +763,134 @@ func (m *Manager) Authorize(ctx context.Context, id string) (string, func(contex
 	if s != nil {
 		cfg, meta = s.cfg, s.authMeta
 	}
+	prepared, hasPrepared := m.prepared[id]
+	delete(m.prepared, id)
 	m.mu.Unlock()
 	if s == nil {
 		return "", nil, fmt.Errorf("there is no server %q in mcp.json", id)
 	}
-	redirect := m.redirect()
-	if oc := staticOAuth(cfg); oc != nil {
-		return m.broker.Begin(ctx, id, *oc, false, redirect)
+	if !hasPrepared {
+		return "", nil, errors.New("OAuth consent description must be fetched and approved before authorization can start")
 	}
-	if cfg.Type != TypeHTTP {
-		return "", nil, fmt.Errorf("%q has no sign-in settings: add an \"oauth\" block to its entry in mcp.json", id)
+	if time.Since(prepared.created) > 5*time.Minute || prepared.fingerprint != authorizationFingerprint(cfg, meta) {
+		return "", nil, errors.New("OAuth requirements changed or consent expired; review the authorization prompt again")
 	}
-	oc, err := oauth.Discover(ctx, nil, cfg.URL, meta)
+	return m.broker.Begin(ctx, id, prepared.cfg, cfg.OAuth == nil, m.redirect())
+}
+
+// applyStoredClient overlays credentials entered in the Connections UI. The encrypted
+// OAuth vault is authoritative; credentials in mcp.json remain a backwards-compatible fallback.
+func (m *Manager) applyStoredClient(id string, cfg *oauth.Config) {
+	if m.broker == nil || cfg == nil {
+		return
+	}
+	rec, err := m.broker.Store().Load(id)
+	if err != nil || rec.Config == nil {
+		return
+	}
+	if len(rec.Config.UserScopes) > 0 {
+		cfg.UserScopes = append([]string(nil), rec.Config.UserScopes...)
+		cfg.Scopes = append([]string(nil), rec.Config.UserScopes...)
+	}
+	if rec.Config.ClientID != "" {
+		cfg.ClientID = rec.Config.ClientID
+		cfg.ClientSecret = rec.Config.ClientSecret
+		if rec.Config.TokenAuthMethod != "" {
+			cfg.TokenAuthMethod = rec.Config.TokenAuthMethod
+		}
+	}
+}
+
+// SaveClientCredentials stores OAuth client credentials in Relay's encrypted vault.
+func (m *Manager) SaveClientCredentials(id, clientID, clientSecret, authMethod string) error {
+	m.mu.Lock()
+	s := m.servers[id]
+	if s == nil || (s.cfg.OAuth == nil && s.cfg.Type != TypeHTTP) {
+		m.mu.Unlock()
+		return fmt.Errorf("%q is not an OAuth-capable MCP server", id)
+	}
+	var cfg *oauth.Config
+	if s.cfg.OAuth != nil {
+		cfg = staticOAuth(s.cfg)
+	}
+	m.mu.Unlock()
+	clientID = strings.TrimSpace(clientID)
+	clientSecret = strings.TrimSpace(clientSecret)
+	if clientID == "" {
+		return errors.New("client_id is required")
+	}
+	if authMethod == "" && cfg != nil {
+		authMethod = cfg.TokenAuthMethod
+	}
+	if authMethod == "" {
+		authMethod = "none"
+	}
+	if authMethod != "none" && authMethod != "client_secret_basic" && authMethod != "client_secret_post" {
+		return errors.New("token auth method must be none, client_secret_basic or client_secret_post")
+	}
+	if authMethod != "none" && clientSecret == "" {
+		return errors.New("client_secret is required for the selected token auth method")
+	}
+	if authMethod == "none" {
+		clientSecret = ""
+	}
+	rec, err := m.broker.Store().Load(id)
 	if err != nil {
-		return "", nil, err
+		return err
 	}
-	return m.broker.Begin(ctx, id, *oc, true, redirect)
+	if rec.Config == nil {
+		if cfg != nil {
+			rec.Config = cfg
+		} else {
+			rec.Config = &oauth.Config{}
+		}
+	}
+	rec.Config.ClientID = clientID
+	rec.Config.ClientSecret = clientSecret
+	rec.Config.TokenAuthMethod = authMethod
+	return m.broker.Store().Save(id, rec)
+}
+
+// SaveClientScopes stores the scopes chosen in Connections in the encrypted vault. They replace
+// the scopes of mcp.json for the next sign-in; an existing token keeps its old scopes until then.
+func (m *Manager) SaveClientScopes(id string, scopes []string) error {
+	m.mu.Lock()
+	s := m.servers[id]
+	if s == nil || (s.cfg.OAuth == nil && s.cfg.Type != TypeHTTP) {
+		m.mu.Unlock()
+		return fmt.Errorf("%q is not an OAuth-capable MCP server", id)
+	}
+	var cfg *oauth.Config
+	if s.cfg.OAuth != nil {
+		cfg = staticOAuth(s.cfg)
+	}
+	m.mu.Unlock()
+	clean := make([]string, 0, len(scopes))
+	seen := map[string]bool{}
+	for _, sc := range scopes {
+		sc = strings.TrimSpace(sc)
+		if sc == "" || seen[sc] {
+			continue
+		}
+		if len(sc) > 200 || strings.ContainsAny(sc, " \t\r\n\"\\") {
+			return fmt.Errorf("invalid scope %q", sc)
+		}
+		seen[sc] = true
+		clean = append(clean, sc)
+	}
+	rec, err := m.broker.Store().Load(id)
+	if err != nil {
+		return err
+	}
+	if rec.Config == nil {
+		if cfg != nil {
+			rec.Config = cfg
+		} else {
+			rec.Config = &oauth.Config{}
+		}
+	}
+	rec.Config.UserScopes = clean
+	return m.broker.Store().Save(id, rec)
 }
 
 // NeedsSignIn reports whether the server cannot be used before the user signs in.
@@ -655,9 +907,23 @@ func (m *Manager) NeedsSignIn(id string) bool {
 		return false
 	}
 	if cfg.OAuth != nil {
-		return !m.broker.Store().SignedIn(id)
+		static := staticOAuth(cfg)
+		resource, target := static.Resource, cfg.URL
+		if cfg.Type == TypeStdio {
+			target = "stdio://" + id
+		}
+		if cfg.Type == TypeHTTP && resource == "" {
+			resource = cfg.URL
+		}
+		return !m.broker.HasBoundCredential(id, resource, target)
 	}
-	return state == StateAuthRequired
+	if state == StateAuthRequired {
+		return true
+	}
+	if cfg.Type == TypeHTTP && m.broker.Store().SignedIn(id) {
+		return !m.broker.HasBoundCredential(id, "", cfg.URL)
+	}
+	return false
 }
 
 // Forget removes what Relay remembers about a server that was taken out of mcp.json: the
@@ -678,7 +944,14 @@ func (m *Manager) dial(id string, cfg ServerConfig) (*Client, error) {
 		switch cfg.Type {
 		case TypeHTTP:
 			token = func(ctx context.Context) (string, error) {
-				t, ok, err := m.broker.Token(ctx, id, static)
+				resource := ""
+				if static != nil {
+					resource = static.Resource
+					if resource == "" {
+						resource = cfg.URL
+					}
+				}
+				t, ok, err := m.broker.TokenForResource(ctx, id, static, resource, cfg.URL)
 				if err != nil || !ok {
 					return "", err
 				}
@@ -725,6 +998,18 @@ func (m *Manager) Status() []Status {
 		s := m.servers[id]
 		st := StatusOf(id, s.cfg, s.source, m.trust)
 		st.State, st.Error = s.state, s.err
+		if s.cfg.OAuth != nil {
+			oc := staticOAuth(s.cfg)
+			clientConfigured := oc.ClientID != ""
+			if !clientConfigured && m.broker != nil {
+				if rec, err := m.broker.Store().Load(id); err == nil && rec.Config != nil {
+					clientConfigured = rec.Config.ClientID != ""
+				}
+			}
+			if !clientConfigured && oc.Registration == "" && oc.CIMDURL == "" && (st.State != StateDisconnected && st.State != StateConnecting) {
+				st.State = StateNeedsSetup
+			}
+		}
 		if m.broker != nil && (s.cfg.OAuth != nil || s.state == StateAuthRequired || s.cfg.Type == TypeHTTP) {
 			st.SignedIn = m.broker.Store().SignedIn(id)
 		}

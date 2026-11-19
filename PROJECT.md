@@ -1,7 +1,7 @@
-# Relay — Project Guide and Development Notes
+# PROJECT.md: notes on the Relay project (for Claude)
 
 I read this file at the start of every working session on the repository. It holds the goals, the decisions
-taken, the map of the code, the status and the plan. User documentation: `README.md`, `docs/PROTOCOL.md`, `docs/EXTENSIONS.md`, `SECURITY.md`, and `CHANGELOG.md`.
+taken, the map of the code, the status and the plan. User documentation: `README.md`, `docs/PROTOCOL.md`.
 
 ## What we are building
 
@@ -39,10 +39,10 @@ Tagline: "Faster. Closer. Together."
 | Extensions are plain files, there is no database | `mcp.json` (servers) and `skills/<name>/SKILL.md` are the source of truth; the user can edit them by hand; Relay watches them by polling (no fsnotify: no new dependency) and applies changes within a second. A file with a mistake is ignored as a whole and the last good version stays |
 | MCP: our own client, not the official SDK | The sandbox has no network to fetch the SDK and its API could not be checked. Transports are behind `mcp.Transport`, so the SDK can replace them. Streamable HTTP and stdio are done |
 | A local MCP program runs only after the user approved that exact command (`mcp-trust.json`, by fingerprint) | A hand-edited `mcp.json` must not be able to start programs by itself. The program gets a small environment (PATH, HOME, language, proxy, certificates and the **desktop session variables** `DISPLAY`, `WAYLAND_DISPLAY`, `XAUTHORITY`, `DBUS_SESSION_BUS_ADDRESS` ...), never the keys of Relay; `${NAME}` in `env` takes a value from the environment of Relay |
-| OAuth is done by Relay, the connector gets only the access token | `internal/oauth`: PKCE, loopback callback on the daemon, tokens in `auth/` (0600). The program reads `RELAY_OAUTH_TOKEN_FILE`; the refresh token and the client secret never reach it. Remote MCP servers are signed in by discovery (RFC 9728/8414/7591) |
-| The agent can build its own tools; any model that calls tools can do it | Tools `internal/builder` + the skill `relay-builder` built into the binary (`go:embed`) + a small Python SDK `relay_mcp.py` (also embedded). The model writes only tool functions; the protocol, argument checking, HTTP and token reading are in the SDK. Python 3 on the computer is a requirement for this |
+| OAuth is done by Relay, the connector gets only the access token | `internal/oauth`: PKCE, validated loopback callback, AES-256-GCM vault (Linux Secret Service when available, 0600/0700 Unix local-key fallback), token refresh/revocation, provider profiles and redacted connection metadata. Builder processes receive only the access-token handoff file. Remote MCP servers are signed in by discovery (RFC 9728/8414/7591) |
+| The agent can build its own tools; any model that calls tools can do it | Tools `internal/builder` + the skill `relay-builder` built into the binary (`go:embed`) + a small Python SDK `relay_mcp.py` (also embedded). The model writes only tool functions; the protocol, argument checking and resource-bound OAuth HTTP helper are in the SDK. Raw OAuth tokens are not exposed to generated source. Python 3 on the computer is a requirement for this |
 | Building has a fixed order that the code enforces | (1) `propose_extension` (the user must agree; a refusal **cancels the whole request**), (2) the model must have read the guide and `references/sdk.md` in this request, (3) `create_mcp_server` with a required `skill`. Without an agreed offer or without reading, the build tools answer "not yet" with no prompt. With the setting `suggest_tools` off, only the approval of `create_*` remains |
-| Per-call approvals protect MCP and high-impact actions in 0.2.1 | Every MCP invocation, including OAuth sign-in, requires a fresh decision; session-wide `Always allow` is ignored for MCP. Shell, workspace writes/edits and builder creation/validation tools also require fresh approval. |
+| "Always allow in this session" works for `create_*`, not for the offer and not for `remove_extension` | The author asked for it (repairs repeat `create_mcp_server`); the question "may I build this?" is asked every time (`tools.OnceOnly`) |
 | Every server comes with a skill | A tool without a skill is used badly by models. `create_mcp_server` writes it after the server started and appends the exact list of tools; `metadata: {created-by, server}` ties it to the server |
 | Relay tells the model where it runs | Models believed they were in a remote sandbox and refused to "touch the user's computer". The agent prompt has a "Where you run" paragraph and `list_extensions` starts with the OS, the desktop and Python |
 | While the agent builds, one progress line replaces the reasoning, the calls of the model and what it says on the way | Setting `builder_view` (`progress` | `thoughts`). The line is the last part of the feed (right under the question): a moving label, the time, the stage `n/5`; calls of builder tools and of tools made during a build are hidden; text during a build is held and shown at the end only if it was the final answer |
@@ -51,7 +51,7 @@ Tagline: "Faster. Closer. Together."
 | Long conversations are fitted to the context of the model before each request | `agent/context.go`: old tool results are shortened, then the oldest turns are left out (from a user message); the stored history is not changed. `context` in `config.toml` (default 128000) |
 | The feed is drawn once per entry | `tui/perf.go` `feedCache`; control codes of terminals are removed from outside text (`cleanText`); `View`/`Update` recover from panics and write `crash.log` |
 | Fallback of a failed model stays inside its provider (agent and chat) | Asking the user (allow / always / deny); the gateway and `/compare` still fall back silently along the chain |
-| The version is 0.2.x | 0.1.0 is the first numbered release (earlier numbers 0.4 ... 0.9 were working names). The client restarts the background service only when the version string differs, so every build that changes the service gets a new patch number (0.1.1 ...) |
+| The version is 0.3.x | 0.1.0 is the first numbered release (earlier numbers 0.4 ... 0.9 were working names). The client restarts the background service only when the version string differs, so every build that changes the service gets a new patch number (0.1.1 ...) |
 
 
 ## Modes and themes
@@ -95,12 +95,12 @@ mapped in `internal/tui/model.go` (`handleEvent`):
 - `internal/router`: `Resolve`, `StreamAsk` (same-provider fallback with questions, `nextOfProvider`, max 8 tries), `Stream` (silent chain fallback for the gateway and compare), `attempt`, usage accounting, `MaxOutput` of a model is passed on.
 - `internal/agent`: the step loop (`agent.go`): continuation after the output limit, soft step limit with a summary turn, loop detection, `registry()` built at every step, consent and order gates in `runTool` (`NeedsOffer`, `NeedsRead`, `CancelOnDeny`, `OnceOnly`, `Denier`, `BuildOffer`), the sign-in pause (`signIn`, event `auth`), progress events, prompts (`agentPrompt`, `suggestPrompt`, `environmentPrompt`); `context.go` (`fitContext`).
 - `internal/tools`: `read_file`, `list_dir`, `grep`, `write_file`, `edit_file`, `run_shell`, `web_fetch`, the MCP adapter (`mcp.go`), the skill tools `load_skill` / `read_skill_file` (`skills.go`), `progress.go` (the optional interfaces above, `Progress` reporting). Paths are limited to the workspace (symlinks are not resolved: a known gap).
-- `internal/mcp`: `config.go` (mcp.json, `Parse` rejects the whole file on one bad entry, kinds, `OAuthConfig`, `Fingerprint`, `buildEnv`), `trust.go`, `rpc.go` (JSON-RPC, `Transport`, `AuthError`, `AuthRequiredError`, `SignInTool`, `AuthMarker`), `stdio.go`, `http.go`, `client.go`, `manager.go` (`Manager`: states, reload with the last good config, lazy reconnect, `Dial`, sign-in: `SetOAuth`, `Authorize`, `NeedsSignIn`, `Forget`).
-- `internal/oauth`: `oauth.go` (PKCE, token and refresh, `Store`), `discover.go`, `broker.go` (`Begin`, `HandleCallback`, `Token`). Depends on nothing else of Relay.
+- `internal/mcp`: `config.go` (mcp.json, `Parse` rejects the whole file on one bad entry, kinds, `OAuthConfig`, `Fingerprint`, `buildEnv`), `trust.go`, `rpc.go` (JSON-RPC, `Transport`, `AuthError`, `AuthRequiredError`, `SignInTool`, `AuthMarker`), `stdio.go`, `http.go`, `client.go`, `manager.go` (`Manager`: states, reload with the last good config, lazy reconnect, `Dial`, consent-prepared sign-in: `AuthorizationDescription`, `Authorize`, `NeedsSignIn`, `Forget`).
+- `internal/oauth`: PKCE S256, MCP 2025-06-18 discovery/resource indicator (RFC 9728/8414/7591/8707), lifecycle validation, callback/issuer checks, AES-GCM vault, Linux Secret Service adapter, token refresh and rotation, RFC 7009 revocation, provider profiles, userinfo labels and redacted Connections records. Depends on nothing else of Relay.
 - `internal/skills`: `frontmatter.go` (a small YAML subset), `skill.go`, `manager.go` (list, enable/disable, `Prompt`: built-in descriptions are shown up to 700 characters, others 250), `install.go`, `builtin.go` + `builtin/relay-builder/` (the guide, `references/`: `sdk.md`, `patterns.md`, `mcp-json.md`, `relay-structure.md`, `skills-format.md`, and six working examples `example-*.py`).
-- `internal/builder`: the tools of the agent that build: `propose_extension` (`propose.go`), `validate_mcp_server` (`validate.go`: temporary startup and MCP discovery), `create_mcp_server` (`server.go`), `dependencies.go` (private Python environments), `create_skill` (`skill.go`, `skillwrite.go`), `read_server`, `list_extensions`, `authorize_connector`, `remove_extension` (`manage.go`); `sdk/relay_mcp.py` (embedded SDK) and `sdk/test_relay_mcp.py` (a real test: run it with Python).
+- `internal/builder`: the tools of the agent that build: `propose_extension` (`propose.go`), `validate_mcp_server` (`validate.go`: temporary startup and MCP discovery), `create_mcp_server` (`server.go`), `dependencies.go` (private Python environments), `create_skill` (`skill.go`, `skillwrite.go`), `read_server`, `list_extensions`, `authorize_connector`, `remove_extension` (`manage.go`); `sdk/relay_mcp.py` (embedded resource-bound OAuth HTTP SDK) and `sdk/test_relay_mcp.py` (a real test: run it with Python).
 - `internal/watch`: polling watcher. `internal/runner`: process launcher. `internal/session`: storage, `Run` mutex, `AutoTools`, per-request flags `BuildOK`, `Cancelled`, `Read` (not stored).
-- `internal/server`: routes, SSE, approvals, compare, `/v1` gateway, keys/settings/extensions APIs (`extensions.go`: mcp, skills, tools, authorize), pages `ui/keys.html`, `ui/settings.html`, `ui/help.html`, `/oauth/callback`.
+- `internal/server`: routes, SSE, approvals, compare, `/v1` gateway, keys/settings/extensions/Connections/provider APIs; pages `ui/keys.html`, `ui/connections.html`, `ui/settings.html`, `ui/help.html`, `/oauth/callback`.
 - `internal/client`: HTTP client, backend autostart, version check, SSE.
 - `internal/tui`: `model.go` (state, `Update` with recover), `commands.go`, `view.go` (feed, side panel, input), `perf.go` (feed cache, `cleanText`, clipping, crash log), `build.go` (the progress line, hidden calls, `trackBuild`), `ext.go` (/tools /connectors /skills /mcp, sign-in opening), `overlay.go`, `picker.go`, `approval.go`, `stream.go`, `sprites.go`, `theme.go`, `mascot.go`.
 - `tools/sprites/build.py`: PNG sheets to sprites. `tools/check/`: static checks for sessions without Go (see its README).
@@ -108,23 +108,23 @@ mapped in `internal/tui/model.go` (`handleEvent`):
 
 ## Conventions
 
-- Go 1.24.2+ (as declared in `go.mod`), `go vet` must be clean. No import cycles: `proto` knows only `provider` and `settings`; `oauth` knows nothing of the rest.
+- Go 1.24.2 (the version in `go.mod`), `go vet` must be clean. No import cycles: `proto` knows only `provider` and `settings`; `oauth` knows nothing of the rest.
 - Bubble Tea: the model is a value; call mutators with a pointer receiver as a separate statement **before** `return m, ...`.
 - Colours only through `theme.go`; the background is painted in `paintLine`.
 - Anything shown to the user must pass `cleanText` if it comes from a tool or a model (control codes break the screen).
 - New protocol events: add them to `proto.Event`, the table in `docs/PROTOCOL.md`, and `handleEvent`. New settings: `settings.Settings` (default and cleaning), `docs/PROTOCOL.md`, `ui/settings.html`, and the interface.
 - A new builder or MCP-related tool that creates code must implement `OnceOnly` only if the question has to be asked every time; a tool that builds must implement `NeedsOffer`, `NeedsRead`, `CancelOnDeny`.
 - When the builder skill changes, run the example servers again against the SDK (see the tests in `internal/builder`, and the Python test).
-- All documentation, UI texts and examples are in English; development discussion may be in another language.
+- All documentation, UI texts and examples are in English; the conversation with the author is in Russian.
 - **No Go in the sandbox**: the code is written without a compiler. Run `tools/check/*` before handing code over, and say plainly that it was not compiled.
 
 ## Status
 
-**0.2.1 (MCP development workflow plus per-call security approvals) is the current working version. A compile-time defect in `internal/builder/dependencies.go` was identified: `strings.SplitAny` does not exist in Go. The fix replaces it with `strings.IndexAny` and explicit slicing. The development environment has Go 1.23.2 while the module requires Go 1.24.2; automatic toolchain download and module access are unavailable here, so a full Go build and test run remain unverified. Do not describe the release as fully build-verified until `go build ./...` and `go test ./...` pass with Go 1.24.2+.
+**0.2.1 (= 0.2.0 plus per-call security approvals for MCP and other high-impact tools), in the hands of the author for testing. The Go code was not compiled in the development environment: Go 1.24.2 and module downloads were unavailable. Static checks and the Python SDK tests were run; the author must compile and run the Go test suite before treating this release as verified.
 
 What exists:
 - Everything of the launcher: modes, themes, mascot, providers, catalog, keys page, settings page, sessions, agent with tools and approvals, gateway, compare.
-- Extensions: `mcp.json` (stdio, Streamable HTTP, kinds, `disabled_tools`, `${VAR}`), approvals by fingerprint, hot reload, Skills (Agent Skills; progressive disclosure; built-in `relay-builder`), OAuth (remote discovery and `oauth` blocks, pause of the agent and sign-in in the browser, refresh), CLI `relay mcp` / `relay skill`, `/tools`, `/connectors`, `/skills`, API endpoints.
+- Extensions: `mcp.json` (stdio, Streamable HTTP, kinds, `disabled_tools`, `${VAR}`), approvals by fingerprint, hot reload, Skills (Agent Skills; progressive disclosure; built-in `relay-builder`), OAuth (remote discovery and `oauth` blocks, separate consent, PKCE lifecycle, resource-bound tokens, encrypted vault, Connections management and refresh), CLI `relay mcp` / `relay skill`, `/tools`, `/connectors`, `/skills`, API endpoints.
 - The agent builds its own tools: see Decisions (consent, order, skill, repair with `read_server` and `propose_extension` kind `fix`). Relay 0.2 adds `validate_mcp_server` for temporary pre-install MCP startup/handshake/tool discovery, and per-server private Python environments for optional PyPI dependencies. Relay 0.2.1 requires fresh approval for every MCP call and other high-impact actions; see SECURITY.md.
 - Fixes of the last session: "Limit reached" (output limit and step limit), long conversations (context fitting), interface lag and garbage (feed cache, control codes, clipping, recover + `crash.log`).
 
@@ -138,15 +138,15 @@ What the author reported in the last session and how it was handled:
 7. A broken tool was abandoned: the repair path (`propose_extension` kind `fix`, `read_server`, `create_mcp_server` with `replace`), with the user's permission.
 8. A Telegram connector got an OAuth block although a bot uses a token: the skill has a table "choose the simplest way to log in"; `create_mcp_server` refuses an `oauth` block whose code never uses the token (and the reverse); `example-apikey.py` is the Telegram bot.
 
-Not done / ideas (see also the plan): a web page to add servers by hand; Node and Go SDKs (only Python now); Basic client authentication at token endpoints; `tools/list_changed`; a store for secrets (now the user exports a variable and restarts Relay; the answer of `create_mcp_server` says so); a scheduler (tools run only when called).
+Not done / ideas (see also the plan): a web page to add servers by hand; Node and Go SDKs (only Python now); `tools/list_changed`; a guided Connections wizard to register/configure provider applications without editing `mcp.json` or exporting client secrets; native macOS Keychain/Windows Credential Manager adapters; a scheduler (tools run only when called).
 
 History (older work, short): v0.8 extensions (mcp.json, skills, CLI, hot reload); v0.9 builder tools, OAuth, `/tools` `/connectors`; v0.7 reasoning split from the answer, typing queue, settings page, select mode, ask before switching models; v0.6 processes panel, clickable lists, approvals box; v0.5 Grok and DeepSeek, official providers first; v0.4 model picker and catalog; v0.1-v0.2 first build.
 
-Verification note: the sandbox has no access to proxy.golang.org, so `go vet` and the tests cannot run there at all. Provider answer formats (`/api/tags`, `/v1beta/models`, reasoning fields) come from documentation and the author's screenshots, not from live services. The OAuth flow was tested only against fake servers.
+Verification note: the sandbox has no access to proxy.golang.org. The OAuth and MCP packages pass isolated Go 1.23.2 tests with `-race`, and the Python SDK self-tests pass; the full Go 1.24.2 suite, `go vet`, cross-builds and real OAuth provider/browser tests remain unverified. Provider answer formats (`/api/tags`, `/v1beta/models`, reasoning fields) come from documentation and the author's screenshots, not from live services.
 
 ## First steps of the next session
 
-1. Start with the latest compiler/test output. With Go 1.24.2+, run `go mod tidy`, `go vet ./...`, `go build ./...`, and `go test ./...`.
+1. If the author sent compiler or test output, start from it. Otherwise ask for `go vet ./... && go build ./... && go test ./...`.
 2. Check the behaviours that only a person can see (the author's terminal is GNOME Console): the progress line under the question, hidden calls, the final answer after a build, `/tools` `/connectors` `/skills`, sign-in in the browser, a long conversation (no lag), `crash.log` stays empty.
 3. Try the builder with several models (a strong one and a weak local one): "connect my Telegram" (token, no OAuth), "open YouTube and search for cats" (desktop), an indirect request ("send this to my Telegram"), a refusal at the offer, "always allow", a deliberately broken tool and its repair.
 4. Windows: `relay install`, background start, the browser, UTF-8 console; Python for the builder (`python` vs `python3`).
@@ -157,10 +157,31 @@ Verification note: the sandbox has no access to proxy.golang.org, so `go vet` an
 - The token count is estimated as `len/4` when a provider reports none; `context` per model is needed for small local models.
 - Gateway: pass through `tools`/`tool_calls`; `/v1/embeddings`.
 - Agent: parallel tools, cancelling the shell with `esc` while it runs, a diff preview before approval, multi-agent work, subagents.
-- Builder: Node/Go SDKs; a secret store; Git install of skills and servers (`relay skill add github:...`), a registry; the Extensions page of the web UI; showing the code of a new program in the approval box (now only a summary).
+- Builder: Node/Go SDKs; a general secret store for non-OAuth API keys; Git install of skills and servers (`relay skill add github:...`), a registry; the Extensions page of the web UI; showing the code of a new program in the approval box (now only a summary).
 - Mascot: use the action frames (`run`, `link`, `summon`), blinking, lines by mood; a mood for building.
-- Security: keys and tokens in the system keyring instead of files; symlink limits in the workspace (`tools.resolve`); a command allowlist.
+- Security: OAuth records encrypted with AES-256-GCM; Linux Secret Service when available and owner-only encrypted-file fallback elsewhere; symlink limits in the workspace (`tools.resolve`); a command allowlist.
 - Settings page: adding providers and models, a button that checks a key, a usage summary.
 - Interface: multi-line input, markdown and code highlighting, completion of models.
 - Providers: native Gemini and Ollama APIs, images.
 - Distribution: releases for Linux and Windows (goreleaser), one-command install.
+
+
+## 0.3.0 — LFI Core implementation notes
+
+The 0.3.0 foundation is based on `docs/LFI_CORE.md`; protocol and architecture decisions are recorded in `docs/ADR-0001-LFI-CORE.md`. Existing OAuth code was audited and hardened rather than replaced with a second identity subsystem. The OAuth Broker remains shared by MCP Manager and Builder-generated stdio connectors. See `docs/OAUTH.md` and `docs/MCP_TRANSPORTS.md` for the exact support matrix.
+
+Security changes in this iteration: AES-256-GCM encrypted OAuth records; Linux Secret Service integration with a 0600/0700 Unix key-file fallback; explicit OAuth-start consent before registration/browser launch; validated lifecycle transitions; resource-bound bearer attachment; resolver-aware OAuth endpoint checks; provider profiles for GitHub, Google and Microsoft; optional userinfo account labels; revocation/disconnect/forget endpoints; Connections UI; Builder source checks and a fix for the unapproved-stdio startup race. The daemon protocol version is 0.3.0.
+
+Known incomplete requirements: native macOS Keychain and Windows Credential Manager adapters; vault master-key rotation and recovery UX; Slack/Notion provider-specific contracts; CIMD; exhaustive RFC fixtures; adversarial DNS/callback/refresh concurrency tests; real-browser provider tests; and cross-platform acceptance. The local master-key fallback does not protect against malware running as the same OS user. Do not mark LFI Core production-certified until all release gates in `docs/LFI_CORE.md` are closed.
+
+Verification: the environment has Go 1.23.2 while `go.mod` requires Go 1.24.2, and network access to the toolchain/module proxy is unavailable. The isolated OAuth package and MCP/OAuth packages passed `go test -race` under Go 1.23.2. Full `go test ./...`, `go vet`, cross-builds and real-provider/browser acceptance could not be run.
+
+
+## 0.3.0 (continued) — OAuth setup usability
+
+- OAuth connector configuration no longer fails solely because `client_id` and `registration_url` are absent. The MCP manager exposes `needs_setup`.
+- Connections now lists configured OAuth MCP servers even before a credential record exists, and provides a Client ID / optional Client Secret setup form with the exact local callback URI.
+- `POST /api/connections/{id}/client` stores client credentials in the encrypted OAuth vault. Vault values take precedence over `mcp.json`; API responses and the UI never read the secret back.
+- CIMD can be explicitly configured with `oauth.cimd_url`. It is used as the OAuth `client_id` only when the authorization server advertises CIMD support (or when explicitly enabled for a static provider config). DCR remains the next automatic path.
+- Remaining work: choose and control a stable project domain before publishing a shared `client.json`; implement RFC 8628 device authorization for GitHub; run provider end-to-end tests. GitHub currently still needs a registered OAuth client entered in Connections.
+- Security invariants retained: separate OAuth-start consent, PKCE S256, resource/target binding, encrypted credentials and token storage, no secret in API responses or model-visible output.

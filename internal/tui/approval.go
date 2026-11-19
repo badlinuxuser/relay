@@ -45,6 +45,9 @@ func (m *model) approvalKey(key string) string {
 }
 
 func approvalLabel(i int, tool string) string {
+	if tool == "oauth_connect" {
+		return "Allow this connection once (not remembered)"
+	}
 	if tool == "switch_model" { // the router asks before it moves to another model
 		return [...]string{"Switch to the other model", "Switch, and do not ask again in this session", "Do not switch (show the error)"}[i]
 	}
@@ -52,9 +55,12 @@ func approvalLabel(i int, tool string) string {
 	case 0:
 		return "Allow once"
 	case 1:
-		if strings.HasPrefix(tool, "mcp__") || tool == "create_mcp_server" || tool == "validate_mcp_server" ||
+		if tool == "create_mcp_server" ||
 			tool == "create_skill" || tool == "propose_extension" || tool == "run_shell" || tool == "write_file" || tool == "edit_file" || tool == "remove_extension" {
 			return "Allow this time only (not remembered)"
+		}
+		if strings.HasPrefix(tool, "mcp__") {
+			return "Always allow this tool in this session"
 		}
 		return "Always allow " + tool + " in this session"
 	}
@@ -73,7 +79,11 @@ func (m model) approvalLines(w, maxH int, st styles) []string {
 	if strings.HasPrefix(toolLabel, "mcp__") || toolLabel == "create_mcp_server" || toolLabel == "validate_mcp_server" || toolLabel == "create_skill" {
 		toolLabel = "Relay capability"
 	}
-	head := st.red.Render("⚠ approval needed") + st.dim.Render(" · "+toolLabel+" · ↑↓ select · enter confirm · y once · a always · n deny")
+	hint := "↑↓ select · enter confirm · y once · a always · n deny"
+	if ev.Tool == "oauth_connect" {
+		hint = "↑↓ select · enter confirm · y/a approve once · n deny"
+	}
+	head := st.red.Render("⚠ approval needed") + st.dim.Render(" · "+toolLabel+" · "+hint)
 
 	what := ev.Desc
 	if what == "" {

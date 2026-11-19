@@ -1,56 +1,43 @@
 # Changelog
 
-All notable project changes are documented here. This file consolidates the former patch and release notes.
+## 0.3.0 — LFI Core implementation
 
-## [0.2.1] — Security hardening and Builder evolution
+- Added AES-256-GCM encryption for OAuth records, Linux Secret Service key storage when available, and a private local-key fallback with transparent migration of legacy records.
+- Added explicit, validated OAuth lifecycle states; one-time callback consumption; separate OAuth-start approval before client registration/browser launch; cancellation and expiry handling. Remote discovery must advertise PKCE S256; custom static providers require an explicit PKCE-S256 declaration, and built-in profiles document support.
+- Bound stored credentials to their resource indicator before attaching bearer tokens to MCP HTTP requests.
+- Added resolver-aware direct OAuth endpoint dialing, private/non-routable DNS answer rejection and redirect refusal.
+- Builder SDK migration: connectors must use `http(..., oauth=True)` and declare `oauth.resource`; the legacy raw-token helper no longer returns token material.
+- Added the Builder SDK resource-bound HTTP client: OAuth requests are restricted to the configured resource origin/path, DNS answers are validated and pinned, redirects are refused, and generated source cannot read or manually forward raw tokens.
+- Added built-in endpoint profiles for GitHub, Google and Microsoft; token endpoint authentication (`client_secret_basic`, `client_secret_post`, `none`) with metadata/DCR negotiation; optional HTTPS userinfo account labels; provider revocation where an RFC 7009 endpoint is available.
+- Distinguished provider-supported scopes from explicitly requested scopes (supported scopes are never automatically requested); HTTP MCP always sends canonical RFC 8707 `resource` in authorization and token requests per MCP 2025-06-18, while Builder stdio uses an explicit provider-specific opt-in.
+- Added redacted Connections API and `/ui/connections` with provider/resource/scope consent, sign-in, reconnect, disconnect, revoke and forget actions.
+- Added Builder source checks for common hard-coded credentials and custom OAuth implementations; constrained stdio auth-marker handling to explicitly OAuth-configured servers.
+- Fixed a race where `Reload()` could start an unapproved stdio process while `Trust()` was being requested.
+- Added tests for vault encryption/tampering/migration, lifecycle transitions, resource binding, provider profiles, userinfo, and MCP authorization behavior.
+- Recorded the exact MCP `2025-06-18` authorization target and legacy `2025-03-26` transport compatibility in ADR-0001; later `2025-11-25`/`2026-07-28` revisions are not claimed.
+- Updated README, PROJECT, protocol, extension, OAuth, transport and release documentation.
 
-### Security
-- Require a fresh user approval for every MCP tool invocation, including OAuth sign-in.
-- Do not persist session-wide “Always allow” decisions for MCP calls; enforce one-time approval even if an automatic-approval entry already exists in session state.
-- Require fresh approval for shell execution, workspace file writes/edits, MCP creation/validation and Skill creation.
-- Improve MCP approval previews by identifying the server and tool, showing useful arguments, redacting common credential-shaped fields, and excluding raw MCP JSON arguments from `tool_call` and `approval` UI events.
-- Clarify that a `tool_call` event records a model request, not proof that the tool executed. Check the approval decision and corresponding `tool_result`.
+### Verification limitations
 
-### Builder and MCP development
-- Add `validate_mcp_server` to validate a draft in a temporary project directory without registering or permanently installing it.
-- Validate Python syntax, start the draft through Relay's MCP runtime, perform the MCP handshake and discover available tools before installation.
-- Add an iterative Builder workflow: propose, read the Builder guide and SDK reference, validate, inspect errors, revise, validate again, then install.
-- Support optional PyPI dependencies in a server-private Python virtual environment.
-- Restrict dependency specifications to package names and version constraints; reject URLs, VCS references, local paths and pip options.
-- Save dependencies in `requirements.txt` and exclude `.venv` contents from server source inspection.
+The execution environment provides Go 1.23.2 while `go.mod` requires Go 1.24.2, and cannot download Go modules/toolchains. The isolated OAuth and MCP/OAuth packages passed `go test -race` under Go 1.23.2. The complete repository test suite, `go vet`, cross-platform builds and real-provider/browser acceptance tests remain unverified. Native macOS Keychain and Windows Credential Manager adapters, key rotation, hosted project-wide CIMD document, GitHub device flow, and Slack/Notion provider-specific flows are not implemented.
 
-### Documentation and verification
-- Update Builder instructions, SDK references, extension documentation, protocol documentation and the project map.
-- Add tests for MCP draft validation and dependency specification validation.
-- `gofmt`, static balance/duplicate checks and the Python SDK test script passed in the original development environment.
-- The original environment had Go 1.23.2 while the module requires Go 1.24.2; network access was unavailable, so Go unit/integration tests were not run there.
 
-### Security limitations
-- Local stdio MCP processes run with the Relay user's operating-system permissions. This release does not provide OS-level sandboxing or container isolation.
-- An OAuth stdio connector can read its own access-token file through `RELAY_OAUTH_TOKEN_FILE`; the refresh token remains in Relay's store.
-- Credential redaction in approval previews is best-effort and based on field names. Do not put secrets in arbitrary argument fields or tool descriptions.
+## 0.3.0 (continued) — OAuth setup usability
 
-## [0.2.0] — MCP development workflow
+- Allow OAuth MCP entries to load without a Client ID or DCR endpoint; surface `needs_setup` instead of rejecting the MCP configuration.
+- Add Connections UI client-setup form and `POST /api/connections/{id}/client`.
+- Store Client ID, optional Client Secret and token endpoint auth method in the encrypted OAuth vault; vault credentials override mcp.json and secrets are never returned.
+- Add explicit `oauth.cimd_url` support and use it as `client_id` when CIMD is supported; retain DCR fallback.
+- Add regression tests for late client setup and CIMD client selection.
+- GitHub device authorization (RFC 8628) and a hosted shared CIMD document remain outstanding; GitHub still requires a registered OAuth client in this build.
 
-- Extend the Builder from generating a single `server.py` to an iterative MCP development workflow: design, preflight validation, temporary startup, tool discovery, repair and installation with a Skill.
-- Add `validate_mcp_server`, which creates a temporary project copy, checks Python syntax, starts it through Relay's MCP Manager, performs the handshake and discovers tools without writing to `mcp.json` or the permanent connectors directory.
-- Update agent instructions, `propose_extension` and the built-in `relay-builder` Skill to use validate → diagnose → revise → revalidate → create.
-- Support optional PyPI dependencies for MCP projects using a separate `.venv` per server. Reject URL/VCS/local-path dependencies and pip flags; write accepted dependencies to `requirements.txt`.
-- Add the development workflow reference, update SDK/extension/README/protocol/project documentation, and add validation/dependency tests.
-- Verification at the time: `gofmt`, Python SDK tests and static balance/duplicate checks passed. Go tests were not run because Go 1.24.2 and module downloads were unavailable in the development environment.
+### Usability fixes (still 0.3.0)
 
-## [0.1.1] — Skills-first Builder and MCP lifecycle
+- The version is 0.3.0 again (`proto.Version`, README, docs).
+- "Always allow this tool in this session" now works for MCP tools (per tool name) and for `validate_mcp_server`; `create_mcp_server`, skills, shell, file writes and `oauth_connect` are still asked every time. SECURITY.md updated.
+- `/connections` is listed in the input-line command hints.
+- Connections: a "Client & scopes" button for any connection and a Scopes field. Scopes are kept in the encrypted vault (`user_scopes`), replace `oauth.scopes` from mcp.json at the next sign-in, and can be changed without re-entering the Client ID. GitHub note now explains that a token without scopes only reads the profile.
+- An HTTP 403 about scopes from an MCP server now tells the model not to retry and to ask the user to add scopes in /connections.
+- Tests added: per-tool session approval, user scopes override, actionable scope error.
 
-- Make Skills the user-facing unit of functionality. The Builder inventories existing components and chooses a Skill-only implementation, reuses an existing MCP server, or creates a new MCP server together with a Skill.
-- Treat MCP creation as an implementation detail of fulfilling a Skill request, including indirect requests.
-- Improve approval UI labels so internal tool names are not exposed as user-facing capability names.
-- Simplify Builder progress display while retaining the animated activity line and elapsed time.
-- Watch Relay-managed MCP entry points as well as configuration/trust files; remove a managed server from the active list only when its entry point is confirmed deleted.
-- Add `relay mcp info` and `relay mcp validate`; make `relay mcp remove` confirmation-based with `--yes` and `--keep-files` options and constrain source deletion to the managed connector directory.
-- Update documentation and add tests for managed-server deletion detection, external command preservation and approval UI labels.
-- Verification at the time: `gofmt` and focused MCP/Builder tests passed. Full Go tests and real external-service end-to-end tests were not completed in the original environment.
-
-### Known scope exclusions recorded for 0.1.1
-- No MTProto implementation for sending messages from a personal Telegram account; Telegram Bot API integration is a separate use case.
-- A separate timeout issue in external browser-control/Playwright was not part of this patch.
-- OAuth and real external-service flows were not fully end-to-end tested.
+Not verified: no Go toolchain was available, so these changes were not compiled or tested; run `go build ./... && go test ./...` first.

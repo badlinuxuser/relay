@@ -26,13 +26,17 @@ reported as an internal error. Never print to stdout (it is the protocol channel
 import json
 import os
 import sys
+import ipaddress
+import socket
+import ssl
+import http.client
 import time
 import traceback
 import urllib.error
 import urllib.parse
 import urllib.request
 
-__all__ = ["Server", "ToolError", "http", "oauth_token", "secret", "log"]
+__all__ = ["Server", "ToolError", "http", "secret", "log"]
 
 # A tool error that starts with this tells Relay that the service refused the token: Relay
 # forgets it, asks the user to sign in again and repeats the call.
@@ -61,8 +65,8 @@ def secret(name, hint=""):
     return value
 
 
-def oauth_token():
-    """The current access token of the user (Relay refreshes it before every call)."""
+def _oauth_context():
+    """Load the access token and its resource binding from Relay's private token file."""
     path = os.environ.get("RELAY_OAUTH_TOKEN_FILE")
     if not path:
         raise ToolError("this server has no \"oauth\" block in mcp.json, so there is no token")
@@ -77,19 +81,141 @@ def oauth_token():
     token = data.get("access_token")
     if not token:
         raise ToolError(AUTH_MARKER + " there is no token")
-    return token
+    resource = data.get("resource")
+    if not resource:
+        raise ToolError("oauth.resource is missing; configure the API resource in mcp.json")
+    return token, resource
+
+
+def oauth_token():
+    """Raw tokens are intentionally not exposed; use http(..., oauth=True)."""
+    raise ToolError("raw OAuth tokens are not exposed to connector code; use http(..., oauth=True) so Relay can enforce resource binding")
+
+
+def _resource_ip(resource, url):
+    """Validate resource binding and return a DNS-validated IP to pin the OAuth request to."""
+    r = urllib.parse.urlsplit(resource)
+    u = urllib.parse.urlsplit(url)
+    if r.scheme not in ("https", "http") or u.scheme != r.scheme or not r.hostname or not u.hostname:
+        return None
+    if r.username or r.password or u.username or u.password or r.fragment or u.fragment:
+        return None
+    if r.netloc.lower() != u.netloc.lower():
+        return None
+    paths = (r.path, u.path)
+    decoded_paths = []
+    for path in paths:
+        lower = path.lower()
+        if any(marker in lower for marker in ("%2f", "%5c", "%25")):
+            return None
+        decoded = urllib.parse.unquote(path)
+        if "\\" in decoded or any(part in (".", "..") for part in decoded.split("/")):
+            return None
+        decoded_paths.append(decoded)
+    rp, up = decoded_paths[0].rstrip("/"), decoded_paths[1].rstrip("/")
+    if rp and up != rp and not up.startswith(rp + "/"):
+        return None
+    if r.query and r.query != u.query:
+        return None
+    host = u.hostname.lower()
+    try:
+        host_is_loopback = ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        host_is_loopback = host in ("localhost", "ip6-localhost")
+    try:
+        infos = socket.getaddrinfo(u.hostname, u.port or (443 if u.scheme == "https" else 80), type=socket.SOCK_STREAM)
+        addresses = list(dict.fromkeys(item[4][0].split("%")[0] for item in infos))
+        if not addresses:
+            return None
+        for address in addresses:
+            ip = ipaddress.ip_address(address)
+            if ip.is_loopback:
+                if not host_is_loopback:
+                    return None
+            elif not ip.is_global:
+                return None
+        # Pin the request to one of the validated answers to close the DNS-rebinding window.
+        return addresses[0]
+    except (OSError, ValueError):
+        return None
+
+
+class _PinnedHTTPConnection(http.client.HTTPConnection):
+    def __init__(self, host, port, pinned_ip, timeout):
+        super().__init__(host, port, timeout=timeout)
+        self._pinned_ip = pinned_ip
+
+    def connect(self):
+        self.sock = socket.create_connection((self._pinned_ip, self.port), self.timeout, self.source_address)
+
+
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    def __init__(self, host, port, pinned_ip, timeout):
+        super().__init__(host, port, timeout=timeout, context=ssl.create_default_context())
+        self._pinned_ip = pinned_ip
+
+    def connect(self):
+        sock = socket.create_connection((self._pinned_ip, self.port), self.timeout, self.source_address)
+        if self._tunnel_host:
+            self.sock = sock
+            self._tunnel()
+        self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
+
+
+def _oauth_request(method, url, data, headers, timeout, pinned_ip):
+    u = urllib.parse.urlsplit(url)
+    port = u.port or (443 if u.scheme == "https" else 80)
+    cls = _PinnedHTTPSConnection if u.scheme == "https" else _PinnedHTTPConnection
+    conn = cls(u.hostname, port, pinned_ip, timeout)
+    path = urllib.parse.urlunsplit(("", "", u.path or "/", u.query, ""))
+    req_headers = dict(headers)
+    req_headers["Connection"] = "close"
+    try:
+        conn.request(method.upper(), path, body=data, headers=req_headers)
+        resp = conn.getresponse()
+        raw = resp.read(MAX_HTTP_BYTES + 1)
+        ctype = resp.getheader("Content-Type", "")
+        status, reason = resp.status, resp.reason
+    except (OSError, socket.timeout, ssl.SSLError, http.client.HTTPException) as e:
+        raise ToolError("cannot reach %s: %s" % (u.netloc, str(e)[:240])) from None
+    finally:
+        conn.close()
+    if status == 401:
+        raise ToolError(AUTH_MARKER + " HTTP 401 from %s (the token was refused)" % u.netloc)
+    if 300 <= status < 400:
+        raise ToolError("%s answered HTTP %d: OAuth redirects are refused" % (u.netloc, status))
+    if status >= 400:
+        snippet = raw[:600].decode("utf-8", "replace").strip()
+        raise ToolError("%s answered HTTP %d: %s" % (u.netloc, status, snippet or reason))
+    if len(raw) > MAX_HTTP_BYTES:
+        raise ToolError("the answer of %s is larger than %d MB" % (u.netloc, MAX_HTTP_BYTES // (1024 * 1024)))
+    text = raw.decode("utf-8", "replace")
+    if "json" in ctype or text.lstrip().startswith(("{", "[")):
+        try:
+            return json.loads(text)
+        except ValueError:
+            pass
+    return text
 
 
 class _SameHost(urllib.request.HTTPRedirectHandler):
     """A redirect to another host is refused: the token must not follow it."""
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
-        if urllib.parse.urlsplit(newurl).netloc != urllib.parse.urlsplit(req.full_url).netloc:
-            raise urllib.error.HTTPError(newurl, code, "redirect to another host refused", headers, fp)
+        old = urllib.parse.urlsplit(req.full_url)
+        new = urllib.parse.urlsplit(newurl)
+        if new.scheme != old.scheme or new.netloc.lower() != old.netloc.lower():
+            raise urllib.error.HTTPError(newurl, code, "redirect to another origin refused", headers, fp)
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise urllib.error.HTTPError(newurl, code, "redirect refused for an OAuth request", headers, fp)
+
+
 _OPENER = urllib.request.build_opener(_SameHost)
+_OAUTH_OPENER = urllib.request.build_opener(_NoRedirect)
 
 
 def http(method, url, *, params=None, body=None, form=None, headers=None, bearer=None, oauth=False, timeout=20):
@@ -99,7 +225,7 @@ def http(method, url, *, params=None, body=None, form=None, headers=None, bearer
     body     a JSON body (dict or list)
     form     a form body (dict)
     bearer   a token for the Authorization header
-    oauth    True: use the signed-in user's token (see oauth_token)
+    oauth    True: use the signed-in user's token, bound to oauth.resource in mcp.json
     Problems become ToolError with the status and the start of the answer. An answer of
     401 with oauth=True makes Relay ask the user to sign in again.
     """
@@ -115,13 +241,24 @@ def http(method, url, *, params=None, body=None, form=None, headers=None, bearer
     elif form is not None:
         data = urllib.parse.urlencode(form).encode("utf-8")
         hdrs["Content-Type"] = "application/x-www-form-urlencoded"
+    pinned_ip = None
     if oauth:
-        bearer = oauth_token()
-    if bearer:
-        hdrs["Authorization"] = "Bearer " + bearer
+        bearer, resource = _oauth_context()
+        pinned_ip = _resource_ip(resource, url)
+        if not pinned_ip:
+            raise ToolError("OAuth token is bound to %s; refusing to send it to %s" % (resource, urllib.parse.urlsplit(url).netloc))
     hdrs.update(headers or {})
+    if oauth:
+        for key in (headers or {}):
+            if key.lower() in ("host", "connection", "transfer-encoding", "proxy-authorization"):
+                raise ToolError("the %s header cannot be overridden on an OAuth request" % key)
+        hdrs["Authorization"] = "Bearer " + bearer
+    elif bearer:
+        hdrs["Authorization"] = "Bearer " + bearer
     req = urllib.request.Request(url, data=data, method=method.upper(), headers=hdrs)
     host = urllib.parse.urlsplit(url).netloc
+    if oauth:
+        return _oauth_request(method, url, data, hdrs, timeout, pinned_ip)
     try:
         with _OPENER.open(req, timeout=timeout) as resp:
             raw = resp.read(MAX_HTTP_BYTES + 1)

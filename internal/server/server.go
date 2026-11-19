@@ -30,8 +30,8 @@ import (
 	"relay/internal/router"
 	"relay/internal/runner"
 	"relay/internal/session"
-	"relay/internal/skills"
 	"relay/internal/settings"
+	"relay/internal/skills"
 	"relay/internal/tools"
 	"relay/internal/usage"
 )
@@ -48,9 +48,9 @@ type Server struct {
 	procs  *runner.Manager
 	agent  *agent.Agent
 
-	mcp     *mcp.Manager    // the MCP servers of mcp.json
-	skills  *skills.Manager // the skills in skills/
-	broker  *oauth.Broker   // signs the user in to connectors
+	mcp     *mcp.Manager     // the MCP servers of mcp.json
+	skills  *skills.Manager  // the skills in skills/
+	broker  *oauth.Broker    // signs the user in to connectors
 	builder *builder.Builder // the tools with which the agent extends Relay
 
 	addr string // the address that the daemon listens on (for the OAuth callback)
@@ -177,8 +177,15 @@ func (s *Server) Handler() http.Handler {
 	})
 	mux.HandleFunc("GET /oauth/callback", s.broker.HandleCallback)
 	mux.HandleFunc("GET /api/tools", s.handleTools)
+	mux.HandleFunc("GET /api/mcp/{id}/authorization", s.handleMCPAuthorizationDescription)
 	mux.HandleFunc("POST /api/mcp/{id}/authorize", s.handleMCPAuthorize)
+	mux.HandleFunc("POST /api/connections/{id}/client", s.handleConnectionClient)
 	mux.HandleFunc("GET /api/mcp", s.handleMCPList)
+	mux.HandleFunc("GET /api/connections", s.handleConnections)
+	mux.HandleFunc("GET /api/oauth/providers", s.handleOAuthProviders)
+	mux.HandleFunc("DELETE /api/connections/{id}", s.handleConnectionDisconnect)
+	mux.HandleFunc("POST /api/connections/{id}/revoke", s.handleConnectionRevoke)
+	mux.HandleFunc("DELETE /api/connections/{id}/forget", s.handleConnectionForget)
 	mux.HandleFunc("POST /api/mcp/{id}/{action}", s.handleMCPAction)
 	mux.HandleFunc("GET /api/skills", s.handleSkillsList)
 	mux.HandleFunc("POST /api/skills/{name}/{action}", s.handleSkillAction)
@@ -186,6 +193,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/keys", s.handleAddKey)
 	mux.HandleFunc("DELETE /api/keys/{provider}/{id}", s.handleDeleteKey)
 	mux.HandleFunc("GET /ui/keys", s.handleKeysPage)
+	mux.HandleFunc("GET /ui/connections", s.handleConnectionsPage)
 	mux.HandleFunc("GET /ui/help", s.handleHelpPage)
 	mux.HandleFunc("GET /ui/settings", s.handleSettingsPage)
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {

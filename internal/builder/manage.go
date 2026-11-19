@@ -209,7 +209,7 @@ func (t *authConnector) Run(ctx context.Context, a json.RawMessage) (string, err
 	for _, s := range t.b.MCP.Status() {
 		if s.ID == v.ID {
 			if t.b.MCP.NeedsSignIn(v.ID) {
-				return "", &mcp.AuthRequiredError{Server: v.ID} // the agent opens the browser and calls this tool again
+				return "", &mcp.AuthRequiredError{Server: v.ID, SafeToRetry: true} // the agent opens the browser and calls this tool again
 			}
 			if s.OAuth || s.Type == mcp.TypeHTTP {
 				return fmt.Sprintf("The user is signed in to %q.", v.ID), nil

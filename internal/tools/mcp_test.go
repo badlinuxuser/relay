@@ -25,15 +25,15 @@ func TestMCPToolNamesAreValidUniqueAndShort(t *testing.T) {
 	}
 }
 
-func TestMCPCallsAlwaysRequirePerCallApproval(t *testing.T) {
+func TestMCPCallsRequireApprovalUnlessAllowedForSession(t *testing.T) {
 	for _, name := range []string{"send_message", "read_messages", "sign_in"} {
 		t.Run(name, func(t *testing.T) {
 			tl := &mcpTool{ref: mcp.ToolRef{Server: "telegram", Name: name}}
 			if !tl.NeedsApproval() {
 				t.Fatal("every MCP call, including sign-in, must require approval")
 			}
-			if !tl.OnceOnly() {
-				t.Fatal("MCP approval must never be remembered for the session")
+			if tl.OnceOnly() {
+				t.Fatal("MCP approval may be remembered per tool for the session")
 			}
 			if !tl.HideRawArgs() {
 				t.Fatal("raw MCP arguments must not be streamed to the UI")

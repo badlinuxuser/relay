@@ -147,6 +147,7 @@ var commandTable = []cmdHelp{
 	{"/skills", "", "installed skills"},
 	{"/mcp", "", "MCP servers and their state"},
 	{"/keys", "", "open the API keys page"},
+	{"/connections", "", "open OAuth connections: client IDs, scopes, sign-in"},
 	{"/settings", "", "open the settings page"},
 	{"/thoughts", "on|off", "show the model's thoughts"},
 	{"/mouse", "on|off", "mouse in the interface"},

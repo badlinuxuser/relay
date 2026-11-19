@@ -22,14 +22,11 @@ func validateDependencies(deps []string) error {
 		if d == "" || len(d) > 160 || strings.HasPrefix(d, "-") || !dependencySpec.MatchString(d) {
 			return fmt.Errorf("invalid dependency %q: use a PyPI package name with an optional version constraint, not a URL, path or pip option", raw)
 		}
-		// IndexAny returns the first version/extra-specifier delimiter. SplitAny is
-		// not part of the Go strings package.
-		nameEnd := strings.IndexAny(d, "<>=!~[")
-		name := d
-		if nameEnd >= 0 {
-			name = d[:nameEnd]
+		base := d
+		if i := strings.IndexAny(d, "<>=!~["); i >= 0 {
+			base = d[:i]
 		}
-		key := strings.ToLower(name)
+		key := strings.ToLower(base)
 		if seen[key] {
 			return fmt.Errorf("dependency %q is listed more than once", key)
 		}

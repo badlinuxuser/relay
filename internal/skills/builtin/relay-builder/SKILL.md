@@ -1,6 +1,6 @@
 ---
 name: relay-builder
-description: Build new abilities for Relay yourself, and repair them. MCP servers (tools for this computer, connectors to outside services such as Telegram, Slack, mail, a calendar, GitHub, a smart-home hub, a database, any API) and skills (written procedures). Use it whenever the user needs something that none of your tools or skills can do, whether they ask for it directly ("make a tool", "connect my GitHub", "make a tool") or only ask for the RESULT ("send this to my Telegram", "what is on my calendar tomorrow", "open YouTube and search for cats", "check the orders in our database", "do the release notes the way we always do"), and when a tool you built fails and must be fixed.
+description: Build new abilities for Relay yourself, and repair them. MCP servers (tools for this computer, connectors to outside services such as Telegram, Slack, mail, a calendar, GitHub, a smart-home hub, a database, any API) and skills (written procedures). Use it whenever the user needs something that none of your tools or skills can do, whether they ask for it directly ("make a tool", "connect my GitHub", "сделай инструмент") or only ask for the RESULT ("send this to my Telegram", "what is on my calendar tomorrow", "open YouTube and search for cats", "check the orders in our database", "do the release notes the way we always do"), and when a tool you built fails and must be fixed.
 ---
 
 # Building skills and capabilities for Relay
@@ -24,10 +24,10 @@ The user does not have to ask for a "tool". Build when the task needs something 
 
 | The user says | What is missing |
 |---|---|
-| "make a tool that ...", "connect my GitHub", "make a connector", "create a skill" | asked directly |
-| "send this to my Telegram", "message me on Telegram when you finish", "post it to Slack", "reply to that e-mail" | a messenger or mail |
-| "what is on my calendar tomorrow", "add a meeting", "what are my open issues" | an account or service |
-| "open YouTube and search for cats", "open Firefox", "show a notification" | control of this computer |
+| "make a tool that ...", "connect my GitHub", "сделай коннектор", "создай скилл" | asked directly |
+| "send this to my Telegram", "напиши мне в телеграм, когда закончишь", "post it to Slack", "reply to that e-mail" | a messenger or mail |
+| "what is on my calendar tomorrow", "добавь встречу", "what are my open issues" | an account or service |
+| "open YouTube and search for cats", "открой Firefox", "show a notification" | control of this computer |
 | "turn off the lights", "check the orders in our database", "what does our API say about order 5" | a device, a database, an API |
 | "do it the way we always do", "always use this checklist" | a **skill** (no code) |
 
@@ -95,12 +95,12 @@ Do not give up and do not say you cannot. Read the error. If the cause is the co
 
 ## Connectors with OAuth
 
-Relay does the whole sign-in (browser page, PKCE, callback, token, refresh). Your program never sees the refresh token or the client secret: it calls `http(..., oauth=True)` and gets a valid access token.
+Relay does the whole sign-in (separate user consent, browser page, PKCE, callback, token, refresh). Your program never sees the refresh token or the client secret: it calls `http(..., oauth=True)` and gets a valid access token. Never print, log or return raw tokens. Never implement a custom browser OAuth flow or token vault; declare provider/resource/scopes in the Relay OAuth block.
 1. `list_extensions` gives the **callback address**.
 2. Tell the user to register an OAuth app at the service with exactly that callback address, and to give you the **client id** (not a secret); a client secret goes into their own environment variable (`"${NAME}"`).
-3. `create_mcp_server` with `kind: "connector"` and `oauth: {authorize_url, token_url, client_id, client_secret, scopes, params}`; endpoints of common services are in `references/mcp-json.md`.
-4. `authorize_connector`, or simply call a tool: Relay pauses, opens the page, waits, and repeats your call.
-Not supported yet: services that want the client secret in an HTTP Basic header at the token address.
+3. `create_mcp_server` with `kind: "connector"` and `oauth: {provider, authorize_url, token_url, pkce_s256_supported, client_id, client_secret, token_endpoint_auth_method, resource, send_resource, scopes, params}`. Use a built-in `provider` profile (`github`, `google`, `microsoft`) when available; otherwise use explicit endpoints from the provider's documentation. Keep client secrets in environment references.
+4. `authorize_connector`, or simply call a tool: Relay asks for separate OAuth-start approval, shows the provider/resource/scopes, opens the page only after approval, waits, and repeats the original call once after success.
+Supported token endpoint client-auth methods are `client_secret_basic`, `client_secret_post` and `none`. Provider-specific response formats outside the generic OAuth token response still require a dedicated Relay implementation.
 
 ## Writing a skill on its own
 

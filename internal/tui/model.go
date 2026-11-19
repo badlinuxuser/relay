@@ -312,6 +312,11 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case authConsentMsg:
+		m.approval = &proto.Event{Type: "approval", Tool: "oauth_connect", CallID: "oauth:" + msg.id, Desc: msg.description}
+		m.appSel = 0
+		return m, nil
+
 	case authURLMsg:
 		m.addNotice("Opening the sign-in page for " + msg.id + " in your browser…")
 		m.openSignIn(msg.url)

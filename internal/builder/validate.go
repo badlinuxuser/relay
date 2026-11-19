@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -39,7 +40,7 @@ func (t *validateServer) Spec() provider.ToolSpec {
 	}
 }
 func (t *validateServer) NeedsApproval() bool            { return true }
-func (t *validateServer) OnceOnly() bool                 { return true }
+func (t *validateServer) OnceOnly() bool                 { return false }
 func (t *validateServer) NeedsOffer() bool               { return true }
 func (t *validateServer) CancelsRequest() bool           { return true }
 func (t *validateServer) NeedsRead(args []byte) []string { return []string{"guide", "sdk"} }
@@ -51,6 +52,43 @@ func (t *validateServer) Describe(a json.RawMessage) string {
 		extra = "; install into a disposable private Python environment: " + strings.Join(v.Dependencies, ", ")
 	}
 	return fmt.Sprintf("run the code of temporary MCP project %q locally and validate its MCP startup%s (without registering it)", v.ID, extra)
+}
+
+var (
+	hardcodedCredential = regexp.MustCompile(`(?i)(?:gh[pousr]_[A-Za-z0-9]{20,}|gho_[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9-]{20,}|sk-[A-Za-z0-9_-]{24,})`)
+	customOAuthFlow     = regexp.MustCompile(`(?i)((?:["']grant_type["']\s*:\s*|grant_type\s*[=:]\s*)["']authorization_code["']|code_verifier\s*[=:]|requests_oauthlib|oauthlib\.oauth2|authlib\.integrations)`)
+	inlineSecret        = regexp.MustCompile(`(?i)(?:["']?(?:client_secret|access_token|refresh_token)["']?)\s*[=:]\s*["'][^"'${}]{8,}["']`)
+	credentialLeak      = regexp.MustCompile(`(?i)(?:print|log|logger\.(?:info|debug|warning|error))\s*\([^)]*(?:oauth_token\s*\(|RELAY_OAUTH_TOKEN_FILE|\b(?:access_token|refresh_token|token)\b)|return\s+(?:oauth_token\s*\(|(?:access_token|refresh_token|token)\b)`)
+	customAuthMarker    = regexp.MustCompile(`relay:auth-required`)
+	rawOAuthTokenUse    = regexp.MustCompile(`(?i)(?:oauth_token\s*\(|RELAY_OAUTH_TOKEN_FILE)`)
+)
+
+// validateOAuthContract prevents generated connectors from owning a second OAuth stack or
+// embedding credentials. OAuth is declared in mcp.json and executed by Relay's shared broker.
+func validateOAuthContract(code string, files map[string]string) error {
+	all := code
+	for name, body := range files {
+		all += "\n" + name + "\n" + body
+	}
+	if hardcodedCredential.MatchString(all) {
+		return fmt.Errorf("generated MCP source appears to contain a hard-coded credential; move it to Relay's env/secret mechanism")
+	}
+	if inlineSecret.MatchString(all) {
+		return fmt.Errorf("generated MCP source must not embed OAuth tokens or client secrets; use the Relay OAuth contract")
+	}
+	if credentialLeak.MatchString(all) {
+		return fmt.Errorf("generated MCP source must not print, log or return raw OAuth credentials; send requests through the Relay SDK and return only the service result")
+	}
+	if customAuthMarker.MatchString(all) {
+		return fmt.Errorf("generated MCP source must not forge Relay's auth-required marker; use http(..., oauth=True)")
+	}
+	if rawOAuthTokenUse.MatchString(all) {
+		return fmt.Errorf("generated MCP source must not read or handle raw OAuth credentials; use http(..., oauth=True) so Relay can enforce resource binding")
+	}
+	if customOAuthFlow.MatchString(all) {
+		return fmt.Errorf("generated MCP servers must not implement their own OAuth flow; declare the provider/resource in Relay's mcp.json oauth block and use http(..., oauth=True)")
+	}
+	return nil
 }
 
 func (t *validateServer) Run(ctx context.Context, raw json.RawMessage) (string, error) {
@@ -70,6 +108,9 @@ func (t *validateServer) Run(ctx context.Context, raw json.RawMessage) (string, 
 	}
 	if len(v.Code) > maxFileSize || len(v.Files) > maxFiles || len(v.Dependencies) > 30 {
 		return "", fmt.Errorf("project exceeds the file or size limits")
+	}
+	if err := validateOAuthContract(v.Code, v.Files); err != nil {
+		return "", err
 	}
 	if err := validateDependencies(v.Dependencies); err != nil {
 		return "", err

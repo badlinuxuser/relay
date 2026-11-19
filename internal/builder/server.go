@@ -54,8 +54,8 @@ func (t *createServer) Spec() provider.ToolSpec {
 			"headers":      obj("With url: extra HTTP headers, e.g. {\"X-Api-Key\": \"${SERVICE_KEY}\"}. Never write a secret itself: use ${ENV_NAME}."),
 			"env": obj("Environment variables for the program: {\"NAME\": \"${NAME}\"} takes the value from the user's own environment. " +
 				"Never write a secret itself."),
-			"oauth": obj("Sign-in settings for a connector: {authorize_url, token_url, client_id, client_secret (write \"${ENV_NAME}\"), scopes: [...], params: {...}}. " +
-				"The program then uses http(..., oauth=True)."),
+			"oauth": obj("Sign-in settings for a connector: {authorize_url, token_url, client_id, client_secret (write \"${ENV_NAME}\"), registration_url (optional RFC 7591), resource (optional RFC 8707), scopes: [...], params: {...}}. " +
+				"Use registration_url only when the provider supports dynamic client registration; otherwise ask the user to register an OAuth app and provide client_id. The program then uses http(..., oauth=True)."),
 			"skill": map[string]any{"type": "object", "description": "REQUIRED. The skill that goes with these tools. " +
 				"{description: what it is for AND when to use it (1-2 sentences, this is the line the model sees in the list of skills), " +
 				"instructions: Markdown for the model that will use the tools: which tool for which job, how to fill the arguments, limits and pitfalls, what the user must set up (a variable, an OAuth app, a sign-in); no secrets; " +

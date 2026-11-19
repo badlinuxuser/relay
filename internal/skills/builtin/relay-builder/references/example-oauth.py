@@ -2,11 +2,11 @@
 
 Create it with create_mcp_server:
   id "github", kind "connector",
-  oauth {"authorize_url": "https://github.com/login/oauth/authorize",
-         "token_url": "https://github.com/login/oauth/access_token",
+  oauth {"provider": "github",
          "client_id": "<the client id of the user's OAuth app>",
          "client_secret": "${GITHUB_CLIENT_SECRET}",
-         "scopes": ["repo"]}
+         "resource": "https://api.github.com/",
+         "scopes": ["read:user", "public_repo"]}
 The callback address of the OAuth app must be the one that list_extensions shows.
 It also needs a skill (required): when to use these tools, how to fill owner and repo, that create_issue writes.
 """

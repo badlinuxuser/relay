@@ -34,7 +34,10 @@ NEVER answer "I cannot do that", "I have no tool for that" or "I do not have acc
 Building ALWAYS starts with propose_extension: the user must agree first, and you cannot create anything before that. If the user refuses, the whole request is cancelled: do not look for another way.
 If a tool that was built for you (an MCP tool, its name starts with mcp__) fails because of a defect in its own code or setup (an error in the code, a missing module, the wrong approach, a wrong assumption about this computer), do NOT give up and do not say that you cannot do it: call propose_extension with kind "fix" and say what is broken. If the user agrees, read its code (read_server), repair it, and use it again.
 Before you build, read how Relay works: load the skill relay-builder and its references/sdk.md; the build tools refuse to work until you have. For a new local MCP project, develop in iterations: validate_mcp_server first (temporary launch + MCP handshake + tool discovery, no registration), inspect errors and fix the source, repeat until it passes, then create_mcp_server to install/register it. Use private per-server Python dependencies only when necessary; never put credentials into source, arguments or logs.
-Do not offer for what your tools already cover (files, the shell, the web).`
+Do not offer for what your tools already cover (files, the shell, the web).
+
+## Prefer connected MCP integrations
+When a connected MCP server exposes a tool for the service the user asked about, use that MCP tool as the primary path. Do not silently replace it with web search, page fetching, shell commands, or another integration just because the MCP call is unfamiliar or requires sign-in. If the call returns an authentication-required error, complete Relay's connector authorization flow and retry the same MCP operation. If authorization cannot start because OAuth setup is incomplete (for example, a missing client ID or an unregistered OAuth application), explain the exact missing setup and ask the user to configure it through the appropriate environment/configuration mechanism; never ask the user to paste a password, access token, refresh token or client secret into chat. Do not claim the MCP integration is unusable and do not silently work around it. After authorization, verify success by calling the MCP tool and checking its actual result. Use web access only for information the connected MCP tools do not provide, or when the user explicitly asks for an alternate source.`
 
 type Agent struct {
 	Cfg    *config.Config
@@ -56,6 +59,11 @@ type Authorizer interface {
 	// Authorize returns the address to open in the browser and a function that waits until
 	// the user has finished or the context ends.
 	Authorize(ctx context.Context, server string) (string, func(context.Context) error, error)
+}
+
+// AuthorizationDescriber provides provider/resource/scopes before Relay starts a browser flow.
+type AuthorizationDescriber interface {
+	AuthorizationDescription(ctx context.Context, server string) (string, error)
 }
 
 // registry makes the tools of one step. It is made again for every step, so that a server or a
@@ -410,8 +418,11 @@ func (a *Agent) runTool(ctx context.Context, sess *session.Session, reg *tools.R
 	out, err := tool.Run(tctx, args)
 	var need *mcp.AuthRequiredError
 	if errors.As(err, &need) && a.Auth != nil {
+		if !need.SafeToRetry {
+			return result("error: authentication is required, but Relay cannot prove the previous operation was not completed; it was not replayed to avoid duplicate side effects", true)
+		}
 		// the user has not signed in: pause, open the sign-in page, wait, and call again
-		if serr := a.signIn(tctx, need.Server, emit); serr != nil {
+		if serr := a.signIn(tctx, need.Server, emit, approve); serr != nil {
 			return result("error: "+serr.Error(), true)
 		}
 		out, err = tool.Run(tctx, args)
@@ -468,10 +479,30 @@ func noteReading(sess *session.Session, call provider.ToolCall) {
 // signIn pauses the work until the user has signed in to a connector. The event "auth" tells
 // the interface to open the page; the wait ends when the user is done, cancels (esc) or the
 // time is up.
-func (a *Agent) signIn(ctx context.Context, server string, emit func(proto.Event)) error {
+func (a *Agent) signIn(ctx context.Context, server string, emit func(proto.Event), approve Approve) error {
+	if a.Auth == nil {
+		return errors.New("OAuth authorization is unavailable in this Relay process")
+	}
+	if approve == nil {
+		return errors.New("OAuth authorization requires an explicit user approval interface")
+	}
+	desc := fmt.Sprintf("Connect %q? Relay will open the provider's official authorization page. Your password stays with the provider. Granting account access does not approve repository writes or other tool actions.", server)
+	if d, ok := a.Auth.(AuthorizationDescriber); ok {
+		if detailed, err := d.AuthorizationDescription(ctx, server); err != nil {
+			return fmt.Errorf("cannot inspect authorization requirements for %q: %v", server, err)
+		} else if detailed != "" {
+			desc = detailed
+		}
+	}
+	// OAuth consent is separate from the approval of the business operation. It happens
+	// before dynamic client registration or creation of an authorization session.
+	decision := approve(ctx, proto.Event{Type: "approval", Tool: "oauth_connect", Desc: desc})
+	if decision != "allow" && decision != "always" {
+		return fmt.Errorf("you declined OAuth authorization for %q", server)
+	}
 	url, wait, err := a.Auth.Authorize(ctx, server)
 	if err != nil {
-		return fmt.Errorf("cannot start the sign-in to %q: %v", server, err)
+		return fmt.Errorf("cannot start sign-in to %q: %v", server, err)
 	}
 	emit(proto.Event{Type: "auth", Tool: server, Text: url,
 		Desc: fmt.Sprintf("Sign in to %s in your browser. Waiting (esc cancels)…", server)})

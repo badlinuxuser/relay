@@ -108,11 +108,11 @@ If `mcp.json` has a mistake, Relay ignores the whole file and keeps the last goo
       "command": "python3",
       "args": ["/home/me/.config/relay/connectors/github/server.py"],
       "oauth": {
-        "authorize_url": "https://github.com/login/oauth/authorize",
-        "token_url": "https://github.com/login/oauth/access_token",
-        "client_id": "Iv1.0123456789abcdef",
+        "provider": "github",
+        "client_id": "YOUR_GITHUB_OAUTH_CLIENT_ID",
         "client_secret": "${GITHUB_CLIENT_SECRET}",
-        "scopes": ["repo"]
+        "resource": "https://api.github.com/",
+        "scopes": ["read:user"]
       }
     },
     "docs": {
@@ -217,7 +217,7 @@ The API in short (the full text is in the built-in skill: `/skills`, or `interna
 - `http(method, url, params=…, body=…, form=…, headers=…, bearer=…, oauth=False)` returns parsed JSON or text, with
   timeouts and clear errors, and refuses redirects to another host;
 - `secret("NAME")` reads an environment variable of the server (with a clear error when it is empty);
-- `oauth_token()` / `http(..., oauth=True)` use the signed-in user's token;
+- `http(..., oauth=True)` use the signed-in user's token;
 - `log("text")` writes to stderr. **Never `print()`**: stdout is the protocol.
 
 In Relay 0.2, `create_mcp_server` and `validate_mcp_server` accept an optional `dependencies` list of PyPI package names and version constraints. Dependencies are installed into a private `.venv` in that connector folder, not globally. Direct URLs, VCS references, local paths and pip flags are rejected. The selected versions are recorded in `requirements.txt`.
@@ -269,29 +269,37 @@ how by itself (the MCP authorization specification: discovery, dynamic client re
 
 Use an `oauth` block when the service has a normal REST API with OAuth sign-in (most do). Relay then does everything:
 the browser page, the check of the answer, the token, and refreshing it. Your program never sees the refresh token or the
-client secret. It reads the **access token** from the file named in the environment variable `RELAY_OAUTH_TOKEN_FILE`
-(JSON: `{"access_token": "…", "expires_at": 1767225600}`); Relay refreshes the token before every call.
+client secret. Relay exposes a private access-token file to the bundled SDK through `RELAY_OAUTH_TOKEN_FILE`
+(JSON includes the access token, expiry and resource binding); generated code must use `http(..., oauth=True)` and must not read or handle the raw token. Relay checks/refreshes the token before every call.
 
 | `oauth` field | |
 |---|---|
+| `provider` | Optional built-in profile: `github`, `google`, or `microsoft`. |
+| `issuer` | Expected authorization-server issuer; required when `require_issuer` is true and must match exactly if the callback includes `iss`. |
 | `authorize_url`, `token_url` | The addresses of the service (https only). |
+| `registration_url`, `revocation_url`, `userinfo_url` | Optional provider metadata overrides/endpoints. |
+| `resource` | Required for stdio Builder connectors (upstream API base URI); for HTTP MCP it defaults to the configured MCP URL and may be set to a covering protected-resource base URI. |
+| `send_resource` | Builder stdio only: explicitly send RFC 8707 `resource` to an upstream provider when its documentation supports it. HTTP MCP always sends the canonical resource parameter per MCP 2025-06-18. |
+| `pkce_s256_supported` | Required for custom OAuth providers; set `true` only after confirming the provider supports PKCE S256. Built-in profiles set this automatically. |
+| `token_endpoint_auth_method` | `client_secret_basic`, `client_secret_post`, or `none`; follow provider registration metadata. |
+| `require_issuer` | Require the RFC 9207 authorization-response `iss` parameter when the provider contract requires it. |
+| `params` | Additional provider-specific authorization parameters; reserved OAuth/PKCE fields such as `state`, `scope`, `resource`, `redirect_uri` and `code_challenge` cannot be overridden. |
 | `client_id` | The id of **your OAuth app** at the service (not a secret). |
 | `client_secret` | If the service gives one: write `"${ENV_NAME}"`. |
-| `scopes` | List of scopes. |
-| `params` | Extra parameters of the authorize address, e.g. `{"access_type": "offline"}` for Google refresh tokens. |
+| `scopes` | List of scopes explicitly requested from the provider. |
+| `params` | Extra provider-specific authorization parameters, e.g. `{"access_type": "offline"}` for Google refresh tokens. |
 
 Steps:
 1. Register an OAuth app in the developer settings of the service. As the **callback (redirect) address** give exactly the
    one that `/connectors` prints (`http://127.0.0.1:<port>/oauth/callback`; the port is the port Relay listens on, so keep
    `listen` fixed in `config.toml` if the service wants a fixed address).
 2. Put `client_id` in `mcp.json`, and the secret into an environment variable.
-3. Sign in: `/connectors auth <id>` or `relay mcp connect <id>`. Or do nothing: the first time the model calls a tool of
-   the connector, the answer **pauses**, the page opens, and the work goes on after you signed in.
+3. Sign in: `/connectors auth <id>` or `relay mcp connect <id>`. Or do nothing: when the model first calls a protected tool, Relay shows a separate OAuth-start approval with the resource and scopes. Only after you approve does the browser open; declining cancels the attempt.
 4. In the program use `http(..., oauth=True)`. If the service answers 401, `http` tells Relay (the message starts with
    `relay:auth-required`): Relay drops the token and asks you to sign in again. Other languages can do the same: start the
    text of the tool error with `relay:auth-required`.
 
-Not supported yet: services that want the client secret in an HTTP Basic header at the token address.
+The built-in profiles are GitHub, Google and Microsoft; each requires your own provider app registration. Slack and Notion are not advertised as built-in profiles in 0.3.0. Providers requiring non-standard token response shapes are not supported by the generic token exchange yet. Token endpoint client authentication supports `client_secret_basic`, `client_secret_post` and `none`.
 
 ### Testing and debugging
 
@@ -433,3 +441,12 @@ remove it yourself.
 | A tool cannot open a browser or a window | The program needs your desktop session. Relay starts its background service from the terminal where you run it: if the service was started elsewhere (ssh, autostart) it has no `DISPLAY`; run `relay stop`, then `relay` in a terminal of the graphical session. |
 | A token variable is "not set" although you exported it | A running Relay does not see variables set later: `relay stop`, then start Relay in the shell where the variable is set. |
 | The interface is slow or shows garbage | Look at `crash.log`; update Relay and tell us. |
+
+
+## OAuth profiles and Connections (0.3.0)
+
+An OAuth block can use `provider` (`github`, `google`, or `microsoft`) to fill the provider's public authorization/token endpoints and optional userinfo/revocation endpoints. You must still register an app with the provider and supply its `client_id`; store `client_secret` as an environment reference such as `${GITHUB_CLIENT_SECRET}`. Scopes must be selected for the exact MCP resource; Relay does not guess permissions. See [OAUTH.md](OAUTH.md) for the current provider matrix, consent behavior, vault threat model and unsupported provider-specific flows.
+
+Use `/connections` in the TUI or `/ui/connections` to inspect and disconnect/revoke/forget OAuth records. The API endpoints are documented in [PROTOCOL.md](PROTOCOL.md).
+
+Builder-generated MCP servers must use the shared Relay OAuth contract (`http(..., oauth=True)`). Do not implement browser login, authorization-code exchange or a separate token vault in generated source. Relay's validator performs defensive source checks, but it is not a sandbox.

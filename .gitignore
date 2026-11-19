@@ -3,3 +3,13 @@
 *.exe
 *.log
 .DS_Store
+
+# Local Relay runtime credentials and configuration
+/auth/
+**/auth/
+*.token
+master.key
+master.keyring
+daemon.json
+mcp.json
+settings.json

@@ -9,7 +9,7 @@ import (
 	"relay/internal/settings"
 )
 
-const Version = "0.2.1"
+const Version = "0.3.0"
 
 // Event это одно событие потока выполнения (SSE: "data: <json>").
 //
@@ -23,7 +23,7 @@ const Version = "0.2.1"
 //	approval     нужно подтверждение действия; CallID это id для POST /api/approvals/{id}
 //	progress     инструмент Tool сообщает, что делает: Text это подпись, Stage из Stages это шаг
 //	auth         агент ждёт, пока пользователь войдёт в сервис Tool (коннектор): Text это адрес
-//	             страницы входа, её надо открыть в браузере; Desc это сообщение для пользователя
+//	             страницы входа, её надо открыть в браузере; перед этим отдельное approval событие подтверждает запуск OAuth
 //	tool_result  результат инструмента в Result (IsError)
 //	usage        расход токенов и стоимость (In, Out, Cost)
 //	error        ошибка в Text (Kind: rate_limit | provider | internal)
@@ -249,23 +249,24 @@ type MCPToolInfo struct {
 }
 
 // MCPServerInfo describes one MCP server of mcp.json. State is one of configured,
-// connecting, connected, auth_required, disconnected, error.
+// connecting, connected, needs_setup, auth_required, disconnected, error.
 type MCPServerInfo struct {
-	ID        string        `json:"id"`
-	Name      string        `json:"name"`
-	Type      string        `json:"type"`   // stdio | http
-	Target    string        `json:"target"` // the command line or the url
-	Source    string        `json:"source"` // mcp.json | config.toml
-	State     string        `json:"state"`
-	Error     string        `json:"error,omitempty"`
-	Warning   string        `json:"warning,omitempty"`
-	Kind      string        `json:"kind"`      // tool | connector
-	OAuth     bool          `json:"oauth"`     // the entry has an "oauth" block
-	SignedIn  bool          `json:"signed_in"` // there is a token
-	Trusted   bool          `json:"trusted"`   // stdio: the user approved this command
-	Disabled  bool          `json:"disabled,omitempty"`
-	ToolCount int           `json:"tool_count"`
-	Tools     []MCPToolInfo `json:"tools,omitempty"`
+	ID            string        `json:"id"`
+	Name          string        `json:"name"`
+	Type          string        `json:"type"`   // stdio | http
+	Target        string        `json:"target"` // the command line or the url
+	Source        string        `json:"source"` // mcp.json | config.toml
+	State         string        `json:"state"`
+	Error         string        `json:"error,omitempty"`
+	Warning       string        `json:"warning,omitempty"`
+	Kind          string        `json:"kind"`  // tool | connector
+	OAuth         bool          `json:"oauth"` // the entry has an "oauth" block
+	OAuthProvider string        `json:"oauth_provider,omitempty"`
+	SignedIn      bool          `json:"signed_in"` // there is a token
+	Trusted       bool          `json:"trusted"`   // stdio: the user approved this command
+	Disabled      bool          `json:"disabled,omitempty"`
+	ToolCount     int           `json:"tool_count"`
+	Tools         []MCPToolInfo `json:"tools,omitempty"`
 }
 
 // MCPResp is the answer of GET /api/mcp and POST /api/mcp/{id}/{action}.

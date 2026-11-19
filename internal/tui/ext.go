@@ -22,7 +22,7 @@ func mcpDot(state string) string {
 		return "●"
 	case "connecting":
 		return "○"
-	case "auth_required":
+	case "auth_required", "needs_setup":
 		return "!"
 	case "error":
 		return "✗"
@@ -37,6 +37,8 @@ func mcpNote(s proto.MCPServerInfo) string {
 		return "approve it"
 	case s.Disabled:
 		return "off"
+	case s.State == "needs_setup":
+		return "OAuth setup"
 	case s.State == "auth_required" || (s.OAuth && !s.SignedIn):
 		return "sign in"
 	case s.State == "connected":
@@ -133,7 +135,9 @@ func mcpHints(st *proto.StatusResp) []string {
 		}
 	}
 	for _, s := range st.MCPServers {
-		if s.State == "auth_required" || (s.OAuth && !s.SignedIn) {
+		if s.State == "needs_setup" {
+			out = append(out, fmt.Sprintf("The connector %q needs OAuth client setup. Open /connections to enter its Client ID and optional secret.", s.Name))
+		} else if s.State == "auth_required" || (s.OAuth && !s.SignedIn) {
 			out = append(out, fmt.Sprintf("The connector %q needs you to sign in: /connectors auth %s (the agent also asks by itself when it needs it)", s.Name, s.ID))
 		}
 	}
@@ -162,7 +166,9 @@ func toolNames(tools []proto.MCPToolInfo) string {
 // serverLine is one line about a server for /tools and /connectors.
 func serverLine(s proto.MCPServerInfo) []string {
 	line := fmt.Sprintf("  %s %s · %s · %s", mcpDot(s.State), s.Name, s.State, mcpNote(s))
-	if s.OAuth || s.State == "auth_required" {
+	if s.State == "needs_setup" {
+		line += " · configure in /connections"
+	} else if s.OAuth || s.State == "auth_required" {
 		if s.SignedIn {
 			line += " · signed in"
 		} else {
@@ -222,6 +228,7 @@ type extMsg struct {
 }
 
 type authURLMsg struct{ id, url string }
+type authConsentMsg struct{ id, description string }
 
 func extCmd(cl *client.Client, which string) tea.Cmd {
 	return func() tea.Msg {
@@ -234,6 +241,16 @@ func extCmd(cl *client.Client, which string) tea.Cmd {
 }
 
 func authCmd(cl *client.Client, id string) tea.Cmd {
+	return func() tea.Msg {
+		description, err := cl.MCPAuthorizationDescription(id)
+		if err != nil {
+			return errMsg{err}
+		}
+		return authConsentMsg{id: id, description: description}
+	}
+}
+
+func authStartCmd(cl *client.Client, id string) tea.Cmd {
 	return func() tea.Msg {
 		url, err := cl.MCPAuthorize(id)
 		if err != nil {

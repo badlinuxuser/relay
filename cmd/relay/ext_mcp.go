@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"errors"
 	"flag"
 	"fmt"
@@ -123,6 +124,8 @@ func mcpList() int {
 				switch {
 				case s.Type == mcp.TypeStdio && !s.Trusted:
 					fmt.Printf("! %s waits for your approval to run: %s\n  approve it: relay mcp trust %s\n", s.ID, oneLine(s.Target, 80), s.ID)
+				case s.State == "needs_setup":
+					fmt.Printf("! %s needs OAuth client setup; open /connections\\n", s.ID)
 				case s.State == "auth_required" || (s.OAuth && !s.SignedIn):
 					fmt.Printf("! %s needs you to sign in (relay mcp connect %s)\n", s.ID, s.ID)
 				case s.Error != "":
@@ -581,6 +584,21 @@ func mcpAction(action string, args []string) int {
 
 // signInCLI opens the sign-in page of a connector and waits until the user is done.
 func signInCLI(cl *client.Client, id string) int {
+	desc, err := cl.MCPAuthorizationDescription(id)
+	if err != nil {
+		return fail(err)
+	}
+	fmt.Println("\n" + desc)
+	fmt.Print("\nStart this authorization? [y/N] ")
+	answer, readErr := bufio.NewReader(os.Stdin).ReadString('\n')
+	if readErr != nil && strings.TrimSpace(answer) == "" {
+		fmt.Println("Cancelled.")
+		return 0
+	}
+	if a := strings.ToLower(strings.TrimSpace(answer)); a != "y" && a != "yes" {
+		fmt.Println("Cancelled.")
+		return 0
+	}
 	url, err := cl.MCPAuthorize(id)
 	if err != nil {
 		return fail(err)

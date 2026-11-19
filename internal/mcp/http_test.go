@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -112,5 +113,16 @@ func TestHTTPSendsConfiguredHeaders(t *testing.T) {
 	_, _ = Dial(Normalize(ServerConfig{URL: srv.URL, Headers: map[string]string{"X-Api-Key": "${RELAY_TEST_KEY}"}}))
 	if got != "k-123" {
 		t.Fatalf("header=%q", got)
+	}
+}
+
+func TestHTTPInsufficientScopesTellsTheModelNotToRetry(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "Forbidden: insufficient scopes", http.StatusForbidden)
+	}))
+	defer srv.Close()
+	_, err := Dial(Normalize(ServerConfig{URL: srv.URL}))
+	if err == nil || !strings.Contains(err.Error(), "/connections") || !strings.Contains(err.Error(), "Do not retry") {
+		t.Fatalf("expected an actionable scope error, got %v", err)
 	}
 }

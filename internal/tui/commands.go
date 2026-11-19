@@ -17,7 +17,7 @@ import (
 
 // helpText is shown only when the help page cannot be opened in a browser.
 const helpText = `Relay help is a web page: run /help to open it, or open <backend address>/ui/help.
-Quick reference: /models pick a model · /mode small|medium|hard|maximum · /agent on|off · /keys API keys
+Quick reference: /models pick a model · /mode small|medium|hard|maximum · /agent on|off · /keys API keys · /connections OAuth connections
 /preset <name>|none · /compare <model> <model> <text> · /new · /sessions · /load <id> · /clear · /quit
 Servers: /ollama · /llamacpp <model.gguf | org/repo> · /stop (pick what to stop)
 Settings: /settings (page) · /thoughts on|off · /mouse on|off · f2 or /select (select and copy text) · /copy (last answer)
@@ -273,6 +273,19 @@ func (m model) command(line string) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.addError("Mode " + mode + " is not configured")
+		return m, nil
+
+	case "/connections":
+		if !needConn() {
+			return m, nil
+		}
+		url := m.cl.Base + "/ui/connections#token=" + m.cl.Token
+		m.mc.react("noticed", 2*time.Second, "")
+		if err := browser.Open(url); err != nil {
+			m.addNotice("Could not open connections. Open it manually: " + url)
+		} else {
+			m.addNotice("Opened OAuth connections.")
+		}
 		return m, nil
 
 	case "/keys":

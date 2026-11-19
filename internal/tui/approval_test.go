@@ -126,7 +126,7 @@ func TestApprovalHidesInternalCapabilityNames(t *testing.T) {
 	if strings.Contains(lines, "mcp__telegram__send_message") || !strings.Contains(lines, "Relay capability") {
 		t.Fatalf("internal tool name leaked into approval UI: %s", lines)
 	}
-	if !strings.Contains(lines, "Allow this time only") {
+	if !strings.Contains(lines, "Always allow this tool in this session") {
 		t.Fatalf("approval option should use a user-facing label: %s", lines)
 	}
 }

@@ -105,3 +105,84 @@ func TestWarningForPlainHTTP(t *testing.T) {
 		t.Fatal("localhost and https are fine")
 	}
 }
+
+func TestOAuthDynamicRegistrationAndResourceAreAccepted(t *testing.T) {
+	f, err := Parse([]byte(`{"servers":{"remote":{"url":"https://mcp.example/mcp","oauth":{"authorize_url":"https://auth.example/authorize","token_url":"https://auth.example/token","registration_url":"https://auth.example/register","resource":"https://mcp.example/mcp","pkce_s256_supported":true}}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := f.Servers["remote"].OAuth
+	if o == nil || o.RegistrationURL != "https://auth.example/register" || o.Resource != "https://mcp.example/mcp" {
+		t.Fatalf("OAuth config was not preserved: %+v", o)
+	}
+}
+
+func TestOAuthProviderProfileFillsEndpoints(t *testing.T) {
+	f, err := Parse([]byte(`{"servers":{"github":{"type":"http","url":"https://api.example/mcp","oauth":{"provider":"github","client_id":"client-id","client_secret":"${GITHUB_SECRET}","scopes":["read:user"]}}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := staticOAuth(f.Servers["github"])
+	if c == nil || c.AuthorizeURL != "https://github.com/login/oauth/authorize" || c.TokenURL != "https://github.com/login/oauth/access_token" {
+		t.Fatalf("profile was not applied: %#v", c)
+	}
+}
+
+func TestOAuthRejectsUnknownProviderProfile(t *testing.T) {
+	_, err := Parse([]byte(`{"servers":{"bad":{"type":"http","url":"https://api.example/mcp","oauth":{"provider":"made-up","client_id":"id"}}}}`))
+	if err == nil || !strings.Contains(err.Error(), "unknown OAuth provider") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestStdioOAuthRequiresResourceWhenSendingResource(t *testing.T) {
+	_, err := Parse([]byte(`{"servers":{"bad":{"type":"stdio","command":"python","oauth":{"authorize_url":"https://auth.example/a","token_url":"https://auth.example/t","client_id":"id","send_resource":true,"pkce_s256_supported":true}}}}`))
+	if err == nil || !strings.Contains(err.Error(), "stdio OAuth requires oauth.resource") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestCustomOAuthRequiresPKCES256Declaration(t *testing.T) {
+	_, err := Parse([]byte(`{"servers":{"custom":{"type":"stdio","command":"python","oauth":{"authorize_url":"https://auth.example/a","token_url":"https://auth.example/t","client_id":"id","resource":"https://api.example/"}}}}`))
+	if err == nil || !strings.Contains(err.Error(), "pkce_s256_supported=true") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestProviderEndpointOverrideRequiresExplicitPKCEAttestation(t *testing.T) {
+	_, err := Parse([]byte(`{"servers":{"bad":{"type":"http","url":"https://api.example/mcp","oauth":{"provider":"github","authorize_url":"https://auth.example/authorize","client_id":"id","client_secret":"${SECRET}"}}}}`))
+	if err == nil || !strings.Contains(err.Error(), "overriding a built-in provider endpoint requires explicit pkce_s256_supported=true") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestHTTPResourceMustCoverConfiguredEndpoint(t *testing.T) {
+	_, err := Parse([]byte(`{"servers":{"bad":{"type":"http","url":"https://api.example/mcp","oauth":{"authorize_url":"https://auth.example/a","token_url":"https://auth.example/t","client_id":"id","resource":"https://evil.example/mcp","pkce_s256_supported":true}}}}`))
+	if err == nil || !strings.Contains(err.Error(), "oauth.resource must identify the configured MCP endpoint") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestStdioOAuthRequiresResourceBinding(t *testing.T) {
+	_, err := Parse([]byte(`{"servers":{"bad":{"type":"stdio","command":"python","oauth":{"authorize_url":"https://auth.example/a","token_url":"https://auth.example/t","client_id":"id","pkce_s256_supported":true}}}}`))
+	if err == nil || !strings.Contains(err.Error(), "stdio OAuth requires oauth.resource") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestDynamicRegistrationMayObtainConfidentialClientSecret(t *testing.T) {
+	_, err := Parse([]byte(`{"servers":{"dynamic":{"type":"http","url":"https://mcp.example/mcp","oauth":{"authorize_url":"https://auth.example/a","token_url":"https://auth.example/t","registration_url":"https://auth.example/register","token_endpoint_auth_method":"client_secret_basic","pkce_s256_supported":true}}}}`))
+	if err != nil {
+		t.Fatalf("dynamic registration must be allowed to issue its client secret: %v", err)
+	}
+}
+
+func TestOAuthClientCanBeConfiguredLaterInConnectionsUI(t *testing.T) {
+	f, err := Parse([]byte(`{"servers":{"github":{"type":"http","url":"https://api.example/mcp","oauth":{"provider":"github","scopes":["read:user"]}}}}`))
+	if err != nil {
+		t.Fatalf("OAuth connector without a client ID should load for setup in Connections UI: %v", err)
+	}
+	if f.Servers["github"].OAuth == nil {
+		t.Fatal("OAuth config was lost")
+	}
+}

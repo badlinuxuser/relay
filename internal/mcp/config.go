@@ -13,6 +13,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"relay/internal/oauth"
 )
 
 // Transports.
@@ -34,12 +36,23 @@ const (
 // access token as the content of the file named in RELAY_OAUTH_TOKEN_FILE. A remote (http)
 // server that follows the MCP authorization specification needs no such block.
 type OAuthConfig struct {
-	AuthorizeURL string            `json:"authorize_url"`
-	TokenURL     string            `json:"token_url"`
-	ClientID     string            `json:"client_id"`
-	ClientSecret string            `json:"client_secret,omitempty"` // write ${ENV_NAME} instead of the secret itself
-	Scopes       []string          `json:"scopes,omitempty"`
-	Params       map[string]string `json:"params,omitempty"` // extra parameters of the authorize address
+	Provider          string            `json:"provider,omitempty"`
+	Issuer            string            `json:"issuer,omitempty"`
+	PKCES256Supported bool              `json:"pkce_s256_supported,omitempty"`
+	RequireIssuer     bool              `json:"require_issuer,omitempty"`
+	AuthorizeURL      string            `json:"authorize_url"`
+	TokenURL          string            `json:"token_url"`
+	ClientID          string            `json:"client_id,omitempty"`
+	ClientSecret      string            `json:"client_secret,omitempty"` // write ${ENV_NAME} instead of the secret itself
+	TokenAuthMethod   string            `json:"token_endpoint_auth_method,omitempty"`
+	RegistrationURL   string            `json:"registration_url,omitempty"` // RFC 7591 dynamic client registration
+	CIMDURL           string            `json:"cimd_url,omitempty"`         // RFC 7591 alternative: client ID metadata document URL
+	RevocationURL     string            `json:"revocation_url,omitempty"`
+	UserInfoURL       string            `json:"userinfo_url,omitempty"`
+	Resource          string            `json:"resource,omitempty"`      // RFC 8707 resource indicator
+	SendResource      bool              `json:"send_resource,omitempty"` // Builder stdio provider-specific RFC 8707 opt-in; HTTP MCP always sends it
+	Scopes            []string          `json:"scopes,omitempty"`
+	Params            map[string]string `json:"params,omitempty"` // extra parameters of the authorize address
 }
 
 // ServerConfig is one entry of mcp.json.
@@ -94,6 +107,9 @@ func Normalize(c ServerConfig) ServerConfig {
 		c.Type = strings.ToLower(strings.TrimSpace(c.Type))
 	}
 	c.Kind = strings.ToLower(strings.TrimSpace(c.Kind))
+	if c.OAuth != nil && c.Kind == KindTool {
+		c.Kind = KindConnector
+	}
 	if c.Kind == "" {
 		if c.Type == TypeHTTP || c.OAuth != nil {
 			c.Kind = KindConnector
@@ -134,10 +150,51 @@ func Validate(id string, c ServerConfig) error {
 		return fmt.Errorf("server %q: \"kind\" must be \"tool\" or \"connector\"", id)
 	}
 	if o := c.OAuth; o != nil {
-		if o.ClientID == "" {
-			return fmt.Errorf("server %q: oauth.client_id is required (register an OAuth app at the service)", id)
+		if o.Provider != "" {
+			profile, ok := oauth.Provider(o.Provider)
+			if ok && !o.PKCES256Supported && ((o.AuthorizeURL != "" && o.AuthorizeURL != profile.AuthorizeURL) || (o.TokenURL != "" && o.TokenURL != profile.TokenURL)) {
+				return fmt.Errorf("server %q: overriding a built-in provider endpoint requires explicit pkce_s256_supported=true", id)
+			}
 		}
-		for what, a := range map[string]string{"authorize_url": o.AuthorizeURL, "token_url": o.TokenURL} {
+		cfg := oauth.Config{Issuer: o.Issuer, PKCES256Supported: o.PKCES256Supported, AuthorizeURL: o.AuthorizeURL, TokenURL: o.TokenURL, Registration: o.RegistrationURL, CIMDURL: o.CIMDURL, CIMDSupported: o.CIMDURL != "", RevocationURL: o.RevocationURL, UserInfoURL: o.UserInfoURL, SendResource: o.SendResource, TokenAuthMethod: o.TokenAuthMethod, ClientSecret: o.ClientSecret}
+		if o.Provider != "" {
+			var err error
+			cfg, err = oauth.ApplyProvider(cfg, o.Provider)
+			if err != nil {
+				return fmt.Errorf("server %q: %w", id, err)
+			}
+		}
+		if cfg.TokenAuthMethod != "" && cfg.TokenAuthMethod != "client_secret_basic" && cfg.TokenAuthMethod != "client_secret_post" && cfg.TokenAuthMethod != "none" {
+			return fmt.Errorf("server %q: oauth.token_endpoint_auth_method must be client_secret_basic, client_secret_post or none", id)
+		}
+		if o.ClientID != "" && (cfg.TokenAuthMethod == "client_secret_basic" || cfg.TokenAuthMethod == "client_secret_post") && o.ClientSecret == "" {
+			return fmt.Errorf("server %q: oauth.client_secret is required for %s", id, cfg.TokenAuthMethod)
+		}
+		if cfg.TokenAuthMethod == "none" && o.ClientSecret != "" {
+			return fmt.Errorf("server %q: oauth.client_secret must be omitted when token_endpoint_auth_method is none", id)
+		}
+		if c.Type == TypeStdio && o.Resource == "" {
+			return fmt.Errorf("server %q: stdio OAuth requires oauth.resource so the Builder SDK can bind bearer tokens to the intended API", id)
+		}
+		if c.Type == TypeStdio && o.Resource != "" && !oauth.ResourceMatchesTarget(o.Resource, o.Resource) {
+			return fmt.Errorf("server %q: oauth.resource must be a valid absolute HTTP(S) resource URI", id)
+		}
+		if c.Type == TypeHTTP && o.Resource != "" && !oauth.ResourceMatchesTarget(o.Resource, c.URL) {
+			return fmt.Errorf("server %q: oauth.resource must identify the configured MCP endpoint", id)
+		}
+		if c.Type == TypeStdio && o.SendResource && o.Resource == "" {
+			return fmt.Errorf("server %q: oauth.send_resource requires oauth.resource", id)
+		}
+		if o.RequireIssuer && o.Issuer == "" && o.Provider != "google" {
+			return fmt.Errorf("server %q: oauth.require_issuer requires oauth.issuer", id)
+		}
+		if o.Provider == "" && !cfg.PKCES256Supported {
+			return fmt.Errorf("server %q: custom OAuth config must set pkce_s256_supported=true only after confirming PKCE S256 in provider documentation", id)
+		}
+		for what, a := range map[string]string{"authorize_url": cfg.AuthorizeURL, "token_url": cfg.TokenURL, "registration_url": o.RegistrationURL, "cimd_url": o.CIMDURL, "revocation_url": cfg.RevocationURL, "userinfo_url": cfg.UserInfoURL} {
+			if a == "" && (what == "registration_url" || what == "cimd_url" || what == "revocation_url" || what == "userinfo_url") {
+				continue
+			}
 			u, err := url.Parse(a)
 			if err != nil || u.Host == "" || !(u.Scheme == "https" || (u.Scheme == "http" && isLoopback(u.Hostname()))) {
 				return fmt.Errorf("server %q: oauth.%s must be an https address", id, what)

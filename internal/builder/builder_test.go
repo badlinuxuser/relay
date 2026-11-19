@@ -94,7 +94,7 @@ func TestBuilderToolsAreDescribedAndGuarded(t *testing.T) {
 		}
 		oo, isOnce := tl.(tools.OnceOnly)
 		once := isOnce && oo.OnceOnly()
-		if (sp.Name == ToolRemove || sp.Name == ToolCreateServer || sp.Name == ToolValidateServer || sp.Name == ToolCreateSkill) && !once {
+		if (sp.Name == ToolRemove || sp.Name == ToolCreateServer || sp.Name == ToolCreateSkill) && !once {
 			t.Errorf("%s: \"always allow\" must not be remembered", sp.Name)
 		}
 		var schema map[string]any
@@ -491,7 +491,7 @@ func TestDependencySpecificationsAreRestricted(t *testing.T) {
 		}
 	}
 	if err := validateDependencies([]string{"Requests>=2", "requests==3"}); err == nil {
-		t.Error("duplicate package names with different constraints must be rejected")
+		t.Fatal("duplicate package names with different version constraints were accepted")
 	}
 }
 

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -161,9 +162,18 @@ func (m *model) decide(decision string) tea.Cmd {
 	if m.approval == nil || m.cl == nil {
 		return nil
 	}
-	id := m.approval.CallID
+	ev := m.approval
+	id := ev.CallID
 	m.approval, m.appSel = nil, 0
 	m.mc.react("noticed", 1500*time.Millisecond, "")
+	if ev.Tool == "oauth_connect" && strings.HasPrefix(id, "oauth:") {
+		server := strings.TrimPrefix(id, "oauth:")
+		if decision != "allow" && decision != "always" {
+			m.addNotice("OAuth connection cancelled.")
+			return nil
+		}
+		return authStartCmd(m.cl, server)
+	}
 	return approveCmd(m.cl, id, decision)
 }
 

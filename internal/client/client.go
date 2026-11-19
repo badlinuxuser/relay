@@ -335,6 +335,17 @@ func (c *Client) MCPAction(id, action string) (*proto.MCPResp, error) {
 	return &r, nil
 }
 
+// MCPAuthorizationDescription prepares and returns the consent details before OAuth is started.
+func (c *Client) MCPAuthorizationDescription(id string) (string, error) {
+	var r struct {
+		Description string `json:"description"`
+	}
+	if err := c.do("GET", "/api/mcp/"+id+"/authorization", nil, &r); err != nil {
+		return "", err
+	}
+	return r.Description, nil
+}
+
 // MCPAuthorize starts the sign-in to a connector and returns the address to open in the browser.
 func (c *Client) MCPAuthorize(id string) (string, error) {
 	var r proto.AuthResp

@@ -129,9 +129,12 @@ type AuthError struct {
 
 func (e *AuthError) Error() string { return "authorization required" }
 
-// AuthRequiredError is returned by the manager when a call cannot work before the user signs
-// in. The agent answers it by opening the sign-in page, waiting, and repeating the call.
-type AuthRequiredError struct{ Server string }
+// AuthRequiredError is returned only for a known credential rejection/miss. SafeToRetry
+// controls whether the agent may repeat the original operation after authorization.
+type AuthRequiredError struct {
+	Server      string
+	SafeToRetry bool // true only for a pre-execution credential miss or an explicit HTTP 401 rejection
+}
 
 func (e *AuthRequiredError) Error() string {
 	return fmt.Sprintf("the user has to sign in to %q first (/connectors auth %s)", e.Server, e.Server)

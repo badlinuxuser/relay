@@ -4,7 +4,7 @@
 Python 3.8+, standard library only.
 
 ```python
-from relay_mcp import Server, ToolError, http, secret, oauth_token, log
+from relay_mcp import Server, ToolError, http, secret, log
 
 srv = Server("github")            # the name Relay shows; optional second argument: version
 
@@ -53,7 +53,7 @@ the model leaves out are not passed.
 - `secret("NAME")`: an environment variable of the server; a clear `ToolError` if it is empty.
   Variables are set in the `env` of `create_mcp_server`, with `"${NAME}"` to take the value from
   the user's own environment.
-- `oauth_token()`: the access token as text (Relay keeps it fresh). Prefer `http(..., oauth=True)`.
+- `http(..., oauth=True)`: attaches the Relay-managed access token only to the configured `oauth.resource` origin/path, rejects unsafe DNS answers and refuses redirects. Do not read or handle raw OAuth tokens in generated code.
 
 ## Environment and files
 

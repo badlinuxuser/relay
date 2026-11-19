@@ -129,6 +129,10 @@ func (t *httpTransport) check(resp *http.Response) error {
 	if msg == "" {
 		msg = http.StatusText(resp.StatusCode)
 	}
+	if resp.StatusCode == http.StatusForbidden &&
+		(strings.Contains(strings.ToLower(msg), "scope") || strings.Contains(strings.ToLower(resp.Header.Get("WWW-Authenticate")), "insufficient_scope")) {
+		msg += " | The sign-in token lacks a scope this tool needs. Do not retry: tell the user to open /connections, add the required scopes for this connector and sign in again."
+	}
 	return fmt.Errorf("HTTP %d: %s", resp.StatusCode, msg)
 }
 

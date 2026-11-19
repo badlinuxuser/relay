@@ -68,9 +68,9 @@ func (t *mcpTool) Spec() provider.ToolSpec {
 // authorization state, so it is confirmed like any other MCP operation.
 func (t *mcpTool) NeedsApproval() bool { return true }
 
-// Never persist approval for MCP calls: a connector may expose both read-only and
-// account-changing tools, and the tool name alone is not a safe permission boundary.
-func (t *mcpTool) OnceOnly() bool { return true }
+// "Always allow in this session" is remembered per MCP tool (the name includes the server),
+// so one approval covers repeated calls of the same tool, not the whole connector.
+func (t *mcpTool) OnceOnly() bool { return false }
 
 func (t *mcpTool) HideRawArgs() bool { return true }
 func (t *mcpTool) Describe(a json.RawMessage) string {

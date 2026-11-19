@@ -21,7 +21,7 @@ srv = HTTPServer(("127.0.0.1",0),H); threading.Thread(target=srv.serve_forever,d
 base = "http://127.0.0.1:%d" % srv.server_port
 
 code = textwrap.dedent('''
-    from relay_mcp import Server, ToolError, http, secret, oauth_token
+    from relay_mcp import Server, ToolError, http, secret
     srv = Server("demo")
     @srv.tool("add", "Add two numbers", {"a": "number: first", "b": "number"})
     def add(a, b): return a + b
@@ -35,6 +35,8 @@ code = textwrap.dedent('''
     def fail(): raise ToolError("nothing to do here; try add")
     @srv.tool("fetch", "GET a url", {"url": "string", "oauth": "boolean?"})
     def fetch(url, oauth=False): return http("GET", url, params={"x": 1}, oauth=oauth)
+    @srv.tool("fetch_override", "OAuth auth header cannot be overridden", {"url": "string"})
+    def fetch_override(url): return http("GET", url, oauth=True, headers={"Authorization": "Bearer attacker"})
     @srv.tool("key", "Read a secret", {})
     def key(): return secret("MY_KEY")
     @srv.tool("big", "Large output", {})
@@ -81,11 +83,15 @@ res=call("fetch",url=base+"/ok"); assert not res[0] and '"auth": null' in res[1]
 chk("http 404", call("fetch",url=base+"/missing"), err=True, contains="HTTP 404")
 chk("redirect to another host refused", call("fetch",url=base+"/redir"), err=True, contains="HTTP 302")
 chk("no token file yet", call("fetch",url=base+"/ok",oauth=True), err=True, contains="relay:auth-required")
-open(tokfile,"w").write(json.dumps({"access_token":"tok-9","expires_at":time.time()+3600}))
+open(tokfile,"w").write(json.dumps({"access_token":"tok-9","expires_at":time.time()+3600,"resource":base}))
 res=call("fetch",url=base+"/ok",oauth=True); assert '"auth": "Bearer tok-9"' in res[1], res; print("ok   oauth token sent as bearer")
-open(tokfile,"w").write(json.dumps({"access_token":"old","expires_at":time.time()-5}))
+res=call("fetch_override",url=base+"/ok"); assert '"auth": "Bearer tok-9"' in res[1], res; print("ok   oauth authorization header cannot be overridden")
+chk("oauth resource binding", call("fetch",url=base.replace("127.0.0.1","127.0.0.2")+"/ok",oauth=True), err=True, contains="bound to")
+chk("oauth path traversal blocked", call("fetch",url=base+"/%2e%2e/admin",oauth=True), err=True, contains="bound to")
+chk("oauth redirects refused", call("fetch",url=base+"/redir",oauth=True), err=True, contains="HTTP 302")
+open(tokfile,"w").write(json.dumps({"access_token":"old","expires_at":time.time()-5,"resource":base}))
 chk("expired token", call("fetch",url=base+"/ok",oauth=True), err=True, contains="relay:auth-required")
-open(tokfile,"w").write(json.dumps({"access_token":"tok-9","expires_at":time.time()+3600}))
+open(tokfile,"w").write(json.dumps({"access_token":"tok-9","expires_at":time.time()+3600,"resource":base}))
 chk("401 with oauth -> marker", call("fetch",url=base+"/unauth",oauth=True), err=True, contains="relay:auth-required")
 assert rpc("nope")["error"]["code"]==-32601
 p.stdin.close(); assert p.wait(timeout=5)==0; print("ok   exits at end of input")
