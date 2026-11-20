@@ -1,4 +1,4 @@
-# Relay security notes (0.3.0)
+# Relay security notes (0.3.1)
 
 Relay is a local-first agent runtime. Tools and MCP servers can perform actions outside the model, so tool execution is treated as a security boundary. This document describes implemented controls and their limits; it is not a certification or a claim that Relay is safe to run untrusted code.
 
@@ -17,7 +17,7 @@ Relay is a local-first agent runtime. Tools and MCP servers can perform actions 
 
 ## Existing tool and MCP protections
 
-- Every MCP tool invocation requires user approval, including OAuth sign-in start (`oauth_connect` is always asked again). `Always allow this tool in this session` is remembered per tool name (which includes the connector) until the session ends; it never covers other tools of the same connector. `validate_mcp_server` (disposable sandbox, registers nothing) may also be remembered for the session; `create_mcp_server`, skills, shell and file writes are still asked every time.
+- Every tool call asks for approval first, including MCP tools and starting an OAuth sign-in. `Always allow this tool in this session` is remembered per tool name (for MCP tools the name includes the connector) until the session ends; it never covers other tools. This now applies to the shell, file writes, building servers and skills too, so be careful with it. Starting an OAuth sign-in (`oauth_connect`) is asked again every time.
 - `OnceOnly` is enforced even if a session already contains an automatic-approval entry for that tool name.
 - Shell execution, workspace file writes/edits, MCP creation/validation, and Skill creation also require fresh approval on every invocation.
 - MCP approval previews identify the server and tool, show useful arguments, and redact common credential-shaped fields. Raw MCP JSON arguments are not streamed in the `tool_call` or `approval` UI events.

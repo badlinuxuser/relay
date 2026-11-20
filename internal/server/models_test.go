@@ -129,14 +129,24 @@ func TestModelsEndpointFollowsKeys(t *testing.T) {
 		t.Fatalf("with keys: %q", got)
 	}
 
-	// keys cannot be saved under a provider that uses another one's keys
-	if rec := call("POST", "/api/keys", `{"provider":"ollama-cloud","key":"x"}`); rec.Code != 400 {
-		t.Errorf("saving a key for ollama-cloud: %d", rec.Code)
-	}
-	// ... and such a provider has no card on the keys page
+	// Ollama cloud has a card of its own and its keys are the ones saved for "ollama"
 	rec := call("GET", "/api/keys", "")
-	if strings.Contains(rec.Body.String(), `"ollama-cloud"`) {
-		t.Errorf("keys API must not list ollama-cloud: %s", rec.Body)
+	var kr proto.KeysResp
+	_ = json.Unmarshal(rec.Body.Bytes(), &kr)
+	for _, p := range kr.Providers {
+		switch p.Name {
+		case "ollama-cloud":
+			if !p.NeedsKey || len(p.Stored) != 2 {
+				t.Errorf("ollama-cloud card: %+v", p)
+			}
+		case "ollama":
+			if p.NeedsKey || len(p.Stored) != 0 {
+				t.Errorf("the local ollama card has no keys: %+v", p)
+			}
+		}
+	}
+	if rec := call("POST", "/api/keys", `{"provider":"ollama-cloud","key":"x"}`); rec.Code != 200 {
+		t.Errorf("saving a key for ollama-cloud: %d", rec.Code)
 	}
 
 	// a model found by the list can be selected for a session

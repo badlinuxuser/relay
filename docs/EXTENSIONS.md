@@ -416,7 +416,7 @@ remove it yourself.
 - A local program runs **only after you approved that exact command**, with your rights (so write or read programs you trust).
 - A program gets a **small environment** (see above; it includes your desktop session), never Relay's API keys.
 - **Every call of an MCP tool asks you first** (you can say "always" for a tool in one session). The question "may the agent build
-  this?" is asked every time, and "always" is not remembered for it or for removing things.
+  this?" is asked like any other tool: "always" is remembered for the session (per tool). Starting an OAuth sign-in is always asked again.
 - The approval box for a new program shows a summary found by reading its code (the web addresses it contacts, whether it runs
   programs, whether it writes or deletes files). It is a hint, not a guarantee: read the code when it matters
   (`~/.config/relay/connectors/<id>/server.py`).

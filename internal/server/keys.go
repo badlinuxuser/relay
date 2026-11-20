@@ -39,11 +39,7 @@ func keyGroup(p config.Provider) (rank int, name string) {
 
 func (s *Server) providerKeys() []proto.ProviderKeys {
 	list := make([]config.Provider, 0, len(s.cfg.Providers))
-	for _, p := range s.cfg.OrderedProviders() {
-		if p.KeyFrom == "" { // a provider that uses the keys of another one has no card of its own
-			list = append(list, p)
-		}
-	}
+	list = append(list, s.cfg.OrderedProviders()...)
 	sort.SliceStable(list, func(i, j int) bool {
 		ri, _ := keyGroup(list[i])
 		rj, _ := keyGroup(list[j])
@@ -57,13 +53,14 @@ func (s *Server) providerKeys() []proto.ProviderKeys {
 			Name: p.Name, Kind: p.Kind, NeedsKey: needs, Total: total, Available: avail,
 			Stored: []proto.KeyEntry{}, Group: group,
 		}
-		for _, q := range s.cfg.Providers {
-			if q.KeyFrom == p.Name {
-				pk.KeyOptional = true // e.g. Ollama: no key for local models, a key for the cloud ones
+		// Ollama cloud keeps its keys under the name "ollama" (key_from), so old keys keep working.
+		// The card of the local Ollama then has no keys: it needs none.
+		if s.keysBelongToAnother(p.Name) {
+			pk.NeedsKey, pk.Total, pk.Available = false, 0, 0
+		} else {
+			for _, m := range s.keys.List(p.KeyName()) {
+				pk.Stored = append(pk.Stored, proto.KeyEntry{ID: m.ID, Hint: m.Hint})
 			}
-		}
-		for _, m := range s.keys.List(p.Name) {
-			pk.Stored = append(pk.Stored, proto.KeyEntry{ID: m.ID, Hint: m.Hint})
 		}
 		out = append(out, pk)
 	}
@@ -74,10 +71,30 @@ func (s *Server) handleKeys(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, proto.KeysResp{Providers: s.providerKeys()})
 }
 
-// knownProvider: keys can be saved for configured providers that keep their own keys.
-func (s *Server) knownProvider(name string) bool {
+// keysBelongToAnother: another provider (Ollama cloud) stores its keys under this provider's name.
+func (s *Server) keysBelongToAnother(name string) bool {
+	for _, q := range s.cfg.Providers {
+		if q.KeyFrom == name && q.Name != name {
+			return true
+		}
+	}
+	return false
+}
+
+// keyStoreName maps a card of the keys page to the name its keys are stored under.
+// Saving under "ollama" still works for old scripts: the keys are the same ones.
+func (s *Server) keyStoreName(name string) (string, bool) {
 	p, ok := s.cfg.ProviderByName(name)
-	return ok && p.KeyFrom == ""
+	if !ok {
+		return "", false
+	}
+	return p.KeyName(), true
+}
+
+// knownProvider: keys can be saved for configured providers that have a card for them.
+func (s *Server) knownProvider(name string) bool {
+	_, ok := s.keyStoreName(name)
+	return ok
 }
 
 func (s *Server) handleAddKey(w http.ResponseWriter, r *http.Request) {
@@ -91,7 +108,8 @@ func (s *Server) handleAddKey(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, 400, "unknown provider "+req.Provider)
 		return
 	}
-	m, err := s.keys.Add(req.Provider, "", req.Key)
+	store, _ := s.keyStoreName(req.Provider)
+	m, err := s.keys.Add(store, "", req.Key)
 	if err != nil {
 		httpErr(w, 400, err.Error())
 		return
@@ -101,7 +119,8 @@ func (s *Server) handleAddKey(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteKey(w http.ResponseWriter, r *http.Request) {
-	if !s.keys.Delete(r.PathValue("provider"), r.PathValue("id")) {
+	store, ok := s.keyStoreName(r.PathValue("provider"))
+	if !ok || !s.keys.Delete(store, r.PathValue("id")) {
 		httpErr(w, 404, "no such key")
 		return
 	}

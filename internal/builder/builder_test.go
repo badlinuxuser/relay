@@ -94,8 +94,8 @@ func TestBuilderToolsAreDescribedAndGuarded(t *testing.T) {
 		}
 		oo, isOnce := tl.(tools.OnceOnly)
 		once := isOnce && oo.OnceOnly()
-		if (sp.Name == ToolRemove || sp.Name == ToolCreateServer || sp.Name == ToolCreateSkill) && !once {
-			t.Errorf("%s: \"always allow\" must not be remembered", sp.Name)
+		if once {
+			t.Errorf("%s: \"always allow\" must be remembered for the session", sp.Name)
 		}
 		var schema map[string]any
 		if err := json.Unmarshal(sp.Schema, &schema); err != nil || schema["type"] != "object" || len(sp.Description) < 40 {
@@ -350,8 +350,8 @@ func TestOfferToBuild(t *testing.T) {
 	if !p.NeedsApproval() {
 		t.Error("the offer is a question to the user")
 	}
-	if oo, ok := p.(tools.OnceOnly); !ok || !oo.OnceOnly() {
-		t.Error("the question is asked every time")
+	if oo, ok := p.(tools.OnceOnly); ok && oo.OnceOnly() {
+		t.Error("\"always allow\" is remembered for the session")
 	}
 	if bo, ok := p.(tools.BuildOffer); !ok || !bo.IsBuildOffer() {
 		t.Error("the agent must know that this tool is the offer")

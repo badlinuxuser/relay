@@ -244,7 +244,7 @@ models = []
 	for _, p := range c.Processes {
 		got[p.Name] = p
 	}
-	if got["ollama"].Command != "ollama" || got["llamacpp"].Command != "llama-server" {
+	if got["ollama"].Command != "ollama" || got["llamacpp"].Command != "llama" {
 		t.Fatalf("processes: %+v", c.Processes)
 	}
 	if got["llamacpp"].ReadyURL == "" {

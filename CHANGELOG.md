@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.3.1 — OAuth setup, permissions, Ollama cloud, llama serve, Russian pages
+
+### OAuth setup usability
+
+- Allow OAuth MCP entries to load without a Client ID or DCR endpoint; surface `needs_setup` instead of rejecting the MCP configuration.
+- Add Connections UI client-setup form and `POST /api/connections/{id}/client`.
+- Store Client ID, optional Client Secret and token endpoint auth method in the encrypted OAuth vault; vault credentials override mcp.json and secrets are never returned.
+- Add explicit `oauth.cimd_url` support and use it as `client_id` when CIMD is supported; retain DCR fallback.
+- Add regression tests for late client setup and CIMD client selection.
+- GitHub device authorization (RFC 8628) and a hosted shared CIMD document remain outstanding; GitHub still requires a registered OAuth client in this build.
+
+### Permissions
+
+- "Always allow in this session" works for every tool again (shell, write_file, edit_file, MCP tools, `create_mcp_server`, `validate_mcp_server`, `create_skill`, `propose_extension`, `remove_extension`). It is remembered per tool name until the session ends. `oauth_connect` is still asked every time. SECURITY.md and docs updated; the approval option for MCP tools reads "Always allow this tool in this session".
+
+### Connections and scopes
+
+- A "Client & scopes" button opens the setup form for any connection, and a Scopes field was added. Scopes are kept in the encrypted vault (`user_scopes`), replace `oauth.scopes` from mcp.json at the next sign-in, and can be saved without re-entering the Client ID.
+- The GitHub profile note explains that a token without scopes only reads the profile.
+- An HTTP 403 about scopes from an MCP server now tells the model not to retry and to ask the user to add scopes in /connections.
+- `/connections` is listed in the input-line command hints.
+
+### Keys page
+
+- Ollama cloud has its own card (group "Other services"); local Ollama is in "On this computer" and needs no key. Keys keep being stored under `ollama` (`key_from`), so old keys and scripts work; the API accepts both `ollama` and `ollama-cloud`.
+
+### llama.cpp
+
+- The default command is `llama serve` (`command = "llama"`, `args = ["serve", "--port", "8080"]`). A configured `llama-server` is used if it exists; if neither `llama-server` nor `llama` with `serve` is found the error says what was tried. The old binary gets the arguments without `serve`.
+- `/llamacpp` (and the model field on the keys page) understands: a file, a folder of .gguf files (main or first shard, `mmproj` skipped), `org/repo[:quant]`, `hf.co/...`, `hf://...`, a huggingface.co page address, a link (a "blob" link becomes "resolve"), and flags after the model (`model.gguf -c 8192`).
+
+### Web interface
+
+- The help, keys, connections and settings pages have an EN / RU switch (cookie `relay_lang`, which holds only the language). Help exists in two files (`help.html`, `help.ru.html`); the server picks by `?lang=`, cookie or Accept-Language. Text written by the backend (the sign-in consent) stays English.
+- The help page was updated with all of the above.
+
+### Verification limitations
+
+No Go toolchain was available when these changes were made: they were not compiled and the Go tests were not run (the page scripts were syntax-checked with Node). Run `go build ./... && go test ./...` first.
+
 ## 0.3.0 — LFI Core implementation
 
 - Added AES-256-GCM encryption for OAuth records, Linux Secret Service key storage when available, and a private local-key fallback with transparent migration of legacy records.
@@ -20,24 +60,3 @@
 ### Verification limitations
 
 The execution environment provides Go 1.23.2 while `go.mod` requires Go 1.24.2, and cannot download Go modules/toolchains. The isolated OAuth and MCP/OAuth packages passed `go test -race` under Go 1.23.2. The complete repository test suite, `go vet`, cross-platform builds and real-provider/browser acceptance tests remain unverified. Native macOS Keychain and Windows Credential Manager adapters, key rotation, hosted project-wide CIMD document, GitHub device flow, and Slack/Notion provider-specific flows are not implemented.
-
-
-## 0.3.0 (continued) — OAuth setup usability
-
-- Allow OAuth MCP entries to load without a Client ID or DCR endpoint; surface `needs_setup` instead of rejecting the MCP configuration.
-- Add Connections UI client-setup form and `POST /api/connections/{id}/client`.
-- Store Client ID, optional Client Secret and token endpoint auth method in the encrypted OAuth vault; vault credentials override mcp.json and secrets are never returned.
-- Add explicit `oauth.cimd_url` support and use it as `client_id` when CIMD is supported; retain DCR fallback.
-- Add regression tests for late client setup and CIMD client selection.
-- GitHub device authorization (RFC 8628) and a hosted shared CIMD document remain outstanding; GitHub still requires a registered OAuth client in this build.
-
-### Usability fixes (still 0.3.0)
-
-- The version is 0.3.0 again (`proto.Version`, README, docs).
-- "Always allow this tool in this session" now works for MCP tools (per tool name) and for `validate_mcp_server`; `create_mcp_server`, skills, shell, file writes and `oauth_connect` are still asked every time. SECURITY.md updated.
-- `/connections` is listed in the input-line command hints.
-- Connections: a "Client & scopes" button for any connection and a Scopes field. Scopes are kept in the encrypted vault (`user_scopes`), replace `oauth.scopes` from mcp.json at the next sign-in, and can be changed without re-entering the Client ID. GitHub note now explains that a token without scopes only reads the profile.
-- An HTTP 403 about scopes from an MCP server now tells the model not to retry and to ask the user to add scopes in /connections.
-- Tests added: per-tool session approval, user scopes override, actionable scope error.
-
-Not verified: no Go toolchain was available, so these changes were not compiled or tested; run `go build ./... && go test ./...` first.

@@ -15,7 +15,7 @@ Relay's MCP client targets protocol `2025-06-18` and accepts `2025-03-26` for le
 
 | Method and path | Description |
 |---|---|
-| `GET /api/health` | no authorization: `{"ok":true,"version":"0.3.0"}`; a client restarts a backend of another version |
+| `GET /api/health` | no authorization: `{"ok":true,"version":"0.3.1"}`; a client restarts a backend of another version |
 | `GET /api/status` | modes (`effective`: the chain that is really used), models, providers (number of keys and how many are usable), processes, local servers that answer now (`servers`), usage, presets, MCP (`mcp`: names of connected servers; `mcp_servers`: the servers without their tools; `mcp_error`), `skills` (installed, with `enabled` and `builtin`), and the user's `settings` |
 | `GET /api/models` | every model to choose from: the ones the providers report (`ollama/…`, `ollama-cloud/…`, `gemini/…`), official providers first; a provider without access adds nothing (models from the config show only with `discover = "none"`); `providers` has the number found, `local`, `skipped` ("no key") and `error`. `?refresh=1` asks the providers again; adding or deleting a key clears the 60 s cache by itself |
 | `GET /api/sessions` | list of sessions (no messages), with `tokens_in`, `tokens_out`, `cost` |

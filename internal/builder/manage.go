@@ -39,8 +39,8 @@ func (t *removeExt) Spec() provider.ToolSpec {
 
 func (t *removeExt) NeedsApproval() bool { return true }
 
-// OnceOnly: the approval is asked every time, "always" is not remembered.
-func (t *removeExt) OnceOnly() bool { return true }
+// "Always allow" is remembered for the session like for any other tool.
+func (t *removeExt) OnceOnly() bool { return false }
 
 func (t *removeExt) Describe(a json.RawMessage) string {
 	var v removeArgs

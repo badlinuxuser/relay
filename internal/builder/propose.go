@@ -39,8 +39,8 @@ func (t *propose) Spec() provider.ToolSpec {
 
 func (t *propose) NeedsApproval() bool { return true }
 
-// OnceOnly: the question is asked every time.
-func (t *propose) OnceOnly() bool { return true }
+// "Always allow" is remembered for the session like for any other tool.
+func (t *propose) OnceOnly() bool { return false }
 
 // IsBuildOffer: once the user agreed, building is allowed in this request.
 func (t *propose) IsBuildOffer() bool { return true }

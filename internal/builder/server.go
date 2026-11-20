@@ -70,7 +70,7 @@ func (t *createServer) Spec() provider.ToolSpec {
 }
 
 func (t *createServer) NeedsApproval() bool { return true }
-func (t *createServer) OnceOnly() bool      { return true }
+func (t *createServer) OnceOnly() bool      { return false }
 
 // NeedsRead: before it builds, the model must have read the guide, and for a program also the SDK.
 func (t *createServer) NeedsRead(args []byte) []string {

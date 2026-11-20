@@ -251,7 +251,7 @@ func (t *writeFile) Spec() provider.ToolSpec {
 	}
 }
 func (t *writeFile) NeedsApproval() bool { return true }
-func (t *writeFile) OnceOnly() bool      { return true }
+func (t *writeFile) OnceOnly() bool      { return false }
 func (t *writeFile) Describe(a json.RawMessage) string {
 	var v struct {
 		Path    string `json:"path"`
@@ -297,7 +297,7 @@ func (t *editFile) Spec() provider.ToolSpec {
 	}
 }
 func (t *editFile) NeedsApproval() bool { return true }
-func (t *editFile) OnceOnly() bool      { return true }
+func (t *editFile) OnceOnly() bool      { return false }
 func (t *editFile) Describe(a json.RawMessage) string {
 	var v struct {
 		Path string `json:"path"`

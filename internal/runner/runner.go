@@ -100,7 +100,11 @@ func (p *Proc) Start(extra []string) error {
 		return ErrAlready
 	}
 	args := append(append([]string(nil), p.cfg.Args...), extra...)
-	if lacksModel(p.cfg, args) {
+	command, found := p.cfg.Command, true
+	if p.cfg.Name == "llamacpp" { // `llama serve`, or the older llama-server binary
+		command, args, found = llamaLaunch(p.cfg.Command, args)
+	}
+	if lacksModel(config.Process{Name: p.cfg.Name, Command: command}, args) {
 		return fmt.Errorf("%s needs a model: type /%s <path to a .gguf file> or <org/repo> (Hugging Face), or add \"-m\", \"<path>\" to args of [[processes]] %s in config.toml", p.cfg.Name, p.cfg.Name, p.cfg.Name)
 	}
 	p.mu.Lock()
@@ -108,11 +112,10 @@ func (p *Proc) Start(extra []string) error {
 		p.mu.Unlock()
 		return ErrAlready
 	}
-	command, found := resolveCommand(p.cfg.Name, p.cfg.Command)
 	if !found && p.cfg.Name == "llamacpp" {
-		p.state, p.errMsg = "failed", "llama.cpp server not found"
+		p.state, p.errMsg = "failed", "llama.cpp not found"
 		p.mu.Unlock()
-		return fmt.Errorf("llama.cpp server was not found in PATH (tried %s). Install llama.cpp, or set command = \"/full/path/to/llama-server\" in [[processes]] llamacpp of config.toml", strings.Join(llamaNames[:5], ", "))
+		return fmt.Errorf("llama.cpp was not found in PATH (tried `llama serve`, %s). Install llama.cpp (it provides `llama serve`), or set command = \"/full/path/to/llama\" and args = [\"serve\", \"--port\", \"8080\"] in [[processes]] llamacpp of config.toml", strings.Join(llamaNames[:5], ", "))
 	}
 	cmd := exec.Command(command, args...)
 	if p.cfg.Dir != "" {

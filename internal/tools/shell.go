@@ -31,7 +31,7 @@ func (t *runShell) Spec() provider.ToolSpec {
 	}
 }
 func (t *runShell) NeedsApproval() bool { return true }
-func (t *runShell) OnceOnly() bool      { return true }
+func (t *runShell) OnceOnly() bool      { return false }
 func (t *runShell) Describe(a json.RawMessage) string {
 	var v struct {
 		Command string `json:"command"`

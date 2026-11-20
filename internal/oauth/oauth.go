@@ -361,7 +361,7 @@ func (c *Config) ResolveAccount(ctx context.Context, hc *http.Client, token stri
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", "Relay/0.3.0")
+	req.Header.Set("User-Agent", "Relay/0.3.1")
 	resp, err := hc.Do(req)
 	if err != nil {
 		return "", err

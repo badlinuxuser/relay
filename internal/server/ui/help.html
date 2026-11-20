@@ -42,6 +42,9 @@ td:first-child{white-space:nowrap}
 .note b,.warn b{color:var(--accent)}
 .warn b{color:var(--red)}
 .dim{color:var(--dim)}
+.lang{position:fixed;top:10px;right:12px;display:flex;gap:4px;z-index:5}
+.lang a{padding:3px 9px;font-size:12px;border:1px solid var(--line);border-radius:8px;color:var(--dim);text-decoration:none;background:var(--bg)}
+.lang a.on{color:var(--accent);border-color:var(--soft)}
 .pill{font-size:12px;padding:1px 8px;border-radius:99px;border:1px solid var(--line);color:var(--dim)}
 footer{grid-column:1/-1;color:var(--dim);font-size:13px;border-top:1px solid var(--line);padding-top:14px}
 @media (max-width:820px){
@@ -54,6 +57,7 @@ footer{grid-column:1/-1;color:var(--dim);font-size:13px;border-top:1px solid var
 </style>
 </head>
 <body>
+<div class="lang"><a class="on" href="?lang=en">EN</a><a href="?lang=ru">RU</a></div>
 <div class="wrap">
 <header>
   <img alt="Relay" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALAAAACQCAYAAACoG+FoAAAMGUlEQVR42u2de1CU1xnGF1gWF1dYLyABVIgXEEOgqVU02lRjtNXY2tj8YZoab+2Yi61JY6bpNHF0cusl1STWmGmiJtPGSVOrJrXRNLVNsZHYXNB4VxQQBUFx2awLLMvSf/s8zJxvPhFk4fn99/id77Lfvp559uU973E4hBBCCCGEEEIIIYQQQvRkYnrbB3a6nG3/ryPhiHF8rDO2U58nHArHKAyvnli9AqEAFkIBLEQv9MDxia42O+MT+7rxfLcLdFJSX/wfnhgH2hObaLx+IBIEHQm2gvb7r4Cur7oEOq6P03j9lmBInlkzsFAAC6EAFqJjOKPuf1xsbJvJ0yYnJYFu8PtBDxzcH/Sg9AGgXU0J6ImTPaAvJJFnrcPnG+BIBh2KbTF66oAvgOMDzbY8f2/3xJqBhQJYCAWwEFfBdfdP7Olam8LG8f0G9gOdkj0I9C0Fuegxa0Kg/Q0B4/Urz1WBLlgwwjj+8t+bjJ6Zsbr/+fpq4/HyI5XG45FIpFd5Ys3AQgEshAJYiKugy/PAVp6XPS7XKowrKATtSXMZ78fH/Q14vHEI5l1dTTh+We4P0OOmpoDOWnwT6ERPX3tfgBPv98XJYtBtPhz/6BPPgD5Wfgp0fdWltt7kiTUDCwWwEApgIa6CLvdHXMvAZGZngB6akWm8XnrOAOPx8grMqw6ejLUK+35/CPSnu/4KurquFnTeV8Zf0/dxueoM6P6Z2UaPXFd+HPSmbW+CXv3ES8b79TRPrBlYKICFUAAL0R09MHtezvNy/S57XqvaAivixmGeuXU/pr6Xz58HetKsu0CHw1hLEQzgmja7ed+OemKr8SvWrAb959few++D+lxEe18KzcBCFkIIBbAQ0eiBs4cPBZ2eknZNPa+7Evs4LJk+F3TRjDtBW+VdrTxpR7F7/1CkEfSV8zWgv790OeiP9n6M74v6UETbGjvNwEIWQggFsBDdwQNb1Tpk5aHnzc0eaev6vKaM15D1L8DaCO7bMPO2ycbrL/zuPaATvKmg7eZ92aO6Yt22PLDfdxl0s6/W6Ik5T11+Ems97nlwGejKE7gGMNrywpqBhSyEEApgIa6CDq+J4zVucU7qp+vFWoYkT78O3S8QQg/MvcbSc7Het3BGDujt6/egxwx8abzf0oXLjR7ViqCPaie89s5P8mIvt4PkadkDs0fPGolr9sZOGIMe2aLPhGZgIRTAQiiAhTywNQkJ5j0nGM7rcv0vHx+Vj3nk+5+dDnrf8QOgJ+SMBu0ejvW9e587C3rN2s2gOS/sIE/KcP0w522tzre6HsP1wH3T04yeOC8Le70NyBwIuuFiQ1T1H9YMLGQhhFAAC9EdPDDDeV9XUjzokAN7k11sRl1zrs7okV9+/H3Q3AfCsdJBnrgAdGnaBdC8Rs+uJ+VahOOHD4O2W0/M19tZsRP05NpxoG/m2g3KO7On319yBPSeD/eCbtEMLIQCWAgFsJAHbke7PS2ubZsER7ClyXicPe8v37zPON7SMxNcD9zuBVJtRLPvjK3x7Km5fpjzyHFnaR+7SSnG8Zx35jzxik24JvDEzNP4fkorIC/c3eqFNQMLWQghFMBCdIUH7pPkxj0uwq1wnPdt47yvFfU+3MTikS2z0ePO2Qqa+0qwx+VaiZzJQ0Dv2b0fNPcHZtijXi5Hz8v9hO0SDkZAcx6Z87jcH/ibk6aBtso731hbBHreQ0dB/43ez4G3D3YrT6wZWMhCCKEAFqIrPDB73rYwerZIEI87vObrhfz41/bRs9HT/mgMFjOUzsHahXfewjVuZ8pwjVfj0CDowmE5xufhvC/3VbghJdXoefm4FVZ535wxuIYtw2uec/y1dcbj3DuN4XppJob6CztCmoGFUAALBbAQvcADU+2Dy5Ngz/OR562v84H+Ve7DxvNfXLUO9CP3okflPggTp08Bvc+P46fOGGfr+Wta0KOOHWnVzzjVliflvO+Sn+FvAKcb+2DMn/cdWx77dGoJaM4DM9xbjn/zaAYWQgEsFMBC9EQPzL3P2AOlpmDtA/cqY8/LvcgGpHhBJ4/C+lbupxt2XDE+L/cSO7S/FDTvOcF53A2b1oJ+atXvQBcVfQ307h1/An2x+rzx+azu/+3FD4LOzcM+DtwXg5/v8VeX4Ps4gO/TgWnldp5469P4vj7/ADXvqaE8sBAKYKEAFqInemDGm4Yes2DBCOP4w29hvSz3p/3pQ0tB548072HBa8649sCqbwPDtQPsKSPk+XmftbvnLwL9zivP2Lp/NeVZuZ/ynNlTQXO/4rws9OwT3QXGz1dcgfW+U2di77jPt5g9b3frlaYZWMhCCKEAFqIzPLDV377PH8M1bLxHxWv/Mtc2pNWaawXY065Ysxo010bw3/4Zq1qDu+6bAbosaO4bsXzOvA59ATFe1MNozV7rEOwV50zEOWfdK7gmbuLzBcb7ffp2ma3nU39gIRTAQiiARW/0wLwGive8YM/LnvjRn7wO+jcvYO8yq74FJbuxT8OS6XONntBqL2JmaEYm6MIFg9EDr682ft5bp92BF2yssXX/tHj8DTD3gULQvMcH1w9707CfMdeStPnM9399FfYb5rxvJBjq1gGsGVjIQgihABaiMzwwU3miCnR4M/VGK0oxet585xzQvAeEMxHzuB+dwH3fuPeXXbjPwjRaE3e7B68/4QVzXjXBpudluM/DY977QX9yGK9f7ai15an7FpjX7FWdOYeeNxKJiaYA1gwsZCGEUAAL0RkemP8WzmvkuB54wlRzXveL8Hb8BxcNoC03uBZgj3Mb6LzY8fiBnC7j/bmvg5WHzAilXdcviPtOfHKyxtbnGx2L38e4ojzQu3b+QzOwEApgIRTAQh7Ypife9ex/wBPvXPmh8fzvLf4WaN7DguF+tVvXl4K+/bGPjR42JQv7AY/ORs/8nuMD0LznxC8W3tulX8g5X8T4PGvWbgb99R/fAjqYcZquON48g1GtSyQUiaoA1gwsZCGEUAAL0RUe2MoTO11O8MTcVyEvy9xHYt9xrH1oLDPndZ9ft8HoqRN86Im5d9rGjX8Bzb3a9pccAc151ImjsFaCazf4fE8afp5ADXr8Q0eOoaelvaJHTB9u6/05cjQDC6EAFkIBLMS19sAMr6Fz9Ym359mI0grsp1tRfBZ0XC6O/+3L20Evy+0HumjGnUbPW0VrznjfOX9DADT3ZeC+DqdKsA9DczN63oQE9MTxbrPn5zV5VrUnDHtyzcBCKICFUAALeeCO066XFtUP/2EH9nlY9I3bQHPe9+i76EEn/PAm4/3//eJnoL+6/GbQU2/NB839d9/YsgM9p0Xe2sqjOhyYtz387lGj581Mx/pfj8tj6/7t8uaUB+b632hbA6cZWMhCCKEAFqI7emArIkHsI8H1vZznDfgw77poDXrmjQ9j/fHAwVjrwHlaK8KN+HxJyehBOQ/McG847nV2cNshW5638hz24ZgybBZ5Xrz/cXp/3PtMM7AQCmAhFMBCOK57DtBqL+bV/5xvPJ899Kn3zXtAcN7VV3MZNO+Dx/13PbGJ6NEjQbqeH3S7PS/KWoye93w99iMuP4J58Fmr8DcAr0Fst8aN3me05301AwtZCCEUwEJcA5zX+wGs1tTt24N7I1vVv3K9Le893NKIx9OH3ACa16Cxpw3F4/lOd5zRM3NtxIGSU6DrHT7j53F5Eoyet92PmnZ9HsIxPTmANQMLBbAQCmAhotEDcx64tQkbBHM9MMO1E2NmjzaObziJtQqhSyGjh+XjtXUXQfOatpTsQUbPfmAzemDeo+LGsTg+3Y371vEeJVa/KTQDC6EAFkIBLET388DsecdOKwQ9eHKy0RNb7d18oRg9L9cy+N1Y/8v1ytw3gvPEVnAe+9XnVoHmXmq8Jq/dF0Z9NkKBZs3AQiiAhVAAC2GPLs8ZWuV9nypeYDz/ySlvgC64G/s+xNXh+JC/xXg97oXGnnrDyidBP/Drp0Enj0TPbbWmr76m2vg8ufn5tjx3fdUl9PA9rN5XM7BQAAuhABaiE7jueWBew8W9vXifOM6D8hqzVrq+P/Cl8f68Jo49MMN9KZif//Ez8KDJKcng+Q/+txh/hHjx/Mqys8bzeU1ftO/zphlYyEIIoQAWQgghhBBCCNHp/A/VaBHQ0SWgdwAAAABJRU5ErkJggg==">
@@ -66,6 +70,7 @@ footer{grid-column:1/-1;color:var(--dim);font-size:13px;border-top:1px solid var
 <nav aria-label="Contents">
   <ol>
     <li><a href="#start">Quick start</a></li>
+    <li><a href="#new">What's new in 0.3.1</a></li>
     <li><a href="#screen">The screen</a></li>
     <li><a href="#commands">Commands</a></li>
     <li><a href="#keys-kbd">Keyboard</a></li>
@@ -74,6 +79,7 @@ footer{grid-column:1/-1;color:var(--dim);font-size:13px;border-top:1px solid var
     <li><a href="#keys">API keys</a></li>
     <li><a href="#local">Local models</a></li>
     <li><a href="#agent">Agent mode</a></li>
+    <li><a href="#oauth">OAuth connections</a></li>
     <li><a href="#compare">Compare models</a></li>
     <li><a href="#panel">Side panel, mouse, Windows</a></li>
     <li><a href="#sessions">Sessions &amp; presets</a></li>
@@ -98,6 +104,19 @@ footer{grid-column:1/-1;color:var(--dim);font-size:13px;border-top:1px solid var
 <div class="note"><b>Tip.</b> In Relay, <code>/help</code> opens this page again and <code>/keys</code> opens the keys page.</div>
 </section>
 
+<section id="new">
+<h2>What's new in 0.3.1</h2>
+<ul>
+  <li><b>Connections page.</b> <code>/connections</code> lists every OAuth sign-in with its account, scopes and expiry. A connector that has no client ID is no longer an error: its card has a form for the Client ID, the secret and the <b>scopes</b>. The <b>Client &amp; scopes</b> button opens that form for any connection. See <a href="#oauth">OAuth connections</a>.</li>
+  <li><b>"Always allow" works for every tool</b>: the shell, file writes, MCP tools, building servers and skills. It is remembered per tool until the session ends. Starting an OAuth sign-in is still asked every time.</li>
+  <li><b>Ollama cloud has its own card</b> on <code>/keys</code>, apart from local Ollama (your old Ollama keys keep working).</li>
+  <li><b>llama.cpp starts with <code>llama serve</code></b>. The older <code>llama-server</code> still works if it is the one you have. <code>/llamacpp</code> now understands more kinds of input, see <a href="#local">Local models</a>.</li>
+  <li><b>Russian.</b> The web pages (help, keys, connections, settings) have an EN / RU switch in the corner.</li>
+  <li>A "403 insufficient scopes" answer from a connector now tells the model to stop retrying and to ask you to add scopes.</li>
+  <li><code>/connections</code> is listed in the hints under the input line.</li>
+</ul>
+</section>
+
 <section id="screen">
 <h2>The screen</h2>
 <ul>
@@ -116,7 +135,10 @@ footer{grid-column:1/-1;color:var(--dim);font-size:13px;border-top:1px solid var
 <div class="tablewrap"><table>
 <tr><th>Command</th><th>What it does</th></tr>
 <tr><td><code>/help</code></td><td>Open this page in your browser.</td></tr>
-<tr><td><code>/keys</code></td><td>Open the API keys page in your browser.</td></tr>
+<tr><td><code>/keys</code></td><td>Open the API keys page in your browser (keys, and the start buttons of Ollama and llama.cpp).</td></tr>
+<tr><td><code>/connections</code></td><td>Open the OAuth connections page: sign in, Client ID, scopes, disconnect.</td></tr>
+<tr><td><code>/settings</code></td><td>Open the settings page.</td></tr>
+<tr><td><code>/connectors</code>, <code>/tools</code>, <code>/skills</code>, <code>/mcp</code></td><td>List the connectors, tools, skills and MCP servers. <code>/connectors auth &lt;id&gt;</code> signs in to one.</td></tr>
 <tr><td><code>/models [text]</code></td><td>Open the model list. The text filters it. Choose <code>auto</code> to go back to the mode's own choice. See <a href="#models">Choosing a model</a>.</td></tr>
 <tr><td><code>/models &lt;id&gt;</code></td><td>Use a model by its id, even if it is not in the list (for example one you have just pulled with Ollama).</td></tr>
 <tr><td><code>/mode &lt;name&gt;</code></td><td>Switch the mode: <code>small</code>, <code>medium</code>, <code>hard</code> or <code>maximum</code>. Shortcuts: <code>/small</code> <code>/medium</code> <code>/hard</code> <code>/max</code>.</td></tr>
@@ -127,7 +149,7 @@ footer{grid-column:1/-1;color:var(--dim);font-size:13px;border-top:1px solid var
 <tr><td><code>/sessions</code></td><td>Open a list of saved sessions above the input line. Click one (or use <kbd>↑</kbd> <kbd>↓</kbd> and <kbd>enter</kbd>) to switch to it.</td></tr>
 <tr><td><code>/load &lt;id&gt;</code></td><td>Continue a saved session. Part of the id is enough.</td></tr>
 <tr><td><code>/ollama</code></td><td>Start Ollama (if it is not already running).</td></tr>
-<tr><td><code>/llamacpp &lt;model.gguf&gt;</code></td><td>Start llama.cpp's <code>llama-server</code> with that model file. Quotes around a path with spaces are fine.</td></tr>
+<tr><td><code>/llamacpp &lt;model&gt; [flags]</code></td><td>Start llama.cpp (<code>llama serve</code>) with a model: a <code>.gguf</code> file or a folder, <code>org/repo[:quant]</code> from Hugging Face, or a link. Flags after the model are passed on: <code>/llamacpp model.gguf -c 8192</code>. Quotes around a path with spaces are fine.</td></tr>
 <tr><td><code>/stop</code></td><td>Open a list of the running servers. Click one to stop it. <code>/stop &lt;name&gt;</code> stops it directly.</td></tr>
 <tr><td><code>/clear</code></td><td>Clear the feed on screen (the session history is kept).</td></tr>
 <tr><td><code>/quit</code></td><td>Exit (also <kbd>ctrl</kbd>+<kbd>c</kbd>).</td></tr>
@@ -154,7 +176,7 @@ footer{grid-column:1/-1;color:var(--dim);font-size:13px;border-top:1px solid var
 <tr><td><kbd>esc</kbd></td><td>Close the list.</td></tr>
 </table></div>
 <h3>When Relay asks for approval</h3>
-<p><kbd>y</kbd> allow this once · <kbd>a</kbd> always allow this tool in this session · <kbd>n</kbd> or <kbd>esc</kbd> deny.</p>
+<p><kbd>y</kbd> allow this once · <kbd>a</kbd> always allow this tool in this session (every tool, including the shell and file writes; each tool separately) · <kbd>n</kbd> or <kbd>esc</kbd> deny. Starting an OAuth sign-in always asks again.</p>
 </section>
 
 <section id="models">
@@ -165,7 +187,7 @@ footer{grid-column:1/-1;color:var(--dim);font-size:13px;border-top:1px solid var
 <p>Relay asks every provider which models it really has, so you do not have to write model names into a config file:</p>
 <ul>
   <li><b>Ollama</b> (on this computer): everything you have installed (<code>ollama list</code>). Shown as <code>ollama/&lt;name&gt;</code>. Cloud models that your local Ollama forwards (names ending in <code>-cloud</code>) appear here too.</li>
-  <li><b>Ollama cloud</b>: add an Ollama key on the keys page and the models of your ollama.com account appear as <code>ollama-cloud/&lt;name&gt;</code>.</li>
+  <li><b>Ollama cloud</b>: add a key on the <code>ollama-cloud</code> card of the keys page and the models of your ollama.com account appear as <code>ollama-cloud/&lt;name&gt;</code>.</li>
   <li><b>Gemini, Anthropic, OpenAI, Grok, DeepSeek, OpenRouter</b>: add the key and the provider's own model list appears (<code>gemini/&lt;name&gt;</code>, <code>anthropic/&lt;name&gt;</code>, …). Models that are not for chat (embeddings, speech, images) are left out.</li>
 </ul>
 
@@ -202,7 +224,7 @@ footer{grid-column:1/-1;color:var(--dim);font-size:13px;border-top:1px solid var
 
 <section id="keys">
 <h2>API keys</h2>
-<p><code>/keys</code> (or <code>relay keys</code> in a terminal) opens the keys page on your own computer. For each provider you can add one or several keys and delete them. After a key is saved the page asks the provider which models the key opens and shows the number, or the provider's error if the key is wrong.</p>
+<p><code>/keys</code> (or <code>relay keys</code> in a terminal) opens the keys page on your own computer. The cards are grouped: official providers, other services (OpenRouter, Ollama cloud, ...) and servers on this computer. For each provider you can add one or several keys and delete them. After a key is saved the page asks the provider which models the key opens and shows the number, or the provider's error if the key is wrong.</p>
 <div class="tablewrap"><table>
 <tr><th>Provider</th><th>Get a key</th><th>Notes</th></tr>
 <tr><td>anthropic</td><td><a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer">console.anthropic.com</a></td><td>Claude models.</td></tr>
@@ -210,9 +232,10 @@ footer{grid-column:1/-1;color:var(--dim);font-size:13px;border-top:1px solid var
 <tr><td>gemini</td><td><a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">aistudio.google.com</a></td><td>Google Gemini API. Only models that can generate text are listed.</td></tr>
 <tr><td>grok</td><td><a href="https://console.x.ai" target="_blank" rel="noopener noreferrer">console.x.ai</a></td><td>xAI Grok models.</td></tr>
 <tr><td>deepseek</td><td><a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener noreferrer">platform.deepseek.com</a></td><td>DeepSeek models.</td></tr>
-<tr><td>ollama</td><td><a href="https://ollama.com/settings/keys" target="_blank" rel="noopener noreferrer">ollama.com/settings/keys</a></td><td>Local models need no key. A key unlocks <b>Ollama cloud</b> models (<code>ollama-cloud/…</code>). The same key is used for both.</td></tr>
+<tr><td>ollama-cloud</td><td><a href="https://ollama.com/settings/keys" target="_blank" rel="noopener noreferrer">ollama.com/settings/keys</a></td><td>A key unlocks the <b>Ollama cloud</b> models (<code>ollama-cloud/…</code>). It is in the group "Other services". Keys you saved earlier for <code>ollama</code> are the same ones.</td></tr>
+<tr><td>ollama</td><td class="dim">none</td><td>Local Ollama on this computer, no key needed. It is in the group "On this computer", with its autostart and start/stop buttons.</td></tr>
 <tr><td>openrouter</td><td><a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer">openrouter.ai/keys</a></td><td>Many models from many makers through one key.</td></tr>
-<tr><td>llamacpp</td><td class="dim">none</td><td>Local server (<code>llama-server</code>), no key needed.</td></tr>
+<tr><td>llamacpp</td><td class="dim">none</td><td>Local server (<code>llama serve</code>), no key needed.</td></tr>
 </table></div>
 <h3>Several keys for one provider</h3>
 <p>Add as many as you like. While one works, Relay keeps using it. When a key hits its rate limit or runs out of credit, Relay switches to the next key (you see a notice), and the tired key rests for two minutes. When all keys are used up, it moves on to the next model of the mode.</p>
@@ -230,7 +253,8 @@ footer{grid-column:1/-1;color:var(--dim);font-size:13px;border-top:1px solid var
   <li>Type <code>/models</code>: your models are listed as <code>ollama/…</code>.</li>
 </ol>
 <h3>llama.cpp, LM Studio, vLLM and others</h3>
-<p>Any server with an OpenAI-compatible <code>/v1</code> API works. llama.cpp is preconfigured on port 8080. For others add a provider to <code>config.toml</code> (see <a href="#config">Configuration</a>). To let Relay start the server for you, add a <code>[[processes]]</code> entry and then type <code>/&lt;name&gt;</code> to start it and <code>/stop</code> to stop it. For llama.cpp: <code>/llamacpp path/to/model.gguf</code>.</p>
+<p>Any server with an OpenAI-compatible <code>/v1</code> API works. llama.cpp is preconfigured on port 8080 and starts with <code>llama serve</code> (if you only have the older <code>llama-server</code>, Relay uses that). For others add a provider to <code>config.toml</code> (see <a href="#config">Configuration</a>). To let Relay start the server for you, add a <code>[[processes]]</code> entry and then type <code>/&lt;name&gt;</code> to start it and <code>/stop</code> to stop it. For llama.cpp: <code>/llamacpp path/to/model.gguf</code>.</p>
+<p><b>What <code>/llamacpp</code> understands.</b> Relay picks the right flag itself: a <code>.gguf</code> file or a folder with models (the main file is chosen, <code>mmproj</code> files are skipped) becomes <code>-m</code>; <code>org/repo</code>, <code>org/repo:Q4_K_M</code>, <code>hf.co/org/repo</code> or a huggingface.co page address becomes <code>-hf</code>; a link to a file becomes <code>-mu</code>. Flags written after the model are kept: <code>/llamacpp unsloth/Qwen3-8B-GGUF:Q4_K_M -c 8192 -ngl 99</code>. The same text works in the <b>model</b> field of the llama.cpp card on the keys page.</p>
 <p class="dim">A local server that is not running is not an error: its card on the keys page says "not running" and it adds nothing to the model list.</p>
 </section>
 
@@ -264,6 +288,24 @@ relay mcp test files</code></pre>
 <h3>Signing in (OAuth)</h3>
 <p>If a connector needs a sign-in and you have not signed in, the answer pauses, the sign-in page opens in your browser, and the work continues after you have signed in. <code>/connectors auth &lt;id&gt;</code> signs in on its own. The OAuth app at the service must list the callback address that <code>/connectors</code> shows. Relay keeps the tokens (owner-only files) and refreshes them; a connector only gets the current access token.</p>
 <p>A skill is a folder with a <code>SKILL.md</code> (the open Agent Skills format) that teaches the agent one kind of task. <code>relay skill add ./my-skill</code> installs one, or just copy the folder into the <code>skills</code> folder. The agent sees the names and descriptions and loads a skill only when the task matches. Scripts inside a skill are never run automatically. <code>/skills</code> and <code>/mcp</code> show what is installed.</p>
+</section>
+
+<section id="oauth">
+<h2>OAuth connections</h2>
+<p>Some MCP servers (GitHub and others) need you to sign in. <code>/connections</code> opens a page with every sign-in: the account, the issuer, the scopes, when the token expires, and buttons <b>Sign in</b>, <b>Reconnect</b>, <b>Disconnect</b>, <b>Revoke</b> and <b>Forget</b>. Tokens and secrets are never shown, and they are kept encrypted on your computer.</p>
+<h3>Where the Client ID comes from</h3>
+<p>OAuth needs an app (a "client") that is registered at the service. Relay uses the first way that works: a Client ID you saved; a Client ID Metadata Document, if the server supports it and <code>cimd_url</code> is set for the connector in <code>mcp.json</code>; automatic registration, if the server offers it; and otherwise the card shows the status <code>needs_setup</code> and asks you for a Client ID. GitHub does not offer automatic registration, so there you register the app once.</p>
+<h3>Example: GitHub</h3>
+<ol class="steps">
+  <li>On GitHub: <b>Settings → Developer settings → OAuth Apps → New OAuth App</b>.</li>
+  <li>As the callback URL use the <b>exact redirect URI</b> that the card on <code>/connections</code> shows.</li>
+  <li>Copy the Client ID (create a Client secret if you want one).</li>
+  <li>On <code>/connections</code> press <b>Client &amp; scopes</b>, fill in the Client ID, the secret (method: secret in POST body), and the <b>scopes</b>, for example <code>repo read:org read:user</code>. Press <b>Save OAuth client</b>.</li>
+  <li>Press <b>Sign in</b> and approve in the browser.</li>
+</ol>
+<h3>Scopes</h3>
+<p>Scopes are the rights the token gets. Relay requests only the ones you list. Without scopes a GitHub token reads only your profile, so most tools return <code>403 insufficient scopes</code>. Ask for the least that you need: the connector's documentation lists what each tool needs, and the provider's page lists all scopes. Scopes can be changed without typing the Client ID again, but they apply at the next sign-in: press <b>Sign in</b> after saving. (A GitHub App has no scopes: its rights are set in the app's own settings.)</p>
+<p>The sign-in prompt and its details are written by the backend and are shown in English.</p>
 </section>
 
 <section id="compare">
@@ -326,7 +368,7 @@ max_steps = 10</code></pre>
   <li><code>listen</code>: address of the background service (default <code>127.0.0.1:8787</code>).</li>
   <li><code>workspace</code>: fixed folder for the agent (default: the folder where Relay was started).</li>
   <li><code>default_mode</code>: mode of a new session.</li>
-  <li><code>[[processes]]</code>: local servers that <code>/&lt;name&gt;</code> (for example <code>/ollama</code>) and <code>/stop</code> manage, with <code>command</code>, <code>args</code>, <code>ready_url</code> and <code>autostart</code>.</li>
+  <li><code>[[processes]]</code>: local servers that <code>/&lt;name&gt;</code> (for example <code>/ollama</code>) and <code>/stop</code> manage, with <code>command</code>, <code>args</code>, <code>ready_url</code> and <code>autostart</code>. llama.cpp is <code>command = "llama"</code>, <code>args = ["serve", "--port", "8080"]</code>.</li>
   <li><code>[[presets]]</code>: your own system prompts.</li>
 </ul>
 </section>
@@ -379,6 +421,10 @@ curl http://127.0.0.1:8787/v1/chat/completions \
   <li>Ollama: make sure it is running (<code>/ollama</code>) and that you have pulled a model (<code>ollama list</code>).</li>
   <li>Just added a key? Type <code>/models</code> again; the list refreshes by itself.</li>
 </ul>
+<h3>"403 insufficient scopes" from a connector (GitHub)</h3>
+<p>The token has no right for that tool. Open <code>/connections</code>, press <b>Client &amp; scopes</b>, add the scopes (for GitHub for example <code>repo read:org read:user</code>), save, and press <b>Sign in</b> again. The old token keeps its old scopes until you sign in.</p>
+<h3>llama.cpp does not start</h3>
+<p>Relay runs <code>llama serve</code> (or the older <code>llama-server</code>). If it says the program was not found, install llama.cpp so that <code>llama</code> is in your PATH, or set <code>command</code> to its full path in <code>[[processes]]</code> llamacpp. If the model is not found, check the path or give an <code>org/repo</code> name.</p>
 <h3>"model not found" from a provider</h3>
 <p>A model name from <code>config.toml</code> may be outdated. Pick a model from <code>/models</code> instead; those names come straight from the provider.</p>
 <h3>"no API key for …"</h3>
@@ -401,8 +447,8 @@ curl http://127.0.0.1:8787/v1/chat/completions \
   <li>The Relay service listens only on <code>127.0.0.1</code>, requires the access token and checks the <code>Host</code> header, so other computers and web pages cannot talk to it.</li>
   <li>Your keys are stored in a plain text file readable only by you. The terminal and the pages never show more than the last four characters.</li>
   <li>Your messages go only to the provider of the model you use. Relay has no servers of its own and sends no telemetry.</li>
-  <li>The agent can read and write files only inside its working folder (symbolic links are not checked). Writing, editing, shell commands and MCP tools always ask first.</li>
-  <li class="dim">The shell is <b>not sandboxed</b>: <code>run_shell</code> can do anything you can do. Read each command before you press <kbd>y</kbd>, and be careful with <kbd>a</kbd>.</li>
+  <li>The agent can read and write files only inside its working folder (symbolic links are not checked). Writing, editing, shell commands and MCP tools ask first; "always allow" is remembered per tool until the session ends.</li>
+  <li class="dim">The shell is <b>not sandboxed</b>: <code>run_shell</code> can do anything you can do. Read each command before you press <kbd>y</kbd>, and be careful with <kbd>a</kbd>: after it the model runs shell commands in this session without asking.</li>
 </ul>
 </section>
 

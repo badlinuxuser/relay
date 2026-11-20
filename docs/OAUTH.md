@@ -1,4 +1,4 @@
-# OAuth in Relay 0.3.0 — LFI Core
+# OAuth in Relay 0.3.1 — LFI Core
 
 ## Security and user flow
 

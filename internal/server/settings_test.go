@@ -141,8 +141,11 @@ func TestKeysPageMarksOptionalKeys(t *testing.T) {
 	for _, p := range kr.Providers {
 		got[p.Name] = p
 	}
-	if !got["ollama"].KeyOptional || got["ollama"].NeedsKey {
-		t.Errorf("ollama: a key is optional (cloud models): %+v", got["ollama"])
+	if got["ollama"].NeedsKey || len(got["ollama"].Stored) != 0 {
+		t.Errorf("local ollama needs no key: %+v", got["ollama"])
+	}
+	if !got["ollama-cloud"].NeedsKey || got["ollama-cloud"].Group == got["ollama"].Group {
+		t.Errorf("ollama-cloud has its own card and category: %+v", got["ollama-cloud"])
 	}
 	if got["llamacpp"].KeyOptional || got["llamacpp"].NeedsKey {
 		t.Errorf("llamacpp needs no key and offers none: %+v", got["llamacpp"])

@@ -9,7 +9,7 @@ import (
 	"relay/internal/settings"
 )
 
-const Version = "0.3.0"
+const Version = "0.3.1"
 
 // Event это одно событие потока выполнения (SSE: "data: <json>").
 //

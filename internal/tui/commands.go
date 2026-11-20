@@ -19,7 +19,7 @@ import (
 const helpText = `Relay help is a web page: run /help to open it, or open <backend address>/ui/help.
 Quick reference: /models pick a model · /mode small|medium|hard|maximum · /agent on|off · /keys API keys · /connections OAuth connections
 /preset <name>|none · /compare <model> <model> <text> · /new · /sessions · /load <id> · /clear · /quit
-Servers: /ollama · /llamacpp <model.gguf | org/repo> · /stop (pick what to stop)
+Servers: /ollama · /llamacpp <model.gguf | folder | org/repo | URL> [flags] · /stop (pick what to stop)
 Settings: /settings (page) · /thoughts on|off · /mouse on|off · f2 or /select (select and copy text) · /copy (last answer)
 Keys: ctrl+t mode · ctrl+a agent · ctrl+n new session · esc stop · pgup/pgdn or shift+↑↓ or mouse wheel scroll · ctrl+c quit`
 

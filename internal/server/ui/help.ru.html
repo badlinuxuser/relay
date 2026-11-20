@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Relay · Справка</title>
+<style>
+:root{--bg:#0C1510;--card:#14201A;--line:#25402F;--accent:#67DD5D;--text:#E6E8EA;--dim:#8A948D;--red:#F26D6D;--soft:#2E8B3E;--code:#0e1812}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+a{color:var(--accent)}
+.wrap{max-width:1040px;margin:0 auto;padding:28px 18px 80px;display:grid;grid-template-columns:210px minmax(0,1fr);gap:34px}
+header{grid-column:1/-1;display:flex;align-items:center;gap:18px}
+header img{width:132px;height:108px;image-rendering:pixelated}
+h1{margin:0;font-size:26px;color:var(--accent)}
+h1 small{color:var(--dim);font-weight:400;font-size:14px}
+.lead{margin:6px 0 0;color:var(--dim)}
+nav{position:sticky;top:18px;align-self:start;font-size:13px}
+nav ol{margin:0;padding:0;list-style:none}
+nav li{margin:0}
+nav a{display:block;padding:4px 10px;border-left:2px solid var(--line);color:var(--dim);text-decoration:none}
+nav a:hover{color:var(--accent);border-left-color:var(--accent)}
+main{min-width:0}
+section{margin:0 0 34px}
+h2{margin:0 0 12px;font-size:20px;color:var(--accent);padding-bottom:6px;border-bottom:1px solid var(--line)}
+h3{margin:22px 0 8px;font-size:16px}
+p{margin:0 0 12px}
+ul,ol.steps{margin:0 0 12px;padding-left:22px}
+li{margin:3px 0}
+code{background:var(--code);border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:13.5px}
+pre{background:var(--code);border:1px solid var(--line);border-radius:10px;padding:12px 14px;overflow-x:auto;margin:0 0 14px;font-size:13.5px;line-height:1.5}
+pre code{border:0;padding:0;background:none}
+kbd{background:var(--card);border:1px solid var(--soft);border-bottom-width:2px;border-radius:5px;padding:0 6px;font:inherit;font-size:13px;color:var(--accent);white-space:nowrap}
+table{width:100%;border-collapse:collapse;margin:0 0 16px;font-size:14px}
+th,td{text-align:left;vertical-align:top;padding:7px 10px;border-top:1px solid var(--line)}
+th{color:var(--dim);font-weight:400;border-top:0;border-bottom:1px solid var(--line)}
+td:first-child{white-space:nowrap}
+.tablewrap{overflow-x:auto}
+.note,.warn{border:1px solid var(--soft);border-radius:10px;padding:10px 14px;margin:0 0 14px;background:var(--card)}
+.warn{border-color:var(--red)}
+.note b,.warn b{color:var(--accent)}
+.warn b{color:var(--red)}
+.dim{color:var(--dim)}
+.lang{position:fixed;top:10px;right:12px;display:flex;gap:4px;z-index:5}
+.lang a{padding:3px 9px;font-size:12px;border:1px solid var(--line);border-radius:8px;color:var(--dim);text-decoration:none;background:var(--bg)}
+.lang a.on{color:var(--accent);border-color:var(--soft)}
+.pill{font-size:12px;padding:1px 8px;border-radius:99px;border:1px solid var(--line);color:var(--dim)}
+footer{grid-column:1/-1;color:var(--dim);font-size:13px;border-top:1px solid var(--line);padding-top:14px}
+@media (max-width:820px){
+  .wrap{grid-template-columns:1fr;gap:18px}
+  nav{position:static}
+  nav ol{display:flex;flex-wrap:wrap;gap:4px 14px}
+  nav a{border-left:0;padding:2px 0}
+  header img{width:88px;height:72px}
+}
+</style>
+</head>
+<body>
+<div class="lang"><a href="?lang=en">EN</a><a class="on" href="?lang=ru">RU</a></div>
+<div class="wrap">
+<header>
+  <img alt="Relay" src="data:image/png;base64,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">
+  <div>
+    <h1>Relay <small>· Справка</small></h1>
+    <p class="lead">Одно терминальное приложение для локальных и облачных моделей ИИ. Быстрее. Ближе. Вместе.</p>
+  </div>
+</header>
+
+<nav aria-label="Содержание">
+  <ol>
+    <li><a href="#start">Быстрый старт</a></li>
+    <li><a href="#new">Что нового в 0.3.1</a></li>
+    <li><a href="#screen">Экран</a></li>
+    <li><a href="#commands">Команды</a></li>
+    <li><a href="#keys-kbd">Клавиши</a></li>
+    <li><a href="#models">Выбор модели</a></li>
+    <li><a href="#modes">Режимы</a></li>
+    <li><a href="#keys">Ключи API</a></li>
+    <li><a href="#local">Локальные модели</a></li>
+    <li><a href="#agent">Режим агента</a></li>
+    <li><a href="#oauth">Подключения OAuth</a></li>
+    <li><a href="#compare">Сравнение моделей</a></li>
+    <li><a href="#panel">Панель, мышь, Windows</a></li>
+    <li><a href="#sessions">Сессии и пресеты</a></li>
+    <li><a href="#config">Настройка</a></li>
+    <li><a href="#gateway">API, совместимый с OpenAI</a></li>
+    <li><a href="#cli">Командная строка</a></li>
+    <li><a href="#trouble">Если что-то не работает</a></li>
+    <li><a href="#safety">Приватность и безопасность</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<section id="start">
+<h2>Быстрый старт</h2>
+<ol class="steps">
+  <li><b>Запустите Relay.</b> Выполните <code>relay</code> в папке, где хотите работать. Фоновая служба запустится сама.</li>
+  <li><b>Добавьте ключи</b> для облачных провайдеров, которыми пользуетесь: введите <code>/keys</code>. В браузере откроется страница, куда вставляется ключ для каждого провайдера. Ключи сохраняются на вашем компьютере и действуют сразу. Локальным моделям (Ollama, llama.cpp) ключ не нужен.</li>
+  <li><b>Выберите модель:</b> введите <code>/models</code>, двигайтесь клавишами <kbd>↑</kbd> <kbd>↓</kbd> и нажмите <kbd>enter</kbd>. Или оставьте <code>auto</code>, и модель выберет текущий режим.</li>
+  <li><b>Общайтесь.</b> Введите сообщение и нажмите <kbd>enter</kbd>. Нажмите <kbd>ctrl</kbd>+<kbd>a</kbd>, чтобы модель могла работать с файлами в вашей папке (режим агента).</li>
+</ol>
+<div class="note"><b>Подсказка.</b> В Relay команда <code>/help</code> снова открывает эту страницу, а <code>/keys</code> открывает страницу ключей.</div>
+</section>
+
+<section id="new">
+<h2>Что нового в 0.3.1</h2>
+<ul>
+  <li><b>Страница подключений.</b> <code>/connections</code> показывает все входы OAuth: аккаунт, права (scopes), срок действия. Коннектор без client ID больше не ошибка: у его карточки есть форма для Client ID, секрета и <b>прав (scopes)</b>. Кнопка <b>«Клиент и права»</b> открывает эту форму для любого подключения. См. <a href="#oauth">Подключения OAuth</a>.</li>
+  <li><b>«Всегда разрешать» работает для всех инструментов</b>: shell, запись файлов, инструменты MCP, создание серверов и навыков. Выбор запоминается для каждого инструмента отдельно до конца сессии. Начало входа OAuth по-прежнему спрашивается каждый раз.</li>
+  <li><b>У Ollama cloud своя карточка</b> на <code>/keys</code>, отдельно от локального Ollama (ваши старые ключи Ollama продолжают работать).</li>
+  <li><b>llama.cpp запускается командой <code>llama serve</code></b>. Старый <code>llama-server</code> тоже работает, если у вас он. <code>/llamacpp</code> теперь понимает больше видов ввода, см. <a href="#local">Локальные модели</a>.</li>
+  <li><b>Русский язык.</b> У веб-страниц (справка, ключи, подключения, настройки) в углу есть переключатель EN / RU.</li>
+  <li>Ответ «403 insufficient scopes» от коннектора теперь говорит модели не повторять вызов и попросить вас добавить права.</li>
+  <li><code>/connections</code> добавлена в подсказки под строкой ввода.</li>
+</ul>
+</section>
+
+<section id="screen">
+<h2>Экран</h2>
+<ul>
+  <li><b>Заголовок</b>: текущий режим и включён ли режим агента.</li>
+  <li><b>Лента</b> (слева): ваши сообщения, ответы (под каждым ответом указана модель), вызовы инструментов агентом и уведомления. Прокрутка: <kbd>pgup</kbd> / <kbd>pgdn</kbd>, <kbd>shift</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd> или колесо мыши.</li>
+  <li><b>Ввод</b> (внизу): сообщение или команда, начинающаяся с <code>/</code>.</li>
+  <li><b>Боковая панель</b> (справа, только в широких терминалах): маскот и его настроение, а также текущие <code>mode</code>, <code>model</code>, состояние <code>agent</code>, рабочая папка <code>folder</code>, <code>tokens</code> (вход / выход) и <code>cost</code> этой сессии.</li>
+</ul>
+<p>Маскот реагирует на происходящее: радуется, когда приходит ответ, замечает вызовы инструментов и смену ключей, удивляется ошибкам и запросам подтверждения, устаёт, когда ключ упирается в лимит или долго ничего не происходит. Цвет всего интерфейса зависит от <a href="#modes">режима</a>.</p>
+<p class="dim">Строка <code>model</code> показывает выбранную вами модель, а на <code>auto</code> первую модель текущего режима, которую действительно можно использовать сейчас.</p>
+</section>
+
+<section id="commands">
+<h2>Команды</h2>
+<p>Вводятся в строке ввода. Аргументы в <code>&lt;угловых скобках&gt;</code> обязательны, в <code>[квадратных]</code> необязательны.</p>
+<div class="tablewrap"><table>
+<tr><th>Команда</th><th>Что делает</th></tr>
+<tr><td><code>/help</code></td><td>Открывает эту страницу в браузере.</td></tr>
+<tr><td><code>/keys</code></td><td>Открывает страницу ключей API (ключи и кнопки запуска Ollama и llama.cpp).</td></tr>
+<tr><td><code>/connections</code></td><td>Открывает страницу подключений OAuth: вход, Client ID, права, отключение.</td></tr>
+<tr><td><code>/settings</code></td><td>Открывает страницу настроек.</td></tr>
+<tr><td><code>/connectors</code>, <code>/tools</code>, <code>/skills</code>, <code>/mcp</code></td><td>Показывают коннекторы, инструменты, навыки и MCP-серверы. <code>/connectors auth &lt;id&gt;</code> выполняет вход в один из них.</td></tr>
+<tr><td><code>/models [текст]</code></td><td>Открывает список моделей. Текст фильтрует его. Выберите <code>auto</code>, чтобы вернуться к выбору режима. См. <a href="#models">Выбор модели</a>.</td></tr>
+<tr><td><code>/models &lt;id&gt;</code></td><td>Использует модель по id, даже если её нет в списке (например, только что загруженную в Ollama).</td></tr>
+<tr><td><code>/mode &lt;имя&gt;</code></td><td>Переключает режим: <code>small</code>, <code>medium</code>, <code>hard</code> или <code>maximum</code>. Сокращения: <code>/small</code> <code>/medium</code> <code>/hard</code> <code>/max</code>.</td></tr>
+<tr><td><code>/agent [on|off]</code></td><td>Включает или выключает режим агента (без аргумента переключает).</td></tr>
+<tr><td><code>/preset &lt;имя&gt;|none</code></td><td>Задаёт системный промпт на эту сессию. Пресеты описываются в конфиге (<code>coder</code> и <code>concise</code> идут в комплекте).</td></tr>
+<tr><td><code>/compare &lt;модель&gt; &lt;модель&gt; … &lt;текст&gt;</code></td><td>Отправляет один запрос сразу до 4 моделям.</td></tr>
+<tr><td><code>/new</code></td><td>Начинает новую сессию (старая остаётся сохранённой).</td></tr>
+<tr><td><code>/sessions</code></td><td>Открывает список сохранённых сессий над строкой ввода. Щёлкните по сессии (или <kbd>↑</kbd> <kbd>↓</kbd> и <kbd>enter</kbd>), чтобы переключиться.</td></tr>
+<tr><td><code>/load &lt;id&gt;</code></td><td>Продолжает сохранённую сессию. Достаточно части id.</td></tr>
+<tr><td><code>/ollama</code></td><td>Запускает Ollama (если он ещё не запущен).</td></tr>
+<tr><td><code>/llamacpp &lt;модель&gt; [флаги]</code></td><td>Запускает llama.cpp (<code>llama serve</code>) с моделью: файл <code>.gguf</code> или папка, <code>org/repo[:квант]</code> с Hugging Face или ссылка. Флаги после модели передаются дальше: <code>/llamacpp model.gguf -c 8192</code>. Кавычки вокруг пути с пробелами допустимы.</td></tr>
+<tr><td><code>/stop</code></td><td>Открывает список запущенных серверов. Щёлкните по одному, чтобы остановить. <code>/stop &lt;имя&gt;</code> останавливает сразу.</td></tr>
+<tr><td><code>/clear</code></td><td>Очищает ленту на экране (история сессии сохраняется).</td></tr>
+<tr><td><code>/quit</code></td><td>Выход (также <kbd>ctrl</kbd>+<kbd>c</kbd>).</td></tr>
+</table></div>
+</section>
+
+<section id="keys-kbd">
+<h2>Клавиши</h2>
+<div class="tablewrap"><table>
+<tr><th>Клавиши</th><th>Действие</th></tr>
+<tr><td><kbd>enter</kbd></td><td>Отправить сообщение или выполнить команду.</td></tr>
+<tr><td><kbd>ctrl</kbd>+<kbd>t</kbd></td><td>Следующий режим: small → medium → hard → maximum → small.</td></tr>
+<tr><td><kbd>ctrl</kbd>+<kbd>a</kbd></td><td>Режим агента вкл / выкл.</td></tr>
+<tr><td><kbd>ctrl</kbd>+<kbd>n</kbd></td><td>Новая сессия.</td></tr>
+<tr><td><kbd>esc</kbd></td><td>Остановить ответ, который сейчас пишется. Если открыт список моделей, закрывает список.</td></tr>
+<tr><td><kbd>pgup</kbd> <kbd>pgdn</kbd>, <kbd>shift</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd>, <kbd>alt</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd>, колесо мыши</td><td>Прокрутка ленты. Если ваш терминал оставляет <kbd>pgup</kbd> себе, используйте остальные. Пока строка ввода пуста, <kbd>ctrl</kbd>+<kbd>u</kbd> / <kbd>ctrl</kbd>+<kbd>d</kbd> листают на полстраницы, а <kbd>home</kbd> / <kbd>end</kbd> переходят к началу / концу.</td></tr>
+<tr><td><kbd>ctrl</kbd>+<kbd>c</kbd></td><td>Выход.</td></tr>
+</table></div>
+<h3>Внутри списка моделей</h3>
+<div class="tablewrap"><table>
+<tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Двигают выбор (по кругу).</td></tr>
+<tr><td><kbd>tab</kbd></td><td>Копирует выбранный id в строку ввода (список сужается до него).</td></tr>
+<tr><td><kbd>enter</kbd></td><td>Использовать выбранную модель.</td></tr>
+<tr><td><kbd>esc</kbd></td><td>Закрыть список.</td></tr>
+</table></div>
+<h3>Когда Relay просит подтверждения</h3>
+<p><kbd>y</kbd> разрешить один раз · <kbd>a</kbd> всегда разрешать этот инструмент в этой сессии (любой инструмент, включая shell и запись файлов; каждый отдельно) · <kbd>n</kbd> или <kbd>esc</kbd> отказать. Начало входа OAuth всегда спрашивается заново.</p>
+</section>
+
+<section id="models">
+<h2>Выбор модели</h2>
+<p>Введите <code>/models</code>. Над строкой ввода откроется список. Текст после команды фильтрует его: <code>/models gemini</code>, <code>/models cloud</code>, <code>/models qwen coder</code> (должны совпасть все слова).</p>
+
+<h3>Откуда берётся список</h3>
+<p>Relay спрашивает у каждого провайдера, какие модели у него действительно есть, поэтому имена моделей не нужно вписывать в конфиг:</p>
+<ul>
+  <li><b>Ollama</b> (на этом компьютере): всё, что вы установили (<code>ollama list</code>). Показывается как <code>ollama/&lt;имя&gt;</code>. Облачные модели, которые пробрасывает ваш локальный Ollama (имена на <code>-cloud</code>), тоже здесь.</li>
+  <li><b>Ollama cloud</b>: добавьте ключ на карточке <code>ollama-cloud</code> страницы ключей, и модели вашего аккаунта ollama.com появятся как <code>ollama-cloud/&lt;имя&gt;</code>.</li>
+  <li><b>Gemini, Anthropic, OpenAI, Grok, DeepSeek, OpenRouter</b>: добавьте ключ, и появится собственный список моделей провайдера (<code>gemini/&lt;имя&gt;</code>, <code>anthropic/&lt;имя&gt;</code>, …). Модели не для чата (эмбеддинги, речь, изображения) исключаются.</li>
+</ul>
+
+<h3>Что вы видите</h3>
+<ul>
+  <li><b>Порядок.</b> Сначала собственные API разработчиков моделей (Anthropic, OpenAI, Gemini, Grok, DeepSeek), потом всё остальное: Ollama, Ollama cloud, llama.cpp, OpenRouter и так далее.</li>
+  <li><b>Только то, что можно использовать.</b> Провайдер без ключа, с отвергнутым ключом или незапущенный локальный сервер ничего в список не добавляет. Ошибки в терминале не показываются: откройте <code>/keys</code>, они видны рядом с провайдером.</li>
+  <li><b>Свежесть.</b> Список кешируется на минуту. Добавление или удаление ключа обновляет его сразу, так что после <code>/keys</code> просто снова введите <code>/models</code>.</li>
+  <li><b><code>auto</code></b> (первая строка) означает «модель не зафиксирована»: выбирает текущий <a href="#modes">режим</a> из своей цепочки.</li>
+</ul>
+
+<h3>Полезно знать</h3>
+<ul>
+  <li>Модель остаётся выбранной до конца сессии, пока вы не выберете другую или <code>auto</code>. Новая сессия начинается с <code>auto</code>.</li>
+  <li>Если выбранная модель не справилась из-за лимита или ошибки сервера, не успев ничего написать, Relay пробует следующую модель режима.</li>
+  <li>Цены найденных автоматически моделей неизвестны, поэтому их стоимость показывается как $0.00; токены при этом считаются. Чтобы следить за стоимостью, добавьте модель в <code>config.toml</code> с <code>price_in</code> / <code>price_out</code> (см. <a href="#config">Настройка</a>).</li>
+  <li>Не каждая модель умеет вызывать инструменты. Если режим агента отвечает ошибкой вроде «does not support tools», выберите другую модель.</li>
+</ul>
+</section>
+
+<section id="modes">
+<h2>Режимы</h2>
+<p>Режим это цветовая тема плюс <b>цепочка моделей</b>: Relay пробует первую модель; если у неё закончилась квота, нет ключа или она сбоит, переходит к следующей.</p>
+<div class="tablewrap"><table>
+<tr><th>Режим</th><th>Цвет</th><th>Для чего</th></tr>
+<tr><td><code>small</code></td><td>зелёный</td><td>Быстрые вопросы, локальные и дешёвые модели. Начинает с ваших локальных моделей Ollama.</td></tr>
+<tr><td><code>medium</code></td><td>фиолетовый</td><td>Повседневное программирование и письмо с более сильной облачной моделью.</td></tr>
+<tr><td><code>hard</code></td><td>красный</td><td>Сложные задачи; сначала самые сильные модели, более длинные запуски агента.</td></tr>
+<tr><td><code>maximum</code></td><td>радужный</td><td>Те же модели, что в hard, самые длинные запуски агента.</td></tr>
+</table></div>
+<p>Переключайте клавишами <kbd>ctrl</kbd>+<kbd>t</kbd> или командой <code>/mode</code>. Цепочки и лимит шагов агента для каждого режима находятся в <code>config.toml</code> (<code>[modes.small]</code> и так далее).</p>
+<p>Модели цепочки без ключа или не установленные на локальном сервере пропускаются молча. Если локальная модель из цепочки не установлена, её место занимают те, что у вас установлены.</p>
+</section>
+
+<section id="keys">
+<h2>Ключи API</h2>
+<p><code>/keys</code> (или <code>relay keys</code> в терминале) открывает страницу ключей на вашем компьютере. Карточки сгруппированы: официальные провайдеры, другие сервисы (OpenRouter, Ollama cloud, ...) и серверы на этом компьютере. Для каждого провайдера можно добавить один или несколько ключей и удалить их. После сохранения ключа страница спрашивает у провайдера, какие модели ключ открывает, и показывает их число или ошибку провайдера, если ключ неверный.</p>
+<div class="tablewrap"><table>
+<tr><th>Провайдер</th><th>Где взять ключ</th><th>Примечания</th></tr>
+<tr><td>anthropic</td><td><a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer">console.anthropic.com</a></td><td>Модели Claude.</td></tr>
+<tr><td>openai</td><td><a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">platform.openai.com</a></td><td>Модели GPT.</td></tr>
+<tr><td>gemini</td><td><a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">aistudio.google.com</a></td><td>Google Gemini API. В списке только модели, умеющие генерировать текст.</td></tr>
+<tr><td>grok</td><td><a href="https://console.x.ai" target="_blank" rel="noopener noreferrer">console.x.ai</a></td><td>Модели xAI Grok.</td></tr>
+<tr><td>deepseek</td><td><a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener noreferrer">platform.deepseek.com</a></td><td>Модели DeepSeek.</td></tr>
+<tr><td>ollama-cloud</td><td><a href="https://ollama.com/settings/keys" target="_blank" rel="noopener noreferrer">ollama.com/settings/keys</a></td><td>Ключ открывает облачные модели <b>Ollama cloud</b> (<code>ollama-cloud/…</code>). Находится в группе «Другие сервисы». Ключи, сохранённые ранее для <code>ollama</code>, это те же самые.</td></tr>
+<tr><td>ollama</td><td class="dim">нет</td><td>Локальный Ollama на этом компьютере, ключ не нужен. Находится в группе «На этом компьютере», с автозапуском и кнопками запуска и остановки.</td></tr>
+<tr><td>openrouter</td><td><a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer">openrouter.ai/keys</a></td><td>Много моделей от многих разработчиков по одному ключу.</td></tr>
+<tr><td>llamacpp</td><td class="dim">нет</td><td>Локальный сервер (<code>llama serve</code>), ключ не нужен.</td></tr>
+</table></div>
+<h3>Несколько ключей для одного провайдера</h3>
+<p>Добавляйте сколько угодно. Пока один работает, Relay пользуется им. Когда ключ упирается в лимит или кредит заканчивается, Relay переключается на следующий (вы увидите уведомление), а уставший ключ отдыхает две минуты. Когда все ключи израсходованы, Relay переходит к следующей модели режима.</p>
+<h3>Где хранятся ключи</h3>
+<p>В файле <code>keys.json</code> в папке Relay, читаемом только вами. Они никуда не уходят с вашего компьютера, кроме запросов к тому провайдеру, которому принадлежат. Страница показывает только последние четыре символа.</p>
+</section>
+
+<section id="local">
+<h2>Локальные модели</h2>
+<h3>Ollama</h3>
+<ol class="steps">
+  <li>Установите Ollama с <a href="https://ollama.com/download" target="_blank" rel="noopener noreferrer">ollama.com/download</a>.</li>
+  <li>Скачайте модель: <code>ollama pull granite4.1:3b</code> (любая модель из библиотеки Ollama).</li>
+  <li>Если Ollama ещё не запущен, введите <code>/ollama</code>. Если уже запущен (например, как системная служба), Relay просто использует его и никогда не останавливает.</li>
+  <li>Введите <code>/models</code>: ваши модели в списке как <code>ollama/…</code>.</li>
+</ol>
+<h3>llama.cpp, LM Studio, vLLM и другие</h3>
+<p>Подойдёт любой сервер с OpenAI-совместимым API <code>/v1</code>. llama.cpp уже настроен на порт 8080 и запускается командой <code>llama serve</code> (если у вас только старый <code>llama-server</code>, Relay использует его). Для остальных добавьте провайдера в <code>config.toml</code> (см. <a href="#config">Настройка</a>). Чтобы Relay сам запускал сервер, добавьте запись <code>[[processes]]</code>, затем <code>/&lt;имя&gt;</code> запускает его, а <code>/stop</code> останавливает. Для llama.cpp: <code>/llamacpp path/to/model.gguf</code>.</p>
+<p><b>Что понимает <code>/llamacpp</code>.</b> Нужный флаг Relay выбирает сам: файл <code>.gguf</code> или папка с моделями (выбирается главный файл, файлы <code>mmproj</code> пропускаются) становится <code>-m</code>; <code>org/repo</code>, <code>org/repo:Q4_K_M</code>, <code>hf.co/org/repo</code> или адрес страницы huggingface.co становится <code>-hf</code>; ссылка на файл становится <code>-mu</code>. Флаги, написанные после модели, сохраняются: <code>/llamacpp unsloth/Qwen3-8B-GGUF:Q4_K_M -c 8192 -ngl 99</code>. Тот же текст работает в поле <b>model</b> на карточке llama.cpp страницы ключей.</p>
+<p class="dim">Незапущенный локальный сервер не ошибка: на его карточке страницы ключей написано «не запущен», а в список моделей он ничего не добавляет.</p>
+</section>
+
+<section id="agent">
+<h2>Режим агента</h2>
+<p>Включается клавишами <kbd>ctrl</kbd>+<kbd>a</kbd> (в заголовке появится <code>agent on</code>). После этого модель может работать с папкой, в которой вы запустили Relay, шагами: смотрит файлы, меняет их, запускает команды и читает результат перед следующим шагом.</p>
+<div class="tablewrap"><table>
+<tr><th>Инструмент</th><th>Что делает</th><th>Спрашивает сначала?</th></tr>
+<tr><td><code>read_file</code></td><td>Читает файл в папке.</td><td>нет</td></tr>
+<tr><td><code>list_dir</code></td><td>Показывает содержимое каталога.</td><td>нет</td></tr>
+<tr><td><code>grep</code></td><td>Ищет текст в файлах.</td><td>нет</td></tr>
+<tr><td><code>web_fetch</code></td><td>Скачивает веб-страницу и читает её.</td><td>нет</td></tr>
+<tr><td><code>write_file</code></td><td>Создаёт или перезаписывает файл.</td><td><b>да</b></td></tr>
+<tr><td><code>edit_file</code></td><td>Заменяет часть файла.</td><td><b>да</b></td></tr>
+<tr><td><code>run_shell</code></td><td>Выполняет команду оболочки.</td><td><b>да</b></td></tr>
+<tr><td>Инструменты MCP, навыки</td><td>Инструменты ваших MCP-серверов и установленные навыки.</td><td><b>да</b></td></tr>
+</table></div>
+<p>Когда нужно подтверждение, над строкой ввода открывается список с описанием того, что сейчас произойдёт, и тремя вариантами: <b>Allow once</b> (разрешить один раз), <b>Always allow</b> (всегда разрешать: этот инструмент, до конца сессии) и <b>Deny</b> (отказать). Щёлкните по одному, или <kbd>↑</kbd> <kbd>↓</kbd> и <kbd>enter</kbd>, или нажмите <kbd>y</kbd> / <kbd>a</kbd> / <kbd>n</kbd> (<kbd>esc</kbd> отказывает).</p>
+<p>Число шагов на один запрос ограничено режимом (10 в small, до 40 в maximum). Когда лимит достигнут, отправьте ещё одно сообщение, чтобы продолжить.</p>
+<p>Режиму агента нужна модель, поддерживающая вызов инструментов. В автоматическом режиме Relay пропускает модели, помеченные как без инструментов; если вы выбрали модель сами и она не умеет инструменты, провайдер сообщит об этом.</p>
+<h3>MCP-серверы</h3>
+<p>MCP-сервер даёт агенту новые инструменты: файлы, браузер, базу данных, вашу собственную программу. Добавьте его в терминале:</p>
+<pre><code>relay mcp add files --command npx -- -y @modelcontextprotocol/server-filesystem /path/to/dir
+relay mcp add docs --url https://example.com/mcp
+relay mcp list
+relay mcp test files</code></pre>
+<p>Серверы хранятся в <code>mcp.json</code> в папке настроек Relay. Файл можно править вручную; Relay замечает изменения без перезапуска. Локальный сервер это программа, которую Relay запускает за вас, поэтому она стартует только после того, как вы одобрили именно эту команду (<code>relay mcp add</code> спрашивает; для записи, написанной вручную, выполните <code>relay mcp trust &lt;id&gt;</code>). Ключей API Relay она не получает: перечислите нужное в <code>"env"</code>, а <code>${NAME}</code> берёт значение из вашего окружения. Каждый вызов инструмента спрашивает сначала (можно ответить «всегда» для конкретного инструмента на сессию); отдельные инструменты отключаются через <code>"disabled_tools"</code>. Старые записи <code>[[mcp]]</code> в <code>config.toml</code> продолжают работать.</p>
+<h3>Навыки</h3>
+<p>Навык это папка с <code>SKILL.md</code> (открытый формат Agent Skills), которая учит агента одному виду задач. <code>relay skill add ./my-skill</code> устанавливает навык, или просто скопируйте папку в папку <code>skills</code>. Агент видит названия и описания и загружает навык только когда задача подходит. Скрипты внутри навыка никогда не запускаются автоматически. <code>/skills</code> и <code>/mcp</code> показывают, что установлено.</p>
+<h3>Пусть модель создаёт их сама</h3>
+<p>Включите агента (<code>ctrl+a</code>) и попросите: «подключи мой GitHub», «сделай инструмент, который хранит заметки в папке». Это умеет любая модель с вызовом инструментов: у Relay есть встроенные инструменты и навык <code>relay-builder</code>. Создание всегда начинается с вопроса к вам («Build one now?»); если вы отказываетесь, весь запрос отменяется. Перед запуском новой программы вас спрашивают снова (для этого можно ответить «всегда» на сессию). К каждому серверу прилагается навык, который объясняет модели, когда и как пользоваться его инструментами. Если вы просите то, чего не умеет ни один инструмент, прямо или просто запросив результат, агент предложит создать его (отключается в настройках). Если созданный инструмент падает из-за собственного кода, агент просит починить его. Пока идёт создание, одна строка под вашим вопросом показывает, что происходит (<code>/progress off</code> показывает вместо неё рассуждения и работу модели). О ручном создании серверов и навыков см. <code>docs/EXTENSIONS.md</code>. <code>/tools</code> показывает инструменты, <code>/connectors</code> коннекторы (они работают с внешними сервисами), <code>/skills</code> навыки.</p>
+</section>
+
+<section id="oauth">
+<h2>Подключения OAuth</h2>
+<p>Некоторым MCP-серверам (GitHub и другим) нужен вход. <code>/connections</code> открывает страницу со всеми входами: аккаунт, издатель, права (scopes), срок действия токена и кнопки <b>Войти</b>, <b>Переподключить</b>, <b>Отключить</b>, <b>Отозвать</b> и <b>Забыть</b>. Токены и секреты не показываются никогда и хранятся на вашем компьютере в зашифрованном виде.</p>
+<p>Если коннектору нужен вход, а вы ещё не вошли, ответ ставится на паузу, в браузере открывается страница входа, и работа продолжается после входа. <code>/connectors auth &lt;id&gt;</code> выполняет вход отдельно. В OAuth-приложении у сервиса должен быть указан callback-адрес, который показывает <code>/connectors</code>. Relay хранит токены (файлы только для владельца) и обновляет их; коннектор получает только текущий токен доступа.</p>
+<h3>Откуда берётся Client ID</h3>
+<p>OAuth нужно приложение («клиент»), зарегистрированное у сервиса. Relay использует первый способ, который сработает: сохранённый вами Client ID; Client ID Metadata Document, если сервер его поддерживает и для коннектора в <code>mcp.json</code> задан <code>cimd_url</code>; автоматическая регистрация, если сервер её предлагает; иначе карточка получает статус <code>needs_setup</code> и просит у вас Client ID. У GitHub автоматической регистрации нет, поэтому приложение регистрируется один раз вручную.</p>
+<h3>Пример: GitHub</h3>
+<ol class="steps">
+  <li>На GitHub: <b>Settings → Developer settings → OAuth Apps → New OAuth App</b>.</li>
+  <li>В качестве callback URL укажите <b>точный redirect URI</b>, который показывает карточка на <code>/connections</code>.</li>
+  <li>Скопируйте Client ID (создайте Client secret, если хотите).</li>
+  <li>На <code>/connections</code> нажмите <b>«Клиент и права»</b>, заполните Client ID, секрет (метод: секрет в теле POST) и <b>права (scopes)</b>, например <code>repo read:org read:user</code>. Нажмите <b>«Сохранить OAuth-клиент»</b>.</li>
+  <li>Нажмите <b>«Войти»</b> и подтвердите в браузере.</li>
+</ol>
+<h3>Права (scopes)</h3>
+<p>Права это то, что получает токен. Relay запрашивает только те, что вы перечислили. Без прав токен GitHub читает только ваш профиль, поэтому большинство инструментов отвечают <code>403 insufficient scopes</code>. Просите минимум необходимого: в документации коннектора указано, что нужно каждому инструменту, а на странице провайдера есть полный список. Права можно менять, не вводя Client ID заново, но они применяются при следующем входе: после сохранения нажмите <b>«Войти»</b>. (У GitHub App прав (scopes) нет: его права задаются в настройках самого приложения.)</p>
+<p>Текст запроса на вход и его подробности формирует сервер, и они показываются на английском.</p>
+</section>
+
+<section id="compare">
+<h2>Сравнение моделей</h2>
+<p>Отправьте один запрос сразу нескольким моделям и читайте ответы друг под другом:</p>
+<pre><code>/compare ollama/granite4.1:3b gemini/gemini-2.5-flash Explain what a mutex is in two sentences.</code></pre>
+<p>Сначала перечислите до четырёх id моделей (id из <code>/models</code> или короткие имена из конфига), затем запрос. Используется активный системный пресет; инструменты агента нет.</p>
+</section>
+
+<section id="panel">
+<h2>Боковая панель, мышь, Windows</h2>
+<h3>Страница настроек: /settings</h3>
+<p><code>/settings</code> открывает страницу, где можно включить или выключить рассуждения модели (они показываются приглушённо, отдельно от ответа; когда выключены, вообще не отправляются), выбрать скорость печати, скрыть боковую панель или маскота, ограничить ширину текста, отключить мышь, задать режим по умолчанию, а на вкладке <b>Сессии</b> посмотреть и удалить сохранённые сессии. Автозапуск, файл модели llama.cpp и кнопки запуска и остановки Ollama и llama.cpp находятся на странице ключей (<code>/keys</code>), на их карточках. Сокращения: <code>/thoughts on|off</code>, <code>/mouse on|off</code>.</p>
+<h3>Копирование текста</h3>
+<p>Нажмите <kbd>f2</kbd> (или введите <code>/select</code>) для <b>режима выделения</b>: экран перестаёт меняться, боковая панель скрывается, а мышь возвращается терминалу, поэтому чат можно выделять и копировать как в любом терминале. Любая клавиша выходит из режима. (Терминал не сообщает приложению, что нажат один лишь <kbd>shift</kbd>, поэтому он не может быть триггером.) <code>/copy</code> кладёт последний ответ в буфер обмена без выделения. <code>/mouse off</code> отключает захват мыши насовсем (тогда прокручивайте <kbd>pgup</kbd>/<kbd>pgdn</kbd>).</p>
+<h3>Боковая панель: процессы</h3>
+<p>Блок <b>processes</b> показывает локальные серверы, запущенные прямо сейчас (Ollama, llama.cpp, LM Studio, ...), в том числе запущенные вами вручную. Когда их нет, там написано <code>Nothing running :)</code>.</p>
+<h3>Мышь</h3>
+<p>По любому списку над строкой ввода (модели, сессии, запущенные серверы, подтверждение) можно щёлкать. Колесо мыши прокручивает разговор.</p>
+<h3>Windows</h3>
+<p>Пока Relay работает, он переключает консоль в UTF-8, чтобы рамки и нелатинский текст отображались правильно (рекомендуется Windows Terminal). В Windows нет <code>systemctl</code>: если Ollama запущен приложением Ollama, Relay его не останавливает; закройте его через значок Ollama в системном трее.</p>
+</section>
+
+<section id="sessions">
+<h2>Сессии и пресеты</h2>
+<p>Каждый разговор это сессия, сохранённая на диске. <code>/new</code> (<kbd>ctrl</kbd>+<kbd>n</kbd>) начинает новую в той же папке и режиме. <code>/sessions</code> открывает список последних (у каждой токены и стоимость; боковая панель показывает итоги открытой сессии): щёлкните по одной, чтобы вернуть её с полной историей (<code>/load &lt;id&gt;</code> делает то же по id). Режим, модель и пресет можно менять посреди разговора; следующее сообщение использует новые настройки.</p>
+<p><b>Пресет</b> это системный промпт. <code>/preset coder</code> делает модель аккуратным программистом, <code>/preset concise</code> просит короткие ответы, <code>/preset none</code> убирает пресет. Свои добавляются через <code>[[presets]]</code> в конфиге.</p>
+</section>
+
+<section id="config">
+<h2>Настройка</h2>
+<p>Relay работает без всякой настройки. Чтобы что-то изменить, правьте <code>config.toml</code>. Путь к нему печатает <code>relay config</code>; полный пример с комментариями печатает <code>relay config --example</code>.</p>
+<div class="note"><b>Нужен перезапуск.</b> Конфиг читается при запуске фоновой службы. После правки выполните <code>relay stop</code>, затем снова <code>relay</code>. Файл создаётся один раз и никогда не перезаписывается, поэтому новые версии Relay не трогают ваши правки.</div>
+
+<h3>Добавить провайдера</h3>
+<p>Любой OpenAI-совместимый сервер:</p>
+<pre><code>[[providers]]
+name = "lmstudio"
+kind = "openai"
+base_url = "http://127.0.0.1:1234/v1"</code></pre>
+<p>Его карточка появится на странице ключей, а модели в <code>/models</code>. Необязательные поля: <code>api_key_env</code> (читать ключи из переменных окружения), <code>headers</code> (дополнительные HTTP-заголовки), <code>discover</code> (<code>"none"</code> отключает поиск моделей для провайдера; другие значения задают способ поиска: <code>ollama</code>, <code>gemini</code>, <code>anthropic</code>, <code>openai</code>), <code>key_from</code> (использовать ключи другого провайдера, как это делает <code>ollama-cloud</code>).</p>
+
+<h3>Короткое имя, цена и место в режиме для модели</h3>
+<pre><code>[[models]]
+id = "flash"                 # короткое имя, которое можно набрать: /models flash
+provider = "gemini"
+model = "gemini-2.5-flash"   # собственное имя у провайдера
+tier = "small"
+tools = true                 # модель умеет вызывать инструменты (нужно для режима агента)
+price_in = 0.30              # USD за 1 млн входных токенов, для счётчика стоимости
+price_out = 2.50
+
+[modes.small]
+models = ["local-small", "flash"]   # цепочка: пробуются по порядку
+max_steps = 10</code></pre>
+
+<h3>Другие разделы</h3>
+<ul>
+  <li><code>listen</code>: адрес фоновой службы (по умолчанию <code>127.0.0.1:8787</code>).</li>
+  <li><code>workspace</code>: фиксированная папка агента (по умолчанию папка, где запущен Relay).</li>
+  <li><code>default_mode</code>: режим новой сессии.</li>
+  <li><code>[[processes]]</code>: локальные серверы, которыми управляют <code>/&lt;имя&gt;</code> (например <code>/ollama</code>) и <code>/stop</code>, с полями <code>command</code>, <code>args</code>, <code>ready_url</code> и <code>autostart</code>. llama.cpp это <code>command = "llama"</code>, <code>args = ["serve", "--port", "8080"]</code>.</li>
+  <li><code>[[presets]]</code>: ваши собственные системные промпты.</li>
+</ul>
+</section>
+
+<section id="gateway">
+<h2>API, совместимый с OpenAI</h2>
+<p>Пока Relay запущен, другие программы могут использовать его как эндпоинт OpenAI. Они получают маршрутизацию Relay, ротацию ключей и учёт стоимости, а все ваши ключи остаются в одном месте.</p>
+<pre><code># токен доступа лежит в файле "token" в папке Relay
+TOKEN=$(cat ~/.config/relay/token)
+
+curl http://127.0.0.1:8787/v1/chat/completions \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"model":"relay-medium","messages":[{"role":"user","content":"Hello"}]}'</code></pre>
+<p>Настройки для других программ: базовый URL <code>http://127.0.0.1:8787/v1</code>, ключ API = токен.</p>
+<p><code>model</code> может быть <code>relay-small</code> / <code>relay-medium</code> / <code>relay-hard</code> / <code>relay-maximum</code> (цепочка этого режима), <code>auto</code> (Relay выбирает режим по размеру и виду запроса) или любым id модели из <code>/models</code>, например <code>ollama/granite4.1:3b</code>. <code>GET /v1/models</code> перечисляет все. Потоковая передача работает; вызовы инструментов через этот эндпоинт не поддерживаются.</p>
+<p class="dim">Полное описание API бэкенда находится в <code>docs/PROTOCOL.md</code> в репозитории Relay.</p>
+</section>
+
+<section id="cli">
+<h2>Командная строка</h2>
+<div class="tablewrap"><table>
+<tr><th>Команда</th><th>Что делает</th></tr>
+<tr><td><code>relay</code></td><td>Запускает интерфейс. Фоновая служба стартует автоматически и останавливается при выходе (<code>relay --keep</code> оставляет её работать).</td></tr>
+<tr><td><code>relay keys</code></td><td>Открывает страницу ключей.</td></tr>
+<tr><td><code>relay status</code></td><td>Показывает провайдеров, ключи, локальные серверы и использование.</td></tr>
+<tr><td><code>relay stop</code></td><td>Останавливает фоновую службу.</td></tr>
+<tr><td><code>relay daemon</code></td><td>Запускает службу в этом терминале (для отладки).</td></tr>
+<tr><td><code>relay install</code> / <code>uninstall</code></td><td>Добавляет Relay в PATH или убирает.</td></tr>
+<tr><td><code>relay config [--example]</code></td><td>Печатает путь к конфигу или пример конфига.</td></tr>
+<tr><td><code>relay version</code></td><td>Печатает версию.</td></tr>
+</table></div>
+<h3>Где Relay хранит файлы</h3>
+<p>Linux: <code>~/.config/relay/</code> · Windows: <code>%AppData%\relay\</code> · macOS: <code>~/Library/Application Support/relay/</code>. Переменная <code>RELAY_HOME</code> задаёт другую папку.</p>
+<ul>
+  <li><code>config.toml</code>: настройки</li>
+  <li><code>keys.json</code>: ваши ключи API</li>
+  <li><code>sessions/</code>: сохранённые разговоры</li>
+  <li><code>usage.json</code>: итоги токенов и стоимости по моделям</li>
+  <li><code>token</code>, <code>daemon.json</code>: токен доступа и адрес запущенной службы</li>
+  <li><code>relayd.out</code>: вывод фоновой службы (смотрите сюда, если она не стартует)</li>
+</ul>
+</section>
+
+<section id="trouble">
+<h2>Если что-то не работает</h2>
+<h3>Список моделей пуст или не хватает провайдера</h3>
+<ul>
+  <li>Нет ключа? Добавьте его через <code>/keys</code>. Провайдеры без ключа пропускаются.</li>
+  <li>Откройте <code>/keys</code> и посмотрите на значок рядом с провайдером: он показывает, сколько моделей найдено, или что ответил провайдер (например «API key not valid»).</li>
+  <li>Ollama: убедитесь, что он запущен (<code>/ollama</code>) и модель загружена (<code>ollama list</code>).</li>
+  <li>Только что добавили ключ? Снова введите <code>/models</code>; список обновляется сам.</li>
+</ul>
+<h3>«403 insufficient scopes» от коннектора (GitHub)</h3>
+<p>У токена нет права на этот инструмент. Откройте <code>/connections</code>, нажмите <b>«Клиент и права»</b>, добавьте права (для GitHub, например, <code>repo read:org read:user</code>), сохраните и снова нажмите <b>«Войти»</b>. Старый токен сохраняет старые права, пока вы не войдёте заново.</p>
+<h3>llama.cpp не запускается</h3>
+<p>Relay запускает <code>llama serve</code> (или старый <code>llama-server</code>). Если пишет, что программа не найдена, установите llama.cpp так, чтобы <code>llama</code> был в PATH, или укажите в <code>command</code> полный путь в <code>[[processes]]</code> llamacpp. Если не найдена модель, проверьте путь или укажите имя <code>org/repo</code>.</p>
+<h3>«model not found» от провайдера</h3>
+<p>Имя модели из <code>config.toml</code> могло устареть. Выберите модель из <code>/models</code>: эти имена приходят прямо от провайдера.</p>
+<h3>«no API key for …»</h3>
+<p>Выбранная модель принадлежит провайдеру без ключа. Добавьте ключ через <code>/keys</code> или выберите другую модель.</p>
+<h3>«rate limit» или маскот выглядит уставшим</h3>
+<p>Квота ключа исчерпана. Relay автоматически переключится на другой ключ или модель. Добавьте больше ключей или подождите пару минут.</p>
+<h3>Интерфейс не запускается или пишет, что служба не стартовала</h3>
+<p>Прочитайте <code>relayd.out</code> в папке Relay или выполните <code>relay daemon</code> в терминале, чтобы увидеть ошибку. Обычная причина это сломанный <code>config.toml</code>; в сообщении указана строка.</p>
+<h3>После правки конфига всё ещё действуют старые настройки</h3>
+<p>Выполните <code>relay stop</code> и снова запустите <code>relay</code>.</p>
+<h3>Не видно боковую панель или маскота</h3>
+<p>Боковой панели нужен терминал шириной не менее 104 столбцов. Маскоту ещё нужна достаточная высота.</p>
+<h3>Странные символы вроде <code>[&lt;64;101;29M</code> в строке ввода</h3>
+<p>Это отчёт о колесе мыши, который загруженный терминал разорвал на две части. Relay убирает его автоматически. Если терминал продолжает так делать, прокручивайте <kbd>pgup</kbd> / <kbd>pgdn</kbd> или <kbd>shift</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd>.</p>
+</section>
+
+<section id="safety">
+<h2>Приватность и безопасность</h2>
+<ul>
+  <li>Служба Relay слушает только <code>127.0.0.1</code>, требует токен доступа и проверяет заголовок <code>Host</code>, поэтому другие компьютеры и веб-страницы не могут с ней говорить.</li>
+  <li>Ваши ключи хранятся в обычном текстовом файле, читаемом только вами. Терминал и страницы показывают не больше последних четырёх символов.</li>
+  <li>Ваши сообщения уходят только провайдеру используемой модели. У Relay нет своих серверов, и он не отправляет телеметрию.</li>
+  <li>Агент может читать и писать файлы только внутри своей рабочей папки (символические ссылки не проверяются). Запись, правка, команды shell и инструменты MCP спрашивают сначала; «всегда разрешать» запоминается для каждого инструмента до конца сессии.</li>
+  <li class="dim">Shell <b>не изолирован</b>: <code>run_shell</code> может всё, что можете вы. Читайте каждую команду, прежде чем нажать <kbd>y</kbd>, и осторожнее с <kbd>a</kbd>: после него модель выполняет команды shell в этой сессии без вопросов.</li>
+</ul>
+</section>
+
+</main>
+<footer>Relay · Быстрее. Ближе. Вместе. · Эта страница отдаётся вашей собственной службой Relay и работает без интернета.</footer>
+</div>
+</body>
+</html>

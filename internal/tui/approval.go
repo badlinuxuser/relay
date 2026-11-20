@@ -55,10 +55,6 @@ func approvalLabel(i int, tool string) string {
 	case 0:
 		return "Allow once"
 	case 1:
-		if tool == "create_mcp_server" ||
-			tool == "create_skill" || tool == "propose_extension" || tool == "run_shell" || tool == "write_file" || tool == "edit_file" || tool == "remove_extension" {
-			return "Allow this time only (not remembered)"
-		}
 		if strings.HasPrefix(tool, "mcp__") {
 			return "Always allow this tool in this session"
 		}

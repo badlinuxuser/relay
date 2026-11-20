@@ -330,7 +330,7 @@ Five emotions from a sprite sheet, four colour themes. Sprites are built from `a
 
 Relay 0.3.0 implements the LFI Core foundation: encrypted local OAuth records, Linux Secret Service integration, explicit OAuth consent, PKCE lifecycle, resource-bound MCP credentials, provider profiles, Connections management, and a shared Builder/MCP Broker. Some platform and provider acceptance gates remain open; see [docs/LFI_CORE.md](docs/LFI_CORE.md) and [ADR-0001](docs/ADR-0001-LFI-CORE.md) for the exact protocol target and decisions.
 
-Relay is **pre-release software** (version 0.3.0). There is no stable version yet and stable releases are still a long way off, so expect rough edges and breaking changes. Project notes and architecture decisions are in [PROJECT.md](PROJECT.md). Security boundaries and limitations are documented in [SECURITY.md](SECURITY.md).
+Relay is **pre-release software** (version 0.3.1). There is no stable version yet and stable releases are still a long way off, so expect rough edges and breaking changes. Project notes and architecture decisions are in [PROJECT.md](PROJECT.md). Security boundaries and limitations are documented in [SECURITY.md](SECURITY.md).
 
 Found a bug or have an idea? Please open an [issue](https://github.com/badlinuxuser/relay/issues).
 

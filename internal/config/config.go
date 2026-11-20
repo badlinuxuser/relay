@@ -292,7 +292,7 @@ func (c *Config) addImplicitProcesses() {
 	}
 	if !have["llamacpp"] {
 		c.Processes = append(c.Processes, Process{
-			Name: "llamacpp", Command: "llama-server", Args: []string{"--port", "8080"},
+			Name: "llamacpp", Command: "llama", Args: []string{"serve", "--port", "8080"},
 			ReadyURL: "http://127.0.0.1:8080/health",
 		})
 	}

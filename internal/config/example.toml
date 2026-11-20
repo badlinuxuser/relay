@@ -189,12 +189,14 @@ args = ["serve"]
 ready_url = "http://127.0.0.1:11434/api/tags"
 autostart = false
 
-# llama.cpp needs a model: either type /llamacpp <path to model.gguf>,
-# or put it here: args = ["-m", "/models/model.gguf", "--port", "8080"]
+# llama.cpp starts with `llama serve`. Type /llamacpp <path to model.gguf | org/repo | URL>
+# to choose a model (Relay picks -m / -hf / -mu itself), or put the flags here:
+# args = ["serve", "-m", "/models/model.gguf", "--port", "8080"]
+# The older separate binary also works: command = "llama-server", args = ["--port", "8080"].
 [[processes]]
 name = "llamacpp"
-command = "llama-server"
-args = ["--port", "8080"]
+command = "llama"
+args = ["serve", "--port", "8080"]
 ready_url = "http://127.0.0.1:8080/health"
 autostart = false
 

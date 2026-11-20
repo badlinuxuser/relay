@@ -170,14 +170,14 @@ Verification note: the sandbox has no access to proxy.golang.org. The OAuth and 
 
 The 0.3.0 foundation is based on `docs/LFI_CORE.md`; protocol and architecture decisions are recorded in `docs/ADR-0001-LFI-CORE.md`. Existing OAuth code was audited and hardened rather than replaced with a second identity subsystem. The OAuth Broker remains shared by MCP Manager and Builder-generated stdio connectors. See `docs/OAUTH.md` and `docs/MCP_TRANSPORTS.md` for the exact support matrix.
 
-Security changes in this iteration: AES-256-GCM encrypted OAuth records; Linux Secret Service integration with a 0600/0700 Unix key-file fallback; explicit OAuth-start consent before registration/browser launch; validated lifecycle transitions; resource-bound bearer attachment; resolver-aware OAuth endpoint checks; provider profiles for GitHub, Google and Microsoft; optional userinfo account labels; revocation/disconnect/forget endpoints; Connections UI; Builder source checks and a fix for the unapproved-stdio startup race. The daemon protocol version is 0.3.0.
+Security changes in this iteration: AES-256-GCM encrypted OAuth records; Linux Secret Service integration with a 0600/0700 Unix key-file fallback; explicit OAuth-start consent before registration/browser launch; validated lifecycle transitions; resource-bound bearer attachment; resolver-aware OAuth endpoint checks; provider profiles for GitHub, Google and Microsoft; optional userinfo account labels; revocation/disconnect/forget endpoints; Connections UI; Builder source checks and a fix for the unapproved-stdio startup race. The daemon protocol version is 0.3.1.
 
 Known incomplete requirements: native macOS Keychain and Windows Credential Manager adapters; vault master-key rotation and recovery UX; Slack/Notion provider-specific contracts; CIMD; exhaustive RFC fixtures; adversarial DNS/callback/refresh concurrency tests; real-browser provider tests; and cross-platform acceptance. The local master-key fallback does not protect against malware running as the same OS user. Do not mark LFI Core production-certified until all release gates in `docs/LFI_CORE.md` are closed.
 
 Verification: the environment has Go 1.23.2 while `go.mod` requires Go 1.24.2, and network access to the toolchain/module proxy is unavailable. The isolated OAuth package and MCP/OAuth packages passed `go test -race` under Go 1.23.2. Full `go test ./...`, `go vet`, cross-builds and real-provider/browser acceptance could not be run.
 
 
-## 0.3.0 (continued) — OAuth setup usability
+## 0.3.1 — OAuth setup, permissions, Ollama cloud, llama serve, Russian pages
 
 - OAuth connector configuration no longer fails solely because `client_id` and `registration_url` are absent. The MCP manager exposes `needs_setup`.
 - Connections now lists configured OAuth MCP servers even before a credential record exists, and provides a Client ID / optional Client Secret setup form with the exact local callback URI.
@@ -185,3 +185,5 @@ Verification: the environment has Go 1.23.2 while `go.mod` requires Go 1.24.2, a
 - CIMD can be explicitly configured with `oauth.cimd_url`. It is used as the OAuth `client_id` only when the authorization server advertises CIMD support (or when explicitly enabled for a static provider config). DCR remains the next automatic path.
 - Remaining work: choose and control a stable project domain before publishing a shared `client.json`; implement RFC 8628 device authorization for GitHub; run provider end-to-end tests. GitHub currently still needs a registered OAuth client entered in Connections.
 - Security invariants retained: separate OAuth-start consent, PKCE S256, resource/target binding, encrypted credentials and token storage, no secret in API responses or model-visible output.
+
+0.3.1 also: "always allow" is remembered per tool for the session for every tool (`OnceOnly` is false everywhere; `oauth_connect` has its own consent), scopes in the setup form (`oauth.Config.UserScopes`), Ollama cloud card (`keyStoreName`, `keysBelongToAnother` in `server/keys.go`), `llama serve` with a fallback to `llama-server` (`runner.llamaLaunch`), a richer `runner.ModelArgs`, and EN/RU web pages (`data-t` + `RU` dictionaries; `help.ru.html` is a full translation: keep both help files in step).
